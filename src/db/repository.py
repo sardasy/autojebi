@@ -3,9 +3,9 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy import select, exists
+from sqlalchemy import select, exists, func, cast, Date
 from src.config import settings
-from src.db.models import Bid, NotificationLog
+from src.db.models import Bid, BidAward, NotificationLog
 
 logger = logging.getLogger(__name__)
 
@@ -94,3 +94,128 @@ class BidRepository:
         log = NotificationLog(bid_id=bid_id, channel=channel, status=status)
         self.session.add(log)
         await self.session.commit()
+
+
+# 금액 버킷: ~1억 / 1억~10억 / 10억~50억 / 50억~ / 미정
+PRICE_BUCKETS = [
+    ("under_100m", None, 100_000_000),
+    ("100m_1b", 100_000_000, 1_000_000_000),
+    ("1b_5b", 1_000_000_000, 5_000_000_000),
+    ("over_5b", 5_000_000_000, None),
+]
+
+
+class DashboardRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def stats(self, days: int = 30) -> dict:
+        since = datetime.utcnow() - timedelta(days=days)
+        base = select(Bid).where(Bid.created_at >= since).subquery()
+
+        total = (await self.session.execute(
+            select(func.count()).select_from(base)
+        )).scalar() or 0
+
+        avg_rel = (await self.session.execute(
+            select(func.avg(Bid.relevance_score)).where(Bid.created_at >= since)
+        )).scalar()
+
+        awarded = (await self.session.execute(
+            select(func.count()).select_from(Bid).where(
+                Bid.created_at >= since, Bid.award_status == "awarded"
+            )
+        )).scalar() or 0
+
+        new_count = (await self.session.execute(
+            select(func.count()).select_from(Bid).where(
+                Bid.created_at >= since, Bid.status == "new"
+            )
+        )).scalar() or 0
+
+        by_source = dict(
+            (await self.session.execute(
+                select(Bid.source, func.count()).where(Bid.created_at >= since).group_by(Bid.source)
+            )).all()
+        )
+
+        by_category = dict(
+            (await self.session.execute(
+                select(Bid.category, func.count())
+                .where(Bid.created_at >= since, Bid.category.is_not(None))
+                .group_by(Bid.category)
+            )).all()
+        )
+
+        top_orgs_rows = (await self.session.execute(
+            select(Bid.organization, func.count().label("c"))
+            .where(Bid.created_at >= since, Bid.organization.is_not(None))
+            .group_by(Bid.organization)
+            .order_by(func.count().desc())
+            .limit(10)
+        )).all()
+        top_organizations = [{"organization": o, "count": c} for o, c in top_orgs_rows]
+
+        price_buckets: dict[str, int] = {}
+        for label, low, high in PRICE_BUCKETS:
+            stmt = select(func.count()).select_from(Bid).where(Bid.created_at >= since)
+            if low is not None:
+                stmt = stmt.where(Bid.estimated_price >= low)
+            if high is not None:
+                stmt = stmt.where(Bid.estimated_price < high)
+            price_buckets[label] = (await self.session.execute(stmt)).scalar() or 0
+        price_buckets["unknown"] = (await self.session.execute(
+            select(func.count()).select_from(Bid).where(
+                Bid.created_at >= since, Bid.estimated_price.is_(None)
+            )
+        )).scalar() or 0
+
+        return {
+            "days": days,
+            "total": total,
+            "avg_relevance": float(avg_rel) if avg_rel is not None else None,
+            "awarded": awarded,
+            "new_count": new_count,
+            "by_source": by_source,
+            "by_category": by_category,
+            "top_organizations": top_organizations,
+            "price_buckets": price_buckets,
+        }
+
+    async def timeseries(self, days: int = 30, metric: str = "count") -> list[dict]:
+        since = datetime.utcnow() - timedelta(days=days)
+        day = cast(Bid.created_at, Date).label("day")
+
+        if metric == "avg_relevance":
+            value = func.avg(Bid.relevance_score)
+        elif metric == "sum_price":
+            value = func.coalesce(func.sum(Bid.estimated_price), 0)
+        else:
+            value = func.count()
+
+        rows = (await self.session.execute(
+            select(day, value.label("v"))
+            .where(Bid.created_at >= since)
+            .group_by(day)
+            .order_by(day)
+        )).all()
+        return [
+            {"date": d.isoformat() if d else None, "value": float(v) if v is not None else 0}
+            for d, v in rows
+        ]
+
+    async def award_trend(self, org: str | None = None, months: int = 12) -> list[dict]:
+        since = datetime.utcnow() - timedelta(days=months * 31)
+        month = func.date_trunc("month", BidAward.award_date).label("month")
+        stmt = (
+            select(month, func.avg(BidAward.award_ratio).label("avg_ratio"), func.count().label("n"))
+            .where(BidAward.award_date.is_not(None), BidAward.award_date >= since.date())
+        )
+        if org:
+            stmt = stmt.join(Bid, Bid.id == BidAward.bid_id).where(Bid.organization.ilike(f"%{org}%"))
+        stmt = stmt.group_by(month).order_by(month)
+        rows = (await self.session.execute(stmt)).all()
+        return [
+            {"month": m.date().isoformat() if m else None, "avg_award_ratio": float(r) if r else None, "n": int(n)}
+            for m, r, n in rows
+        ]

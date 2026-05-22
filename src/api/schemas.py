@@ -3,6 +3,34 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class OrgCount(BaseModel):
+    organization: str
+    count: int
+
+
+class DashboardStats(BaseModel):
+    days: int
+    total: int
+    avg_relevance: float | None
+    awarded: int
+    new_count: int
+    by_source: dict[str, int]
+    by_category: dict[str, int]
+    top_organizations: list[OrgCount]
+    price_buckets: dict[str, int]
+
+
+class TimeseriesPoint(BaseModel):
+    date: str | None
+    value: float
+
+
+class AwardTrendPoint(BaseModel):
+    month: str | None
+    avg_award_ratio: float | None
+    n: int
+
+
 class BidResponse(BaseModel):
     id: uuid.UUID
     source: str

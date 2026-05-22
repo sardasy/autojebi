@@ -106,9 +106,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 from src.api.routes.bids import router as bids_router  # noqa: E402
+from src.api.routes.dashboard import router as dashboard_router  # noqa: E402
 from src.api.routes.ui import router as ui_router  # noqa: E402
 
 app.include_router(bids_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(ui_router)
 
 
