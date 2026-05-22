@@ -1,0 +1,9 @@
+body { background:#f6f7fa; }
+.card { box-shadow: 0 1px 2px rgba(0,0,0,.05); border:1px solid rgba(0,0,0,.06); }
+.navbar-brand { font-weight:600; letter-spacing:.5px; }
+.table thead th { font-weight:600; color:#555; border-bottom:2px solid #dee2e6; }
+.label-pill { font-size:.75rem; padding:.15rem .4rem; border-radius:1rem; }
+.label-relevant { background:#d1e7dd; color:#0a3622; }
+.label-irrelevant { background:#f8d7da; color:#58151c; }
+.label-watch { background:#fff3cd; color:#664d03; }
+canvas { max-height: 280px; }

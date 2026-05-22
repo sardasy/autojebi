@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% set active = 'rules' %}
+{% block title %}알림 룰 — AutoJebi{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">알림 룰</h3>
+  <button id="btn-new-rule" class="btn btn-sm btn-primary">+ 새 룰</button>
+</div>
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead><tr>
+      <th>이름</th><th>활성</th><th>소스</th><th>카테고리</th><th>기관</th><th>금액</th><th>min_rel</th><th>채널</th><th></th>
+    </tr></thead>
+    <tbody id="rules-body">
+      <tr><td colspan="9" class="text-center text-muted py-4">로드 중…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/rules.js"></script>
+{% endblock %}

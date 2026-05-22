@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% set active = 'awards' %}
+{% block title %}낙찰 — AutoJebi{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">낙찰 결과</h3>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-7"><div class="card"><div class="card-body"><h6 class="mb-3">낙찰률 분포</h6><canvas id="chart-ratio"></canvas></div></div></div>
+  <div class="col-md-5"><div class="card"><div class="card-body"><h6 class="mb-3">월별 평균 낙찰률</h6><canvas id="chart-trend"></canvas></div></div></div>
+</div>
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead><tr>
+      <th>공고 제목</th><th>발주처</th><th>낙찰자</th><th>예가</th><th>낙찰가</th><th>낙찰률</th><th>낙찰일</th>
+    </tr></thead>
+    <tbody id="awards-body">
+      <tr><td colspan="7" class="text-center text-muted py-4">로드 중…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

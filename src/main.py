@@ -2,7 +2,9 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from src.config import settings
 from src.db.repository import init_db, AsyncSessionLocal, BidRepository
 from src.db.models import Bid
@@ -98,10 +100,16 @@ async def lifespan(app: FastAPI):
     sched.shutdown()
 
 
-app = FastAPI(title="AI 입찰 자동화 시스템 — 1단계", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="AI 입찰 자동화 시스템 — 2단계", version="2.0.0", lifespan=lifespan)
+
+STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 from src.api.routes.bids import router as bids_router  # noqa: E402
+from src.api.routes.ui import router as ui_router  # noqa: E402
+
 app.include_router(bids_router, prefix="/api/v1")
+app.include_router(ui_router)
 
 
 @app.get("/health")

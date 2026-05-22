@@ -14,6 +14,9 @@ class BidResponse(BaseModel):
     relevance_score: float | None
     summary: str | None
     status: str
+    award_status: str
+    user_label: str | None
+    detail_url: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

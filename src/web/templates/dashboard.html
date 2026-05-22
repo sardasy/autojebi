@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% set active = 'dashboard' %}
+{% block title %}대시보드 — AutoJebi{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">대시보드</h3>
+  <div>
+    <label class="me-2">기간</label>
+    <select id="days" class="form-select form-select-sm d-inline-block w-auto">
+      <option value="7">최근 7일</option>
+      <option value="30" selected>최근 30일</option>
+      <option value="90">최근 90일</option>
+    </select>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">총 공고</div><div id="stat-total" class="fs-3 fw-semibold">—</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">평균 관련도</div><div id="stat-avg-relevance" class="fs-3 fw-semibold">—</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">낙찰됨</div><div id="stat-awarded" class="fs-3 fw-semibold">—</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">신규</div><div id="stat-new" class="fs-3 fw-semibold">—</div></div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-8"><div class="card"><div class="card-body"><h6 class="mb-3">일별 공고수</h6><canvas id="chart-timeseries"></canvas></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body"><h6 class="mb-3">소스별 비중</h6><canvas id="chart-source"></canvas></div></div></div>
+  <div class="col-md-7"><div class="card"><div class="card-body"><h6 class="mb-3">기관 Top 10</h6><canvas id="chart-org"></canvas></div></div></div>
+  <div class="col-md-5"><div class="card"><div class="card-body"><h6 class="mb-3">카테고리 비중</h6><canvas id="chart-category"></canvas></div></div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}
