@@ -47,6 +47,30 @@ class AlertRuleResponse(AlertRuleBase):
     model_config = {"from_attributes": True}
 
 
+class FeedbackCreate(BaseModel):
+    bid_id: uuid.UUID
+    label: str  # relevant|irrelevant|watch
+    note: str | None = None
+    reviewer: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    id: uuid.UUID
+    bid_id: uuid.UUID
+    label: str
+    note: str | None
+    reviewer: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FeedbackStats(BaseModel):
+    days: int
+    counts: dict[str, int]
+    recent: list[dict]
+
+
 class OrgCount(BaseModel):
     organization: str
     count: int

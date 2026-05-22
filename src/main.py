@@ -6,13 +6,20 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from src.config import settings
-from src.db.repository import init_db, AsyncSessionLocal, BidRepository, AlertRuleRepository
+from src.db.repository import (
+    init_db,
+    AsyncSessionLocal,
+    BidRepository,
+    AlertRuleRepository,
+    OrgPriorRepository,
+)
 from src.db.models import Bid
 from src.collector.g2b_api import G2BCollector
 from src.collector.kepco_api import KEPCOCollector
 from src.collector.kpx_scraper import KPXScraper
 from src.filter.keyword_matcher import KeywordMatcher
 from src.filter.embedding_scorer import EmbeddingScorer
+from src.filter.relevance import combined_score
 from src.llm.gateway import LLMGateway
 from src.notifier.teams_webhook import send_teams_notification
 from src.notifier.email_sender import send_email_notification
@@ -48,6 +55,7 @@ async def run_daily_collection():
     saved: list[Bid] = []
     async with AsyncSessionLocal() as session:
         repo = BidRepository(session)
+        prior_repo = OrgPriorRepository(session)
         for raw in all_raw:
             if not raw.source_id:
                 continue
@@ -56,7 +64,8 @@ async def run_daily_collection():
 
             kw_score = keyword_matcher.score(raw.title, raw.raw_content, raw.organization)
             emb_score = await embedding_scorer.score(f"{raw.title} {raw.raw_content[:500]}")
-            relevance = kw_score * 0.6 + emb_score * 0.4
+            prior = await prior_repo.get(raw.organization) if raw.organization else None
+            relevance = combined_score(kw_score, emb_score, prior)
 
             if relevance < settings.relevance_threshold:
                 continue
@@ -121,11 +130,13 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 from src.api.routes.bids import router as bids_router  # noqa: E402
 from src.api.routes.dashboard import router as dashboard_router  # noqa: E402
 from src.api.routes.alert_rules import router as alert_rules_router  # noqa: E402
+from src.api.routes.feedback import router as feedback_router  # noqa: E402
 from src.api.routes.ui import router as ui_router  # noqa: E402
 
 app.include_router(bids_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(alert_rules_router, prefix="/api/v1")
+app.include_router(feedback_router, prefix="/api/v1")
 app.include_router(ui_router)
 
 

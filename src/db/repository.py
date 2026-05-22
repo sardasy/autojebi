@@ -5,7 +5,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select, exists, func, cast, Date, delete
 from src.config import settings
-from src.db.models import AlertRule, Bid, BidAward, NotificationLog
+from src.db.models import AlertRule, Bid, BidAward, BidFeedback, NotificationLog, OrgPrior
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,101 @@ class BidRepository:
         log = NotificationLog(bid_id=bid_id, channel=channel, status=status, rule_id=rule_id)
         self.session.add(log)
         await self.session.commit()
+
+
+class FeedbackRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def upsert(self, bid_id, label: str, note: str | None, reviewer: str | None) -> BidFeedback:
+        """(bid_id, reviewer) 유니크. 같은 리뷰어 재라벨링 시 기존 row 갱신.
+        같은 트랜잭션에서 Bid.user_label / user_label_at 도 denormalize."""
+        existing_result = await self.session.execute(
+            select(BidFeedback).where(
+                BidFeedback.bid_id == bid_id, BidFeedback.reviewer == reviewer
+            )
+        )
+        feedback = existing_result.scalar_one_or_none()
+        if feedback:
+            feedback.label = label
+            feedback.note = note
+        else:
+            feedback = BidFeedback(bid_id=bid_id, label=label, note=note, reviewer=reviewer)
+            self.session.add(feedback)
+
+        # 최신 라벨을 Bid 에 denormalize (조회 성능)
+        bid_result = await self.session.execute(select(Bid).where(Bid.id == bid_id))
+        bid = bid_result.scalar_one_or_none()
+        if bid:
+            bid.user_label = label
+            bid.user_label_at = datetime.utcnow()
+
+        await self.session.commit()
+        await self.session.refresh(feedback)
+        return feedback
+
+    async def list_for_bid(self, bid_id) -> list[BidFeedback]:
+        result = await self.session.execute(
+            select(BidFeedback)
+            .where(BidFeedback.bid_id == bid_id)
+            .order_by(BidFeedback.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def stats(self, days: int = 30) -> dict:
+        since = datetime.utcnow() - timedelta(days=days)
+        counts = dict(
+            (await self.session.execute(
+                select(BidFeedback.label, func.count())
+                .where(BidFeedback.created_at >= since)
+                .group_by(BidFeedback.label)
+            )).all()
+        )
+        recent_rows = (await self.session.execute(
+            select(BidFeedback, Bid)
+            .join(Bid, Bid.id == BidFeedback.bid_id)
+            .where(BidFeedback.created_at >= since)
+            .order_by(BidFeedback.created_at.desc())
+            .limit(20)
+        )).all()
+        recent = [
+            {
+                "bid_id": str(fb.bid_id),
+                "title": bid.title,
+                "label": fb.label,
+                "reviewer": fb.reviewer,
+                "created_at": fb.created_at.isoformat(),
+            }
+            for fb, bid in recent_rows
+        ]
+        return {"days": days, "counts": counts, "recent": recent}
+
+
+class OrgPriorRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get(self, organization: str) -> OrgPrior | None:
+        result = await self.session.execute(
+            select(OrgPrior).where(OrgPrior.organization == organization)
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert(self, organization: str, n_samples: int, p_relevant: float) -> OrgPrior:
+        prior = await self.get(organization)
+        if prior:
+            prior.n_samples = n_samples
+            prior.p_relevant = p_relevant
+        else:
+            prior = OrgPrior(organization=organization, n_samples=n_samples, p_relevant=p_relevant)
+            self.session.add(prior)
+        await self.session.commit()
+        await self.session.refresh(prior)
+        return prior
+
+    async def all(self) -> list[OrgPrior]:
+        result = await self.session.execute(select(OrgPrior))
+        return list(result.scalars().all())
 
 
 class AlertRuleRepository:
