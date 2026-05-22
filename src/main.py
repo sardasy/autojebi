@@ -131,12 +131,14 @@ from src.api.routes.bids import router as bids_router  # noqa: E402
 from src.api.routes.dashboard import router as dashboard_router  # noqa: E402
 from src.api.routes.alert_rules import router as alert_rules_router  # noqa: E402
 from src.api.routes.feedback import router as feedback_router  # noqa: E402
+from src.api.routes.awards import router as awards_router  # noqa: E402
 from src.api.routes.ui import router as ui_router  # noqa: E402
 
 app.include_router(bids_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(alert_rules_router, prefix="/api/v1")
 app.include_router(feedback_router, prefix="/api/v1")
+app.include_router(awards_router, prefix="/api/v1")
 app.include_router(ui_router)
 
 

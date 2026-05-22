@@ -3,6 +3,29 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class AwardResponse(BaseModel):
+    id: uuid.UUID
+    bid_id: uuid.UUID | None
+    source: str
+    source_award_id: str
+    source_bid_id: str | None
+    winner_name: str | None
+    winner_biz_no: str | None
+    award_price: int | None
+    award_date: str | None  # ISO date
+    participant_count: int | None
+    award_ratio: float | None
+    bid_title: str | None = None
+    bid_organization: str | None = None
+    bid_estimated_price: int | None = None
+    created_at: datetime
+
+
+class RatioBucket(BaseModel):
+    bucket: float
+    count: int
+
+
 class AlertRuleBase(BaseModel):
     name: str
     enabled: bool = True

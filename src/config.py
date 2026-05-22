@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     collect_schedule_minute: int = Field(default=0)
     log_level: str = Field(default="INFO")
 
+    # Phase 2 toggles
+    award_collection_enabled: bool = Field(default=False)
+
     @property
     def recipient_list(self) -> list[str]:
         return [r.strip() for r in self.notification_recipients.split(",") if r.strip()]

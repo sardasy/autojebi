@@ -96,6 +96,54 @@ class BidRepository:
         await self.session.commit()
 
 
+class BidAwardRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def list_awards(
+        self,
+        *,
+        org: str | None = None,
+        since: datetime | None = None,
+        min_ratio: float | None = None,
+        max_ratio: float | None = None,
+        limit: int = 200,
+    ) -> list[tuple[BidAward, "Bid | None"]]:
+        stmt = (
+            select(BidAward, Bid)
+            .outerjoin(Bid, Bid.id == BidAward.bid_id)
+            .order_by(BidAward.award_date.desc().nulls_last(), BidAward.created_at.desc())
+            .limit(limit)
+        )
+        if org:
+            stmt = stmt.where(Bid.organization.ilike(f"%{org}%"))
+        if since is not None:
+            stmt = stmt.where(BidAward.award_date >= since.date())
+        if min_ratio is not None:
+            stmt = stmt.where(BidAward.award_ratio >= min_ratio)
+        if max_ratio is not None:
+            stmt = stmt.where(BidAward.award_ratio <= max_ratio)
+        rows = (await self.session.execute(stmt)).all()
+        return [(a, b) for a, b in rows]
+
+    async def get_for_bid(self, bid_id) -> BidAward | None:
+        result = await self.session.execute(
+            select(BidAward).where(BidAward.bid_id == bid_id).order_by(BidAward.award_date.desc()).limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def ratio_histogram(self, bucket: float = 0.05) -> list[dict]:
+        """낙찰률 히스토그램. bucket 단위로 그룹."""
+        bucket_expr = (func.floor(BidAward.award_ratio / bucket) * bucket).label("b")
+        rows = (await self.session.execute(
+            select(bucket_expr, func.count())
+            .where(BidAward.award_ratio.is_not(None))
+            .group_by(bucket_expr)
+            .order_by(bucket_expr)
+        )).all()
+        return [{"bucket": float(b), "count": int(c)} for b, c in rows]
+
+
 class FeedbackRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
