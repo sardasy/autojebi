@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -9,6 +10,11 @@ from src.db.models import Base
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# DATABASE_URL 환경변수가 있으면 우선 사용 (컨테이너/CI 환경 대응)
+db_url = os.environ.get("DATABASE_URL")
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
 
@@ -39,6 +45,7 @@ async def run_async_migrations() -> None:
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        await connection.commit()
     await connectable.dispose()
 
 

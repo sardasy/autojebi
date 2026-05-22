@@ -1,16 +1,33 @@
+import asyncio
+import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select, exists
 from src.config import settings
-from src.db.models import Base, Bid, NotificationLog
+from src.db.models import Bid, NotificationLog
+
+logger = logging.getLogger(__name__)
 
 engine = create_async_engine(settings.database_url, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Alembic 마이그레이션을 head 까지 적용 (idempotent).
+
+    create_all 폐기. lifespan과 스크립트에서 동일하게 호출.
+    """
+    from alembic.config import Config
+    from alembic import command
+
+    project_root = Path(__file__).resolve().parents[2]
+    cfg_path = project_root / "alembic.ini"
+    cfg = Config(str(cfg_path))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+    logger.info("Alembic 마이그레이션 적용 완료 (head)")
 
 
 async def get_session():
@@ -43,6 +60,34 @@ class BidRepository:
             .order_by(Bid.relevance_score.desc())
             .limit(limit)
         )
+        return list(result.scalars().all())
+
+    async def list_bids(
+        self,
+        *,
+        organization: str | None = None,
+        category: str | None = None,
+        label: str | None = None,
+        days: int = 7,
+        limit: int = 200,
+    ) -> list[Bid]:
+        """필터링 가능한 공고 조회. label 'none' 은 미라벨 필터."""
+        since = datetime.utcnow() - timedelta(days=max(days, 1))
+        stmt = (
+            select(Bid)
+            .where(Bid.created_at >= since)
+            .order_by(Bid.relevance_score.desc().nulls_last(), Bid.created_at.desc())
+            .limit(limit)
+        )
+        if organization:
+            stmt = stmt.where(Bid.organization.ilike(f"%{organization}%"))
+        if category:
+            stmt = stmt.where(Bid.category == category)
+        if label == "none":
+            stmt = stmt.where(Bid.user_label.is_(None))
+        elif label:
+            stmt = stmt.where(Bid.user_label == label)
+        result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
     async def log_notification(self, bid_id, channel: str, status: str = "sent"):
