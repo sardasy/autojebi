@@ -1,0 +1,44 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      # 컨테이너 내부에서는 서비스명(db)으로 접근
+      DATABASE_URL: postgresql+psycopg://bidding:bidding_pass@db:5432/bidding_db
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: bidding_db
+      POSTGRES_USER: bidding
+      POSTGRES_PASSWORD: bidding_pass
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bidding -d bidding_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pg_data:
