@@ -3,9 +3,9 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy import select, exists, func, cast, Date
+from sqlalchemy import select, exists, func, cast, Date, delete
 from src.config import settings
-from src.db.models import Bid, BidAward, NotificationLog
+from src.db.models import AlertRule, Bid, BidAward, NotificationLog
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +90,51 @@ class BidRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def log_notification(self, bid_id, channel: str, status: str = "sent"):
-        log = NotificationLog(bid_id=bid_id, channel=channel, status=status)
+    async def log_notification(self, bid_id, channel: str, status: str = "sent", rule_id=None):
+        log = NotificationLog(bid_id=bid_id, channel=channel, status=status, rule_id=rule_id)
         self.session.add(log)
         await self.session.commit()
+
+
+class AlertRuleRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def list_all(self) -> list[AlertRule]:
+        result = await self.session.execute(select(AlertRule).order_by(AlertRule.created_at))
+        return list(result.scalars().all())
+
+    async def list_enabled(self) -> list[AlertRule]:
+        result = await self.session.execute(
+            select(AlertRule).where(AlertRule.enabled.is_(True)).order_by(AlertRule.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def get(self, rule_id) -> AlertRule | None:
+        result = await self.session.execute(select(AlertRule).where(AlertRule.id == rule_id))
+        return result.scalar_one_or_none()
+
+    async def create(self, data: dict) -> AlertRule:
+        rule = AlertRule(**data)
+        self.session.add(rule)
+        await self.session.commit()
+        await self.session.refresh(rule)
+        return rule
+
+    async def update(self, rule_id, data: dict) -> AlertRule | None:
+        rule = await self.get(rule_id)
+        if not rule:
+            return None
+        for k, v in data.items():
+            setattr(rule, k, v)
+        await self.session.commit()
+        await self.session.refresh(rule)
+        return rule
+
+    async def delete(self, rule_id) -> bool:
+        result = await self.session.execute(delete(AlertRule).where(AlertRule.id == rule_id))
+        await self.session.commit()
+        return (result.rowcount or 0) > 0
 
 
 # 금액 버킷: ~1억 / 1억~10억 / 10억~50억 / 50억~ / 미정

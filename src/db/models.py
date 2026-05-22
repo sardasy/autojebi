@@ -116,6 +116,29 @@ class AlertRule(Base):
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
+    def matches(self, bid: "Bid") -> bool:
+        """순수 Python predicate. 빈 리스트/None 필터는 "전체"로 취급."""
+        if (bid.relevance_score or 0) < (self.min_relevance or 0):
+            return False
+        if self.filter_sources and bid.source not in self.filter_sources:
+            return False
+        if self.filter_categories and bid.category not in self.filter_categories:
+            return False
+        if self.filter_organizations:
+            org = bid.organization or ""
+            if not any(o in org for o in self.filter_organizations):
+                return False
+        if self.filter_keywords:
+            title = bid.title or ""
+            if not any(k in title for k in self.filter_keywords):
+                return False
+        price = bid.estimated_price
+        if self.min_price is not None and (price is None or price < self.min_price):
+            return False
+        if self.max_price is not None and price is not None and price > self.max_price:
+            return False
+        return True
+
 
 class BidFeedback(Base):
     __tablename__ = "bid_feedback"

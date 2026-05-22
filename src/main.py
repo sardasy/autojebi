@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from src.config import settings
-from src.db.repository import init_db, AsyncSessionLocal, BidRepository
+from src.db.repository import init_db, AsyncSessionLocal, BidRepository, AlertRuleRepository
 from src.db.models import Bid
 from src.collector.g2b_api import G2BCollector
 from src.collector.kepco_api import KEPCOCollector
@@ -82,10 +82,23 @@ async def run_daily_collection():
     logger.info(f"관련 공고 저장: {len(saved)}건")
 
     if saved:
-        top = sorted(saved, key=lambda b: b.relevance_score or 0, reverse=True)
-        top = top[:settings.max_daily_notifications]
-        await send_teams_notification(top)
-        await send_email_notification(top)
+        async with AsyncSessionLocal() as session:
+            rules = await AlertRuleRepository(session).list_enabled()
+        for rule in rules:
+            matched = [b for b in saved if rule.matches(b)]
+            matched.sort(key=lambda b: b.relevance_score or 0, reverse=True)
+            matched = matched[: rule.max_per_run]
+            if not matched:
+                continue
+            channels = rule.channels or ["teams", "email"]
+            if "teams" in channels:
+                await send_teams_notification(
+                    matched, webhook=rule.teams_webhook_url, rule_name=rule.name
+                )
+            if "email" in channels:
+                await send_email_notification(
+                    matched, recipients=rule.email_recipients, rule_name=rule.name
+                )
 
     logger.info("=== 일일 공고 수집 완료 ===")
 
@@ -107,10 +120,12 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 from src.api.routes.bids import router as bids_router  # noqa: E402
 from src.api.routes.dashboard import router as dashboard_router  # noqa: E402
+from src.api.routes.alert_rules import router as alert_rules_router  # noqa: E402
 from src.api.routes.ui import router as ui_router  # noqa: E402
 
 app.include_router(bids_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(alert_rules_router, prefix="/api/v1")
 app.include_router(ui_router)
 
 

@@ -3,6 +3,50 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class AlertRuleBase(BaseModel):
+    name: str
+    enabled: bool = True
+    filter_organizations: list[str] | None = None
+    filter_categories: list[str] | None = None
+    filter_sources: list[str] | None = None
+    filter_keywords: list[str] | None = None
+    min_price: int | None = None
+    max_price: int | None = None
+    min_relevance: float = 0.6
+    channels: list[str] | None = None
+    teams_webhook_url: str | None = None
+    email_recipients: list[str] | None = None
+    max_per_run: int = 10
+
+
+class AlertRuleCreate(AlertRuleBase):
+    pass
+
+
+class AlertRuleUpdate(BaseModel):
+    name: str | None = None
+    enabled: bool | None = None
+    filter_organizations: list[str] | None = None
+    filter_categories: list[str] | None = None
+    filter_sources: list[str] | None = None
+    filter_keywords: list[str] | None = None
+    min_price: int | None = None
+    max_price: int | None = None
+    min_relevance: float | None = None
+    channels: list[str] | None = None
+    teams_webhook_url: str | None = None
+    email_recipients: list[str] | None = None
+    max_per_run: int | None = None
+
+
+class AlertRuleResponse(AlertRuleBase):
+    id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class OrgCount(BaseModel):
     organization: str
     count: int
