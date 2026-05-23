@@ -1,9 +1,11 @@
 import asyncio
 import logging
 from datetime import datetime
+from urllib.parse import urlencode
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from src.collector.base import BaseCollector, RawBid
+from src.common.timez import kst_to_utc
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,9 @@ class G2BCollector(BaseCollector):
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _fetch_page(self, client: httpx.AsyncClient, endpoint: str, params: dict) -> dict:
         service_key = params.pop("ServiceKey", self.api_key)
-        query = "&".join(f"{k}={v}" for k, v in params.items())
+        # data.go.kr Encoding 인증키는 이미 percent-encoded — 더블 인코딩 회피 위해 raw 삽입.
+        # 나머지 params 는 한글/특수문자 안전을 위해 urlencode.
+        query = urlencode(params, doseq=True)
         url = f"{G2B_BASE_URL}/{endpoint}?ServiceKey={service_key}&{query}"
         response = await client.get(url, timeout=30)
         if not response.is_success:
@@ -46,8 +50,8 @@ class G2BCollector(BaseCollector):
                     bids = await self._collect_category(client, endpoint, category, date_from, date_to, date_fmt)
                     results.extend(bids)
                     logger.info(f"G2B {category}: {len(bids)}건 수집")
-                except Exception as e:
-                    logger.error(f"G2B {category} 수집 실패: {e}")
+                except Exception:
+                    logger.exception("G2B 수집 실패 (category=%s)", category)
 
         return results
 
@@ -57,13 +61,14 @@ class G2BCollector(BaseCollector):
         bids = []
         page = 1
 
+        page_size = settings.g2b_page_size
         while True:
             params = {
                 "inqryDiv": "1",
                 "inqryBgnDt": date_from.strftime(date_fmt),
                 "inqryEndDt": date_to.strftime(date_fmt),
                 "pageNo": page,
-                "numOfRows": 100,
+                "numOfRows": page_size,
                 "type": "json",
             }
             data = await self._fetch_page(client, endpoint, params)
@@ -76,10 +81,10 @@ class G2BCollector(BaseCollector):
                 if bid:
                     bids.append(bid)
 
-            if len(items) < 100:
+            if len(items) < page_size:
                 break
             page += 1
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(settings.g2b_rate_limit_sleep)
 
         return bids
 
@@ -98,10 +103,16 @@ class G2BCollector(BaseCollector):
             price = int(str(price_str).replace(",", "").replace("원", "").strip() or "0")
 
             deadline_str = item.get("bidClseDt", "")
-            deadline = datetime.strptime(deadline_str, "%Y/%m/%d %H:%M") if deadline_str else None
+            deadline = (
+                kst_to_utc(datetime.strptime(deadline_str, "%Y/%m/%d %H:%M"))
+                if deadline_str else None
+            )
 
             announce_str = item.get("bidNtceDt", "")
-            announce = datetime.strptime(announce_str, "%Y/%m/%d %H:%M") if announce_str else None
+            announce = (
+                kst_to_utc(datetime.strptime(announce_str, "%Y/%m/%d %H:%M"))
+                if announce_str else None
+            )
 
             return RawBid(
                 source="g2b",

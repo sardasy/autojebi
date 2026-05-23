@@ -1,6 +1,7 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from src.common.timez import utcnow
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.repository import get_session, BidAwardRepository
 from src.api.schemas import AwardResponse, RatioBucket
@@ -38,7 +39,7 @@ async def list_awards(
     session: AsyncSession = Depends(get_session),
 ):
     repo = BidAwardRepository(session)
-    since = datetime.utcnow() - timedelta(days=days)
+    since = utcnow() - timedelta(days=days)
     rows = await repo.list_awards(
         org=org, since=since, min_ratio=min_ratio, max_ratio=max_ratio, limit=limit
     )

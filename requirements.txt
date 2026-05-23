@@ -23,3 +23,13 @@ ruff==0.7.1
 mypy==1.13.0
 sentry-sdk[fastapi]==2.18.0
 tenacity==9.0.0
+
+# Ontology / RDF (Phase 1)
+rdflib==7.1.1
+SPARQLWrapper==2.0.0
+pyshacl==0.26.0
+pdfplumber==0.11.4
+pandas==2.2.3
+openpyxl==3.1.5
+requests==2.32.3
+pyparsing==3.1.4

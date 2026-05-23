@@ -1,10 +1,11 @@
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from src.common.timez import utcnow
 from src.config import settings
 from src.db.repository import (
     init_db,
@@ -38,7 +39,7 @@ llm_gateway = LLMGateway()
 
 async def run_daily_collection():
     logger.info("=== 일일 공고 수집 시작 ===")
-    date_to = datetime.utcnow()
+    date_to = utcnow()
     date_from = date_to - timedelta(hours=24)
 
     collectors = [G2BCollector(), KEPCOCollector(), KPXScraper()]
@@ -47,8 +48,8 @@ async def run_daily_collection():
         try:
             bids = await collector.collect(date_from, date_to)
             all_raw.extend(bids)
-        except Exception as e:
-            logger.error(f"수집기 오류: {e}")
+        except Exception:
+            logger.exception("수집기 오류 (collector=%s)", collector.__class__.__name__)
 
     logger.info(f"원시 수집: {len(all_raw)}건")
 
@@ -132,6 +133,8 @@ from src.api.routes.dashboard import router as dashboard_router  # noqa: E402
 from src.api.routes.alert_rules import router as alert_rules_router  # noqa: E402
 from src.api.routes.feedback import router as feedback_router  # noqa: E402
 from src.api.routes.awards import router as awards_router  # noqa: E402
+from src.api.routes.products import router as products_router  # noqa: E402
+from src.api.routes.ontology import router as ontology_router  # noqa: E402
 from src.api.routes.ui import router as ui_router  # noqa: E402
 
 app.include_router(bids_router, prefix="/api/v1")
@@ -139,6 +142,8 @@ app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(alert_rules_router, prefix="/api/v1")
 app.include_router(feedback_router, prefix="/api/v1")
 app.include_router(awards_router, prefix="/api/v1")
+app.include_router(products_router, prefix="/api/v1")
+app.include_router(ontology_router, prefix="/api/v1")
 app.include_router(ui_router)
 
 

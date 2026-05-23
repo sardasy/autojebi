@@ -7,6 +7,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from src.common.timez import utcnow
+
 
 class Base(DeclarativeBase):
     pass
@@ -34,9 +36,9 @@ class Bid(Base):
     award_status: Mapped[str] = mapped_column(String(30), default="open")
     user_label: Mapped[str | None] = mapped_column(String(20))
     user_label_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
     notifications: Mapped[list["NotificationLog"]] = relationship(back_populates="bid")
@@ -48,6 +50,7 @@ class Bid(Base):
         Index("ix_bids_category", "category"),
         Index("ix_bids_source_announcement_date", "source", "announcement_date"),
         Index("ix_bids_relevance_score", "relevance_score"),
+        Index("ix_bids_deadline", "deadline"),
     )
 
 
@@ -55,10 +58,14 @@ class NotificationLog(Base):
     __tablename__ = "notification_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    bid_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("bids.id"))
-    rule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("alert_rules.id"))
+    bid_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bids.id", ondelete="CASCADE")
+    )
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("alert_rules.id", ondelete="SET NULL")
+    )
     channel: Mapped[str] = mapped_column(String(50))
-    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     status: Mapped[str] = mapped_column(String(50), default="sent")
 
     bid: Mapped["Bid"] = relationship(back_populates="notifications")
@@ -81,9 +88,9 @@ class BidAward(Base):
     participant_count: Mapped[int | None] = mapped_column(Integer)
     award_ratio: Mapped[float | None] = mapped_column(Float)
     raw_json: Mapped[dict | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
     bid: Mapped["Bid | None"] = relationship(back_populates="awards")
@@ -111,9 +118,13 @@ class AlertRule(Base):
     teams_webhook_url: Mapped[str | None] = mapped_column(String(500))
     email_recipients: Mapped[list | None] = mapped_column(JSONB)
     max_per_run: Mapped[int] = mapped_column(Integer, default=10)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_alert_rules_enabled", "enabled"),
     )
 
     def matches(self, bid: "Bid") -> bool:
@@ -150,7 +161,7 @@ class BidFeedback(Base):
     label: Mapped[str] = mapped_column(String(20))
     note: Mapped[str | None] = mapped_column(Text)
     reviewer: Mapped[str | None] = mapped_column(String(120))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     bid: Mapped["Bid"] = relationship(back_populates="feedbacks")
 
@@ -166,5 +177,5 @@ class OrgPrior(Base):
     n_samples: Mapped[int] = mapped_column(Integer, default=0)
     p_relevant: Mapped[float] = mapped_column(Float, default=0.5)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

@@ -1,0 +1,158 @@
+@prefix cat:     <https://autojebi.local/ontology/catalog#> .
+@prefix exBrand: <https://autojebi.local/data/brand/> .
+@prefix exCat:   <https://autojebi.local/data/category/> .
+@prefix exSku:   <https://autojebi.local/data/sku/> .
+@prefix exLic:   <https://autojebi.local/data/license/> .
+@prefix exCert:  <https://autojebi.local/data/certification/> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+@prefix schema:  <https://schema.org/> .
+@prefix qudt:    <http://qudt.org/schema/qudt/> .
+@prefix unit:    <http://qudt.org/vocab/unit/> .
+
+# ============================================================================
+# T-Box — autojebi 카탈로그 온톨로지 v1
+# Phase 1: 공급-쪽 (우리 SKU/라이선스/자격) 모델링만. 수요(공고) 매칭은 Phase 3.
+# ============================================================================
+
+<https://autojebi.local/ontology/catalog>
+    a owl:Ontology ;
+    rdfs:label "autojebi 제품·자격 카탈로그 온톨로지"@ko ;
+    rdfs:comment "우리 SKU·브랜드·라이선스·인증을 RDF 로 모델링." ;
+    owl:versionInfo "0.1.0-phase1" .
+
+# ----------------------------------------------------------------------------
+# Classes
+# ----------------------------------------------------------------------------
+
+cat:SKU a owl:Class ;
+    rdfs:label "SKU"@en, "제품 SKU"@ko ;
+    rdfs:subClassOf schema:Product ;
+    rdfs:comment "판매·납품 가능한 단위 제품. 브랜드/카테고리/모델넘버를 가진다." .
+
+cat:Brand a owl:Class ;
+    rdfs:label "Brand"@en, "브랜드"@ko ;
+    rdfs:subClassOf schema:Brand .
+
+cat:Category a owl:Class ;
+    rdfs:label "Category"@en, "카테고리"@ko ;
+    rdfs:subClassOf skos:Concept ;
+    rdfs:comment "제품 분류 (IGBT 모듈, MOSFET, 변압기, 시뮬레이션 SW 등). skos:broader 로 계층." .
+
+cat:License a owl:Class ;
+    rdfs:label "License"@en, "라이선스"@ko ;
+    rdfs:comment "PLECS·MATLAB 등 사내 보유 소프트웨어 라이선스." .
+
+cat:Certification a owl:Class ;
+    rdfs:label "Certification"@en, "인증"@ko ;
+    rdfs:comment "KEPIC·KS·UL 등 SKU 또는 조직이 보유한 적합성 증서." .
+
+# ----------------------------------------------------------------------------
+# Object Properties
+# ----------------------------------------------------------------------------
+
+cat:hasBrand a owl:ObjectProperty ;
+    rdfs:label "has brand"@en ;
+    rdfs:domain cat:SKU ; rdfs:range cat:Brand ;
+    rdfs:subPropertyOf schema:brand .
+
+cat:belongsToCategory a owl:ObjectProperty ;
+    rdfs:label "belongs to category"@en ;
+    rdfs:domain cat:SKU ; rdfs:range cat:Category .
+
+cat:hasCertification a owl:ObjectProperty ;
+    rdfs:label "has certification"@en ;
+    rdfs:domain cat:SKU ; rdfs:range cat:Certification .
+
+cat:equivalentTo a owl:ObjectProperty, owl:SymmetricProperty ;
+    rdfs:label "equivalent to"@en ;
+    rdfs:comment "수동 큐레이션: 사양상 1:1 호환되는 다른 브랜드의 SKU." ;
+    rdfs:domain cat:SKU ; rdfs:range cat:SKU .
+
+cat:competitorOf a owl:ObjectProperty, owl:SymmetricProperty ;
+    rdfs:label "competitor of"@en ;
+    rdfs:comment "동일 카테고리·다른 브랜드의 시장 경쟁 SKU. equivalentTo 보다 약한 관계." ;
+    rdfs:domain cat:SKU ; rdfs:range cat:SKU .
+
+# ----------------------------------------------------------------------------
+# Data Properties — 기본 식별·문서
+# ----------------------------------------------------------------------------
+
+cat:modelNumber a owl:DatatypeProperty ;
+    rdfs:label "model number"@en ;
+    rdfs:domain cat:SKU ; rdfs:range xsd:string .
+
+cat:datasheetURL a owl:DatatypeProperty ;
+    rdfs:label "datasheet URL"@en ;
+    rdfs:domain cat:SKU ; rdfs:range xsd:anyURI .
+
+cat:sourceProvenance a owl:DatatypeProperty ;
+    rdfs:label "source provenance"@en ;
+    rdfs:comment "데이터 출처 표식 (CSV row index 또는 PDF 파일명:페이지)." ;
+    rdfs:range xsd:string .
+
+# ----------------------------------------------------------------------------
+# Data Properties — 전기 사양 (qudt 단위 첨부 권장)
+# ----------------------------------------------------------------------------
+
+cat:voltageRatingV a owl:DatatypeProperty ;
+    rdfs:label "voltage rating (V)"@en ;
+    rdfs:domain cat:SKU ; rdfs:range xsd:decimal ;
+    qudt:hasUnit unit:V .
+
+cat:currentRatingA a owl:DatatypeProperty ;
+    rdfs:label "current rating (A)"@en ;
+    rdfs:domain cat:SKU ; rdfs:range xsd:decimal ;
+    qudt:hasUnit unit:A .
+
+cat:powerRatingW a owl:DatatypeProperty ;
+    rdfs:label "power rating (W)"@en ;
+    rdfs:domain cat:SKU ; rdfs:range xsd:decimal ;
+    qudt:hasUnit unit:W .
+
+cat:switchingFreqHz a owl:DatatypeProperty ;
+    rdfs:label "switching frequency (Hz)"@en ;
+    rdfs:domain cat:SKU ; rdfs:range xsd:decimal ;
+    qudt:hasUnit unit:HZ .
+
+# ----------------------------------------------------------------------------
+# Data Properties — 자격·유효기간
+# ----------------------------------------------------------------------------
+
+cat:certifiedBy a owl:DatatypeProperty ;
+    rdfs:label "certified by"@en ;
+    rdfs:comment "발급 기관 표시 (KEPIC, KS, UL 등)." ;
+    rdfs:domain cat:Certification ; rdfs:range xsd:string .
+
+cat:validUntil a owl:DatatypeProperty ;
+    rdfs:label "valid until"@en ;
+    rdfs:comment "라이선스 또는 인증 유효 만료일." ;
+    rdfs:range xsd:date .
+
+cat:licenseSeats a owl:DatatypeProperty ;
+    rdfs:label "license seats"@en ;
+    rdfs:domain cat:License ; rdfs:range xsd:integer .
+
+# ----------------------------------------------------------------------------
+# Seed brand individuals (확장: ingest 단계에서 추가)
+# ----------------------------------------------------------------------------
+
+exBrand:abb        a cat:Brand ; rdfs:label "ABB"@en .
+exBrand:infineon   a cat:Brand ; rdfs:label "Infineon"@en .
+exBrand:mitsubishi a cat:Brand ; rdfs:label "Mitsubishi Electric"@en .
+exBrand:plexim     a cat:Brand ; rdfs:label "Plexim"@en .
+
+# ----------------------------------------------------------------------------
+# Seed categories (energy_keywords.py 기반 — 추가는 데이터 큐레이션 시)
+# ----------------------------------------------------------------------------
+
+exCat:igbt-module       a cat:Category ; skos:prefLabel "IGBT 모듈"@ko, "IGBT module"@en .
+exCat:sic-mosfet        a cat:Category ; skos:prefLabel "SiC MOSFET"@ko, "SiC MOSFET"@en .
+exCat:transformer       a cat:Category ; skos:prefLabel "변압기"@ko, "Transformer"@en .
+exCat:ess               a cat:Category ; skos:prefLabel "ESS"@ko, "Energy Storage System"@en .
+exCat:inverter          a cat:Category ; skos:prefLabel "인버터"@ko, "Inverter"@en .
+exCat:simulation-sw     a cat:Category ; skos:prefLabel "시뮬레이션 소프트웨어"@ko, "Simulation Software"@en .
+exCat:protection-relay  a cat:Category ; skos:prefLabel "보호계전기"@ko, "Protection Relay"@en .

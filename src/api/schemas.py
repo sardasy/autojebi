@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl, model_validator
 
 
 class AwardResponse(BaseModel):
@@ -43,7 +43,14 @@ class AlertRuleBase(BaseModel):
 
 
 class AlertRuleCreate(AlertRuleBase):
-    pass
+    @model_validator(mode="after")
+    def _validate_channel_targets(self) -> "AlertRuleCreate":
+        ch = set(self.channels or [])
+        if "teams" in ch and not (self.teams_webhook_url or "").strip():
+            raise ValueError("channels에 'teams' 포함 시 teams_webhook_url 필수")
+        if "email" in ch and not (self.email_recipients or []):
+            raise ValueError("channels에 'email' 포함 시 email_recipients 비어있을 수 없음")
+        return self
 
 
 class AlertRuleUpdate(BaseModel):

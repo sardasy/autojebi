@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select, exists, func, cast, Date, delete
+from src.common.timez import utcnow
 from src.config import settings
 from src.db.models import AlertRule, Bid, BidAward, BidFeedback, NotificationLog, OrgPrior
 
@@ -52,7 +53,7 @@ class BidRepository:
         return bid
 
     async def get_today_top_bids(self, limit: int = 10) -> list[Bid]:
-        since = datetime.utcnow() - timedelta(hours=24)
+        since = utcnow() - timedelta(hours=24)
         result = await self.session.execute(
             select(Bid)
             .where(Bid.created_at >= since)
@@ -72,7 +73,7 @@ class BidRepository:
         limit: int = 200,
     ) -> list[Bid]:
         """필터링 가능한 공고 조회. label 'none' 은 미라벨 필터."""
-        since = datetime.utcnow() - timedelta(days=max(days, 1))
+        since = utcnow() - timedelta(days=max(days, 1))
         stmt = (
             select(Bid)
             .where(Bid.created_at >= since)
@@ -169,7 +170,7 @@ class FeedbackRepository:
         bid = bid_result.scalar_one_or_none()
         if bid:
             bid.user_label = label
-            bid.user_label_at = datetime.utcnow()
+            bid.user_label_at = utcnow()
 
         await self.session.commit()
         await self.session.refresh(feedback)
@@ -184,7 +185,7 @@ class FeedbackRepository:
         return list(result.scalars().all())
 
     async def stats(self, days: int = 30) -> dict:
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
         counts = dict(
             (await self.session.execute(
                 select(BidFeedback.label, func.count())
@@ -294,7 +295,7 @@ class DashboardRepository:
         self.session = session
 
     async def stats(self, days: int = 30) -> dict:
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
         base = select(Bid).where(Bid.created_at >= since).subquery()
 
         total = (await self.session.execute(
@@ -367,7 +368,7 @@ class DashboardRepository:
         }
 
     async def timeseries(self, days: int = 30, metric: str = "count") -> list[dict]:
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
         day = cast(Bid.created_at, Date).label("day")
 
         if metric == "avg_relevance":
@@ -389,7 +390,7 @@ class DashboardRepository:
         ]
 
     async def award_trend(self, org: str | None = None, months: int = 12) -> list[dict]:
-        since = datetime.utcnow() - timedelta(days=months * 31)
+        since = utcnow() - timedelta(days=months * 31)
         month = func.date_trunc("month", BidAward.award_date).label("month")
         stmt = (
             select(month, func.avg(BidAward.award_ratio).label("avg_ratio"), func.count().label("n"))

@@ -1,8 +1,10 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
+from src.common.timez import utcnow
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from src.api.deps import require_api_key
 from src.db.repository import get_session, AlertRuleRepository
 from src.db.models import Bid
 from src.api.schemas import (
@@ -21,7 +23,12 @@ async def list_rules(session: AsyncSession = Depends(get_session)):
     return await repo.list_all()
 
 
-@router.post("", response_model=AlertRuleResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=AlertRuleResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_api_key)],
+)
 async def create_rule(payload: AlertRuleCreate, session: AsyncSession = Depends(get_session)):
     repo = AlertRuleRepository(session)
     return await repo.create(payload.model_dump())
@@ -36,7 +43,11 @@ async def get_rule(rule_id: uuid.UUID, session: AsyncSession = Depends(get_sessi
     return rule
 
 
-@router.put("/{rule_id}", response_model=AlertRuleResponse)
+@router.put(
+    "/{rule_id}",
+    response_model=AlertRuleResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def update_rule(
     rule_id: uuid.UUID,
     payload: AlertRuleUpdate,
@@ -50,7 +61,11 @@ async def update_rule(
     return rule
 
 
-@router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_api_key)],
+)
 async def delete_rule(rule_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
     repo = AlertRuleRepository(session)
     if not await repo.delete(rule_id):
@@ -69,7 +84,7 @@ async def test_rule(
     if not rule:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "rule not found")
 
-    since = datetime.utcnow() - timedelta(hours=hours)
+    since = utcnow() - timedelta(hours=hours)
     result = await session.execute(
         select(Bid).where(Bid.created_at >= since).order_by(Bid.relevance_score.desc())
     )

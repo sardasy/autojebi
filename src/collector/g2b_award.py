@@ -7,6 +7,7 @@ endpoint 명/필드명을 확인해야 한다 (settings.award_collection_enabled
 import asyncio
 import logging
 from datetime import date, datetime
+from urllib.parse import urlencode
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from src.collector.base import RawAward
@@ -78,7 +79,8 @@ class G2BAwardCollector:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _fetch_page(self, client: httpx.AsyncClient, endpoint: str, params: dict) -> dict:
         service_key = params.pop("ServiceKey", self.api_key)
-        query = "&".join(f"{k}={v}" for k, v in params.items())
+        # Encoding 인증키는 raw 삽입 (더블 인코딩 회피), 나머지는 urlencode.
+        query = urlencode(params, doseq=True)
         url = f"{G2B_AWARD_BASE_URL}/{endpoint}?ServiceKey={service_key}&{query}"
         response = await client.get(url, timeout=30)
         if not response.is_success:
@@ -111,13 +113,14 @@ class G2BAwardCollector:
     async def _collect_category(self, client, endpoint, date_from, date_to, date_fmt) -> list[RawAward]:
         awards: list[RawAward] = []
         page = 1
+        page_size = settings.g2b_page_size
         while True:
             params = {
                 "inqryDiv": "1",
                 "inqryBgnDt": date_from.strftime(date_fmt),
                 "inqryEndDt": date_to.strftime(date_fmt),
                 "pageNo": page,
-                "numOfRows": 100,
+                "numOfRows": page_size,
                 "type": "json",
             }
             data = await self._fetch_page(client, endpoint, params)
@@ -130,8 +133,8 @@ class G2BAwardCollector:
                 a = parse_award_item(item)
                 if a:
                     awards.append(a)
-            if len(items) < 100:
+            if len(items) < page_size:
                 break
             page += 1
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(settings.g2b_rate_limit_sleep)
         return awards

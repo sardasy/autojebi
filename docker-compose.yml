@@ -6,12 +6,15 @@ services:
       # 컨테이너 내부에서는 서비스명(db)으로 접근
       DATABASE_URL: postgresql+psycopg://bidding:bidding_pass@db:5432/bidding_db
       REDIS_URL: redis://redis:6379/0
+      FUSEKI_URL: http://fuseki:3030/catalog
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_started
+      fuseki:
         condition: service_started
     volumes:
       - ./src:/app/src
@@ -40,5 +43,17 @@ services:
     ports:
       - "6379:6379"
 
+  fuseki:
+    image: stain/jena-fuseki:5.0.0
+    environment:
+      ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD:-changeme}
+      JVM_ARGS: "-Xmx1g"
+      FUSEKI_DATASET_1: catalog
+    ports:
+      - "3030:3030"
+    volumes:
+      - fuseki_data:/fuseki
+
 volumes:
   pg_data:
+  fuseki_data:
