@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, date
+from decimal import Decimal
 from sqlalchemy import (
     String, Text, BigInteger, Float, DateTime, Date, ForeignKey, JSON,
-    Boolean, Integer, Index, UniqueConstraint,
+    Boolean, Integer, Index, UniqueConstraint, Numeric,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -23,7 +24,8 @@ class Bid(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     organization: Mapped[str | None] = mapped_column(String(200))
     category: Mapped[str | None] = mapped_column(String(100))
-    estimated_price: Mapped[int | None] = mapped_column(BigInteger)
+    # 사업 규모 명목값. BigInteger → Numeric(18,2) 로 변경 (migration 0005, fractional 화폐 단위 대응)
+    estimated_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     announcement_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     location: Mapped[str | None] = mapped_column(String(200))
@@ -41,6 +43,21 @@ class Bid(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
+    # --- PR 2: 룰엔진 입력용 승격 컬럼 (모두 nullable, 0005 migration) ---
+    base_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    nakchal_lower_rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))
+    tender_type: Mapped[str | None] = mapped_column(String(32))
+    evaluation_method: Mapped[str | None] = mapped_column(String(32))
+    product_classification_code: Mapped[str | None] = mapped_column(String(16))
+    requires_direct_manufacturing: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    accepts_distributor_loa: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    eligibility_weights: Mapped[dict | None] = mapped_column(JSONB)
+
+    # --- PR 3: 첨부 파싱 + dual extraction validation (0006 migration) ---
+    attachment_text: Mapped[str | None] = mapped_column(Text)
+    extraction_conflicts: Mapped[dict | None] = mapped_column(JSONB)
+    needs_human_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     notifications: Mapped[list["NotificationLog"]] = relationship(back_populates="bid")
     awards: Mapped[list["BidAward"]] = relationship(back_populates="bid")
     feedbacks: Mapped[list["BidFeedback"]] = relationship(back_populates="bid", cascade="all, delete-orphan")
@@ -51,6 +68,11 @@ class Bid(Base):
         Index("ix_bids_source_announcement_date", "source", "announcement_date"),
         Index("ix_bids_relevance_score", "relevance_score"),
         Index("ix_bids_deadline", "deadline"),
+        Index("ix_bids_tender_type", "tender_type"),
+        Index("ix_bids_evaluation_method", "evaluation_method"),
+        Index("ix_bids_product_classification_code", "product_classification_code"),
+        Index("ix_bids_base_price", "base_price"),
+        Index("ix_bids_needs_human_review", "needs_human_review"),
     )
 
 
