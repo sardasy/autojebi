@@ -33,6 +33,23 @@ class Settings(BaseSettings):
     collect_schedule_minute: int = Field(default=0)
     log_level: str = Field(default="INFO")
 
+    # Phase 2 toggles
+    award_collection_enabled: bool = Field(default=False)
+
+    # Admin/mutation API guard. 빈 값이면 mutation 라우트 503.
+    admin_api_key: str = Field(default="")
+
+    # Collector tuning (operationally adjustable; defaults reflect current behavior)
+    g2b_page_size: int = Field(default=100)
+    g2b_rate_limit_sleep: float = Field(default=0.5)
+    embedding_text_limit: int = Field(default=2000)
+    embedding_reference_keyword_count: int = Field(default=30)
+
+    # Ontology / Fuseki (Phase 1 카탈로그)
+    fuseki_url: str = Field(default="http://localhost:3030/catalog")
+    fuseki_admin_password: str = Field(default="changeme")
+    fuseki_named_graph: str = Field(default="https://autojebi.local/data/catalog")
+
     @property
     def recipient_list(self) -> list[str]:
         return [r.strip() for r in self.notification_recipients.split(",") if r.strip()]

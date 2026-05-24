@@ -11,9 +11,10 @@ if sys.platform == "win32":
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.collector.base import RawBid  # noqa: E402
-from src.db.repository import init_db, AsyncSessionLocal, BidRepository  # noqa: E402
+from src.db.repository import init_db, AsyncSessionLocal, BidRepository, OrgPriorRepository  # noqa: E402
 from src.filter.keyword_matcher import KeywordMatcher  # noqa: E402
 from src.filter.embedding_scorer import EmbeddingScorer  # noqa: E402
+from src.filter.relevance import combined_score  # noqa: E402
 from src.llm.gateway import LLMGateway  # noqa: E402
 from src.db.models import Bid  # noqa: E402
 from src.config import settings  # noqa: E402
@@ -106,8 +107,10 @@ async def main():
             emb_score = await embedding_scorer.score(f"{raw.title} {raw.raw_content[:500]}")
             print(f"  임베딩 점수: {emb_score:.3f}")
 
-            relevance = kw_score * 0.6 + emb_score * 0.4
-            print(f"  최종 관련도: {relevance:.3f} (임계값: {settings.relevance_threshold})")
+            prior = await OrgPriorRepository(session).get(raw.organization) if raw.organization else None
+            relevance = combined_score(kw_score, emb_score, prior)
+            prior_note = f"  prior: n={prior.n_samples} p={prior.p_relevant:.3f}" if prior else ""
+            print(f"  최종 관련도: {relevance:.3f} (임계값: {settings.relevance_threshold}){prior_note}")
 
             if relevance < settings.relevance_threshold:
                 print("  → 관련도 미달, 필터링됨 ✓")

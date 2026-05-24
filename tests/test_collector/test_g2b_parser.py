@@ -40,3 +40,24 @@ def test_extract_items_single_dict():
 def test_extract_items_empty():
     collector = G2BCollector()
     assert collector._extract_items({}) == []
+
+
+def test_parse_item_dates_are_utc_aware():
+    """G2B API serves KST timestamps; parser must emit timezone-aware UTC."""
+    from datetime import timezone
+
+    collector = G2BCollector()
+    item = {
+        "bidNtceNo": "20240002",
+        "bidNtceNm": "테스트",
+        "bidClseDt": "2026/06/30 18:00",
+        "bidNtceDt": "2026/05/22 09:00",
+    }
+    result = collector._parse_item(item, "공사")
+
+    assert result.deadline.tzinfo is not None
+    assert result.deadline.utcoffset() == timezone.utc.utcoffset(None)
+    assert result.deadline.hour == 9  # 18:00 KST → 09:00 UTC
+
+    assert result.announcement_date.tzinfo is not None
+    assert result.announcement_date.hour == 0  # 09:00 KST → 00:00 UTC

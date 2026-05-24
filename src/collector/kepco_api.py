@@ -47,8 +47,8 @@ class KEPCOCollector(BaseCollector):
                         results.append(bid)
 
                 logger.info(f"KEPCO: {len(results)}건 수집")
-            except Exception as e:
-                logger.error(f"KEPCO 수집 실패: {e}")
+            except Exception:
+                logger.exception("KEPCO 수집 실패")
 
         return results
 

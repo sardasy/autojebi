@@ -48,8 +48,8 @@ class KPXScraper(BaseCollector):
                         results.append(bid)
 
             logger.info(f"KPX: {len(results)}건 수집")
-        except Exception as e:
-            logger.error(f"KPX 스크래핑 실패: {e}")
+        except Exception:
+            logger.exception("KPX 스크래핑 실패")
 
         return results
 

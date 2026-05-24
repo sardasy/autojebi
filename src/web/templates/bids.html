@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set active = 'bids' %}
+{% block title %}공고 — AutoJebi{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">공고</h3>
+</div>
+
+<form class="row g-2 mb-3" id="filter-form">
+  <div class="col-md-3"><input type="text" name="org" class="form-control form-control-sm" placeholder="기관"></div>
+  <div class="col-md-2">
+    <select name="category" class="form-select form-select-sm">
+      <option value="">전체 카테고리</option>
+      <option>공사</option><option>용역</option><option>물품</option>
+    </select>
+  </div>
+  <div class="col-md-2">
+    <select name="label" class="form-select form-select-sm">
+      <option value="">전체 라벨</option>
+      <option value="relevant">관련</option>
+      <option value="irrelevant">관련 없음</option>
+      <option value="watch">관심</option>
+      <option value="none">미라벨</option>
+    </select>
+  </div>
+  <div class="col-md-2"><input type="number" name="days" class="form-control form-control-sm" placeholder="최근 N일" value="7"></div>
+  <div class="col-md-3 d-grid"><button class="btn btn-sm btn-primary">필터</button></div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead><tr>
+      <th>제목</th><th>기관</th><th>카테고리</th><th>예가</th><th>관련도</th><th>라벨</th><th>등록</th><th></th>
+    </tr></thead>
+    <tbody id="bids-body">
+      <tr><td colspan="8" class="text-center text-muted py-4">로드 중…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/feedback.js"></script>
+{% endblock %}

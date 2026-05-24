@@ -1,0 +1,80 @@
+@prefix cat:  <https://autojebi.local/ontology/catalog#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# SHACL shapes — ingest 단계에서 위반 row abort 용.
+
+cat:SKUShape a sh:NodeShape ;
+    sh:targetClass cat:SKU ;
+    sh:property [
+        sh:path cat:hasBrand ;
+        sh:minCount 1 ;
+        sh:class cat:Brand ;
+        sh:message "SKU 는 반드시 하나의 cat:Brand 인스턴스를 가져야 합니다." ;
+    ] ;
+    sh:property [
+        sh:path cat:belongsToCategory ;
+        sh:minCount 1 ;
+        sh:class cat:Category ;
+        sh:message "SKU 는 반드시 하나의 cat:Category 인스턴스를 가져야 합니다." ;
+    ] ;
+    sh:property [
+        sh:path cat:modelNumber ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "SKU 의 modelNumber (string) 가 필요합니다." ;
+    ] ;
+    sh:property [
+        sh:path cat:voltageRatingV ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+    ] ;
+    sh:property [
+        sh:path cat:currentRatingA ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+    ] ;
+    sh:property [
+        sh:path cat:powerRatingW ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+    ] ;
+    sh:property [
+        sh:path cat:switchingFreqHz ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+    ] .
+
+cat:CertificationShape a sh:NodeShape ;
+    sh:targetClass cat:Certification ;
+    sh:property [
+        sh:path cat:certifiedBy ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Certification 은 발급기관(certifiedBy) 이 필요합니다." ;
+    ] ;
+    sh:property [
+        sh:path cat:validUntil ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:date ;
+    ] .
+
+cat:LicenseShape a sh:NodeShape ;
+    sh:targetClass cat:License ;
+    sh:property [
+        sh:path cat:validUntil ;
+        sh:minCount 1 ;
+        sh:datatype xsd:date ;
+        sh:message "License 는 만료일(validUntil) 이 필수입니다." ;
+    ] ;
+    sh:property [
+        sh:path cat:licenseSeats ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+    ] .
