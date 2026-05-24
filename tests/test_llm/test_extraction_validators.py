@@ -105,13 +105,37 @@ def test_regex_eval_method(rex):
 
 
 def test_regex_direct_mfg_and_loa(rex):
-    text = "직접생산증명을 제출. 위임장(LoA) 또한 제출 가능."
+    text = "직접생산증명을 제출. 제조사 위임장(LoA) 또한 제출 가능."
     assert rex.extract_direct_mfg(text) is True
     assert rex.extract_loa_accepted(text) is True
 
     text2 = "특별 요구사항 없음."
     assert rex.extract_direct_mfg(text2) is False
     assert rex.extract_loa_accepted(text2) is False
+
+
+def test_loa_does_not_false_positive_on_proxy_submission():
+    """PR α 회귀: '대리인 제출 시 위임장 및 신분증' 같은 *입찰 자연인 위임* 은
+    공급사 LoA 와 무관하므로 False 여야 함. 실제 한국에너지공과대학교 공고에서 발견.
+    """
+    rex = RegexExtractor()
+    cases_false = [
+        "⑥ 대리인 제출 시 : 위임장 및 신분증 사본(또는 재직증명서) 각 1부",
+        "위임장 제출 (입찰참가 대리권)",
+        "대리인이 위임장을 지참",
+    ]
+    for c in cases_false:
+        assert rex.extract_loa_accepted(c) is False, f"false positive: {c!r}"
+
+    cases_true = [
+        "제조사 위임장(LoA) 제출 가능",
+        "Letter of Authorization 필요",
+        "판매 위임장 첨부",
+        "공급사 위임장 필요",
+        "대리점 위임장 제출",
+    ]
+    for c in cases_true:
+        assert rex.extract_loa_accepted(c) is True, f"missed true: {c!r}"
 
 
 # ---------------------------------------------------------------------------

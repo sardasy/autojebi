@@ -96,13 +96,32 @@ class HwpParser:
             logger.exception("HWPX 파싱 실패 (%s)", filename)
             return ""
 
+    # 표 위주 본문은 hwp5html 도 못 뽑는 경우가 있어 합본 결과의 충분 길이를 기준으로
+    # 다음 폴백까지 시도 (한국에너지공과대학교 한 케이스 vs 전남대 다른 케이스 검증으로 확인).
+    _MIN_USABLE_TEXT_LEN = 100
+
     def _try_hwp(self, raw_bytes: bytes, filename: str) -> str:
-        # 1) pyhwpx (Windows COM)
+        # 1) pyhwpx (Windows COM, 한컴 오피스 필요)
         text = self._try_pyhwpx(raw_bytes, filename)
-        if text:
+        if len(text) >= self._MIN_USABLE_TEXT_LEN:
             return text
-        # 2) hwp5txt CLI (pyhwp 패키지)
-        text = self._try_hwp5txt_cli(raw_bytes, filename)
+
+        # 2) hwp5html → BeautifulSoup (표 셀 내부까지 보존 — 1차 폴백)
+        text = self._try_hwp5html(raw_bytes, filename)
+        if len(text) >= self._MIN_USABLE_TEXT_LEN:
+            return text
+
+        # 3) hwp5proc xml → Text 노드 추출 (표 위주 본문에서 hwp5html 이 빈 결과 줄 때)
+        text2 = self._try_hwp5proc_xml(raw_bytes, filename)
+        if len(text2) > len(text):
+            text = text2
+        if len(text) >= self._MIN_USABLE_TEXT_LEN:
+            return text
+
+        # 4) hwp5txt CLI (최후 폴백 — 표 손실 가능)
+        text2 = self._try_hwp5txt_cli(raw_bytes, filename)
+        if len(text2) > len(text):
+            text = text2
         if text:
             return text
         logger.warning("HWP 파싱 실패 — 파서 미가용 (%s)", filename)
@@ -129,15 +148,99 @@ class HwpParser:
         finally:
             tmp.unlink(missing_ok=True)
 
+    def _try_hwp5html(self, raw_bytes: bytes, filename: str) -> str:
+        """pyhwp 의 hwp5html → BeautifulSoup 으로 표 내부까지 텍스트만 추출.
+
+        hwp5txt 와 달리 <표> placeholder 가 아닌 셀 내용까지 다 추출되므로
+        공고 사양표 (기초금액, 배점, 적격심사 등) 가 살아남는다.
+        """
+        cli = self._find_cli("hwp5html")
+        if not cli:
+            return ""
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            return ""
+
+        with tempfile.NamedTemporaryFile(suffix=".hwp", delete=False) as tf:
+            tf.write(raw_bytes)
+            tmp = Path(tf.name)
+        try:
+            proc = subprocess.run(
+                [cli, "--html", str(tmp)],
+                capture_output=True, timeout=120, check=False,
+            )
+            if proc.returncode != 0:
+                logger.warning("hwp5html 실패 (%s): %s", filename, proc.stderr[:200])
+                return ""
+            html = proc.stdout.decode("utf-8", errors="replace")
+            soup = BeautifulSoup(html, "lxml")
+            # <p> 단락 단위로 줄바꿈 보존
+            for br in soup.find_all(["br", "tr"]):
+                br.replace_with("\n")
+            text = soup.get_text(separator=" ", strip=True)
+            # 다중 공백 정리
+            import re as _re
+            text = _re.sub(r"[ \t]+", " ", text)
+            text = _re.sub(r"\n{3,}", "\n\n", text)
+            return text.strip()
+        except Exception:
+            logger.exception("hwp5html 호출 실패 (%s)", filename)
+            return ""
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def _try_hwp5proc_xml(self, raw_bytes: bytes, filename: str) -> str:
+        """hwp5proc xml → <Text ...>본문</Text> 노드만 정규식으로 추출.
+
+        hwp5html 이 표 위주 본문에서 빈 결과를 줄 때의 강한 폴백.
+        XML 전체를 lxml 으로 파싱하지 않고 정규식으로 빠르게 Text 노드만 뽑음
+        (XML 크기가 100KB~1MB 라 가벼움 우선).
+        """
+        cli = self._find_cli("hwp5proc")
+        if not cli:
+            return ""
+        import re as _re
+
+        with tempfile.NamedTemporaryFile(suffix=".hwp", delete=False) as tf:
+            tf.write(raw_bytes)
+            tmp = Path(tf.name)
+        try:
+            proc = subprocess.run(
+                [cli, "xml", str(tmp)],
+                capture_output=True, timeout=180, check=False,
+            )
+            if proc.returncode != 0:
+                logger.warning("hwp5proc xml 실패 (%s): %s", filename, proc.stderr[:200])
+                return ""
+            xml = proc.stdout.decode("utf-8", errors="replace")
+            # <Text ...>본문</Text> 노드 추출. lang/charshape-id 등 속성 무시.
+            matches = _re.findall(r"<Text[^>]*>([^<]+)</Text>", xml)
+            text = "\n".join(m for m in matches if m.strip())
+            # XML 엔티티 디코드
+            text = (text
+                    .replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", '"')
+                    .replace("&apos;", "'"))
+            return text.strip()
+        except Exception:
+            logger.exception("hwp5proc xml 호출 실패 (%s)", filename)
+            return ""
+        finally:
+            tmp.unlink(missing_ok=True)
+
     def _try_hwp5txt_cli(self, raw_bytes: bytes, filename: str) -> str:
-        if not shutil.which("hwp5txt"):
+        cli = self._find_cli("hwp5txt")
+        if not cli:
             return ""
         with tempfile.NamedTemporaryFile(suffix=".hwp", delete=False) as tf:
             tf.write(raw_bytes)
             tmp = Path(tf.name)
         try:
             proc = subprocess.run(
-                ["hwp5txt", str(tmp)],
+                [cli, str(tmp)],
                 capture_output=True, timeout=60, check=False,
             )
             if proc.returncode != 0:
@@ -149,6 +252,21 @@ class HwpParser:
             return ""
         finally:
             tmp.unlink(missing_ok=True)
+
+    @staticmethod
+    def _find_cli(name: str) -> str | None:
+        """PATH 에 없으면 pyhwp 설치 Scripts 디렉터리도 탐색."""
+        found = shutil.which(name)
+        if found:
+            return found
+        # pyenv-win / venv 의 Scripts 디렉터리에서 직접 탐색
+        import sys
+        scripts = Path(sys.executable).parent / "Scripts"
+        for ext in ("", ".exe"):
+            candidate = scripts / f"{name}{ext}"
+            if candidate.exists():
+                return str(candidate)
+        return None
 
 
 class PdfParser:

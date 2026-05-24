@@ -116,6 +116,58 @@ def test_hwp_parser_unsupported_format_returns_empty():
     assert result == ""
 
 
+def test_hwp_parser_falls_back_when_hwp5html_returns_too_little(monkeypatch):
+    """PR α 회귀: hwp5html 이 표 위주 본문에서 빈 결과 (<표>만) 줄 때
+    hwp5proc xml 폴백이 충분한 텍스트를 반환하면 그것을 사용해야 함.
+    """
+    parser = HwpParser()
+    calls: list[str] = []
+
+    def fake_pyhwpx(raw, fn):
+        calls.append("pyhwpx")
+        return ""
+
+    def fake_html(raw, fn):
+        calls.append("html")
+        return "\n<표>\n\n<표>\n"  # 18자, MIN_USABLE 100자 미만
+
+    def fake_proc(raw, fn):
+        calls.append("proc")
+        return ("기초금액 25,000,000원 추정가격 22,727,273원 "
+                "제한경쟁입찰 최저가 낙찰" * 5)
+
+    def fake_txt(raw, fn):
+        calls.append("txt")
+        return ""
+
+    monkeypatch.setattr(parser, "_try_pyhwpx", fake_pyhwpx)
+    monkeypatch.setattr(parser, "_try_hwp5html", fake_html)
+    monkeypatch.setattr(parser, "_try_hwp5proc_xml", fake_proc)
+    monkeypatch.setattr(parser, "_try_hwp5txt_cli", fake_txt)
+
+    text = parser._try_hwp(b"FAKE", "test.hwp")
+    assert "기초금액" in text
+    assert "25,000,000" in text
+    assert len(text) >= 100
+    # 폴백 순서 확인: pyhwpx → html → proc (충분 길이 도달하면 txt 호출 안 됨)
+    assert calls == ["pyhwpx", "html", "proc"]
+
+
+def test_hwp_parser_uses_first_acceptable_result(monkeypatch):
+    """첫 폴백이 충분 길이면 다음 폴백 호출 안 함."""
+    parser = HwpParser()
+    calls: list[str] = []
+    monkeypatch.setattr(parser, "_try_pyhwpx", lambda r, f: (calls.append("p"), "")[1])
+    monkeypatch.setattr(parser, "_try_hwp5html", lambda r, f: (
+        calls.append("h"), "충분히 긴 본문 텍스트 " * 50)[1])
+    monkeypatch.setattr(parser, "_try_hwp5proc_xml", lambda r, f: (calls.append("x"), "")[1])
+    monkeypatch.setattr(parser, "_try_hwp5txt_cli", lambda r, f: (calls.append("t"), "")[1])
+
+    text = parser._try_hwp(b"FAKE", "test.hwp")
+    assert "충분히 긴 본문" in text
+    assert calls == ["p", "h"]  # 후속 폴백 미호출
+
+
 # ---------------------------------------------------------------------------
 # 디스패치
 # ---------------------------------------------------------------------------

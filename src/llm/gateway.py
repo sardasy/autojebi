@@ -34,13 +34,15 @@ class LLMGateway:
         route = ROUTING["summarize"]
         # 첨부 본문은 일반적으로 본문보다 더 권위 있는 정보 (기초금액·배점표 등) 포함 →
         # LLM 컨텍스트 앞쪽에 배치. 합본 후 길이 cap.
+        # cap 확대 근거: 6000자에서 평가기준서·사양서가 잘려 적격심사_배점/주요_기술요건
+        # 누락되는 실제 검증 사례 (한국에너지공과대학교 SST 공고) → 12000자로 확대.
         if attachment_text:
             combined = (
-                f"[첨부 발췌]\n{attachment_text[:6000]}\n\n"
-                f"[공고 메타]\n{bid_content[:2000]}"
+                f"[첨부 발췌]\n{attachment_text[:12000]}\n\n"
+                f"[공고 메타]\n{bid_content[:3000]}"
             )
         else:
-            combined = bid_content[:3000]
+            combined = bid_content[:5000]
         prompt = SUMMARIZE_USER.format(bid_content=combined)
 
         # Primary (라우팅 지정 provider) → 실패 시 보조 provider 폴백.

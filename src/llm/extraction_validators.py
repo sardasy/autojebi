@@ -154,8 +154,15 @@ class RegexExtractor:
     _DIRECT_MFG_RE = re.compile(
         r"직접\s*생산\s*(증명|확인)|직접\s*생산만",
     )
+    # 공급사/제조사 위임장 (LoA) 만 매칭. 단순 "위임장" 은 "대리인 제출 시 위임장
+    # 및 신분증" 같은 *입찰 자연인 대리권* false positive 가 많아 제외.
     _LOA_RE = re.compile(
-        r"위임장|LoA|Letter\s+of\s+Authorization|대리점\s*위임",
+        r"LoA"
+        r"|Letter\s+of\s+Authoriz(?:ation|ed)"
+        r"|제조사\s*위임장"
+        r"|공급사\s*위임장"
+        r"|대리점\s*위임장"
+        r"|판매\s*위임장",
         re.IGNORECASE,
     )
 
