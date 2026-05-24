@@ -16,6 +16,8 @@ class RawBid:
     location: str = ""
     raw_content: str = ""
     detail_url: str = ""
+    # PR 3: 첨부파일 (HWP/PDF) 파싱 결과 — 본문과 별도 보관
+    attachment_text: str = ""
     extra: dict = field(default_factory=dict)
 
 

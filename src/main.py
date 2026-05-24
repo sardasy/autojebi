@@ -22,6 +22,7 @@ from src.filter.keyword_matcher import KeywordMatcher
 from src.filter.embedding_scorer import EmbeddingScorer
 from src.filter.relevance import combined_score
 from src.llm.gateway import LLMGateway
+from src.llm.extraction_validators import DualExtractor
 from src.notifier.teams_webhook import send_teams_notification
 from src.notifier.email_sender import send_email_notification
 from src.collector.scheduler import setup_scheduler
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 keyword_matcher = KeywordMatcher()
 embedding_scorer = EmbeddingScorer()
 llm_gateway = LLMGateway()
+dual_extractor = DualExtractor()
 
 
 async def run_daily_collection():
@@ -71,7 +73,34 @@ async def run_daily_collection():
             if relevance < settings.relevance_threshold:
                 continue
 
-            summary_out = await llm_gateway.summarize_bid(f"{raw.title}\n{raw.raw_content}")
+            # LLM + regex 교차검증으로 BidSpecs + conflicts 생성
+            try:
+                specs, conflicts = await dual_extractor.extract_with_validation(
+                    f"{raw.title}\n{raw.raw_content}",
+                    llm_gateway,
+                    attachment_text=raw.attachment_text or "",
+                )
+                # summary 는 dual_extractor 가 내부 호출한 LLM 결과를 1회 더 받기 부담스러우므로,
+                # specs.공고명/발주기관/공사_용역_유형 기반으로 짧게 fallback 사용 가능.
+                # 운영상 별도 summarize 호출이 필요하면 여기서 추가 호출.
+                summary_text = None
+                if specs.공사_용역_유형:
+                    summary_text = (
+                        f"{specs.공고명 or raw.title} — {specs.공사_용역_유형} "
+                        f"({specs.발주기관 or raw.organization or '미상'})"
+                    )
+            except Exception:
+                logger.exception("dual extraction 실패 — LLM 단독 fallback")
+                summary_out = await llm_gateway.summarize_bid(
+                    f"{raw.title}\n{raw.raw_content}",
+                    attachment_text=raw.attachment_text or "",
+                )
+                specs = summary_out.specs if summary_out else None
+                conflicts = []
+                summary_text = summary_out.summary if summary_out else None
+
+            critical_conflict = any(c.severity == "critical" for c in conflicts)
+
             bid = Bid(
                 source=raw.source,
                 source_id=raw.source_id,
@@ -83,11 +112,21 @@ async def run_daily_collection():
                 announcement_date=raw.announcement_date,
                 location=raw.location,
                 raw_content=raw.raw_content[:5000],
-                summary=summary_out.summary if summary_out else None,
-                specs_json=summary_out.specs.model_dump() if summary_out else None,
+                attachment_text=(raw.attachment_text or None) and raw.attachment_text[:20000],
+                summary=summary_text,
+                specs_json=specs.model_dump() if specs else None,
                 relevance_score=relevance,
+                extraction_conflicts=(
+                    {"conflicts": [c.to_dict() for c in conflicts]} if conflicts else None
+                ),
+                needs_human_review=critical_conflict,
             )
             saved.append(await repo.save(bid))
+            if critical_conflict:
+                logger.warning(
+                    "검토 필요 (bid=%s): critical conflicts=%d",
+                    raw.source_id, sum(1 for c in conflicts if c.severity == "critical"),
+                )
 
     logger.info(f"관련 공고 저장: {len(saved)}건")
 
