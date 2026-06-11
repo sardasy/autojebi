@@ -1,32 +1,56 @@
-name: CI
+name: ci
 
 on:
   push:
-    branches: [main, 'feat/*']
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 jobs:
-  lint-test:
+  backend:
+    name: backend (lint + tests)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: pip
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
-      - name: Lint (ruff)
-        run: ruff check src/ scripts/
+      - name: ruff
+        run: ruff check .
 
-      - name: Type check (mypy)
-        run: mypy src/ --ignore-missing-imports
+      - name: pytest
+        run: python -m pytest -q
 
-      - name: Tests
-        run: pytest tests/ -v
+  frontend:
+    name: frontend (test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install
+        run: npm ci --no-audit --no-fund --legacy-peer-deps
+
+      - name: vitest
+        run: npm test
+
+      - name: build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE: http://localhost:8001

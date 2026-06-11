@@ -1,0 +1,16 @@
+# Playwright runner with browsers preinstalled.
+# Keep this separate from the production frontend image so the app container
+# stays slim and E2E does not depend on runtime browser downloads.
+
+FROM mcr.microsoft.com/playwright:v1.60.0-noble
+
+WORKDIR /work
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install --no-audit --no-fund --legacy-peer-deps
+
+COPY frontend/ ./
+
+ENV E2E_BASE_URL=http://frontend:3000
+
+CMD ["npm", "run", "e2e"]

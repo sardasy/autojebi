@@ -1,0 +1,35 @@
+# VCS / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Secrets / env
+.env
+.env.local
+.env.*.local
+
+# Python 빌드·캐시
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.coverage
+htmlcov
+
+# Frontend (이미지에 불필요 — frontend는 별도 Dockerfile.frontend로 빌드됨)
+frontend/node_modules
+frontend/.next
+frontend/dist
+frontend/playwright-report
+frontend/test-results
+
+# 운영 데이터 (named volume·bind mount로 처리)
+data/exports
+data/uploads
+
+# 임시·로그
+*.log
+.tmp_*
+tmp_e2e.db

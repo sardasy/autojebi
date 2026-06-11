@@ -1,12 +1,36 @@
-.env
 .venv/
 __pycache__/
 *.pyc
-*.pyo
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
-data/
-*.egg-info/
+.mypy_cache/
+.coverage
+htmlcov/
+
+.env
+.env.*
+!.env.example
+
+# Claude Code 로컬 메타데이터
+.claude/
+
+# 런타임 업로드/내보내기 산출물 (호스트 마운트, 코드 아님)
+data/uploads/
+data/exports/
+
+*.log
 dist/
 build/
+*.egg-info/
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/playwright-report/
+frontend/test-results/
+frontend/tsconfig.tsbuildinfo
+
+# Local API response captures / scratch data
+data/search*.json
+
+.DS_Store
+Thumbs.db

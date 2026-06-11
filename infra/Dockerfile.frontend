@@ -1,0 +1,42 @@
+# M7 — Next.js 15 minimal 읽기전용 프론트.
+# 3-stage multi-stage build:
+#  1) deps   — npm install
+#  2) builder — next build (NEXT_PUBLIC_API_BASE는 build-time에 inline)
+#  3) runner — slim production server
+
+# ---------- 1) deps ----------
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install --no-audit --no-fund --legacy-peer-deps
+
+# ---------- 2) builder ----------
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ ./
+
+# build-time API base (정적 페이지에 inline됨)
+ARG NEXT_PUBLIC_API_BASE=http://localhost:8001
+ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
+
+RUN npm run build
+
+# ---------- 3) runner ----------
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+
+RUN apk add --no-cache curl
+
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -sf http://localhost:3000 || exit 1
+
+CMD ["npm", "run", "start"]

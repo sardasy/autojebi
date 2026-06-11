@@ -1,0 +1,40 @@
+{
+  "name": "milim_bid_alert_workflow (NOT IMPLEMENTED — placeholder only)",
+  "_status": "PLACEHOLDER",
+  "_warning": "이 파일은 KJEBI 메일 자동화의 구조 참고용이며, 실 KJEBI 알림메일 샘플이 확보되어야 정규식/필터/매핑을 맞출 수 있습니다. 현재 운영 경로는 콘솔 /admin → '공고 수동 Upsert' (POST /notices/upsert) 뿐입니다.",
+  "_todo": [
+    "1) 실제 KJEBI 알림메일 1건 이상 확보",
+    "2) Gmail Trigger 노드의 라벨/제목/발신자 필터 결정",
+    "3) Function 노드에서 공고번호(notice_no = {bid_no}-{bid_seq})/제목/마감일 정규식 작성",
+    "4) HTTP Request 노드 URL = http://<autojebi-host>:8001/notices/upsert, 헤더 X-API-Key 추가, payload 스키마 확정",
+    "5) connections 객체 작성: Trigger → Normalize → HTTP",
+    "6) n8n credentials: Gmail OAuth, autojebi API Key 등록"
+  ],
+  "nodes": [
+    {
+      "name": "TODO: KJEBI Mail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "parameters": {
+        "note": "TODO: 실제 KJEBI 알림메일 조건/필터를 설정하세요."
+      }
+    },
+    {
+      "name": "TODO: Normalize KJEBI",
+      "type": "n8n-nodes-base.function",
+      "parameters": {
+        "note": "TODO: 실제 메일 1건을 확보한 뒤 공고번호/마감일 정규식을 맞추세요."
+      }
+    },
+    {
+      "name": "TODO: Call API /notices/upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "note": "TODO: FastAPI URL과 payload 스키마를 맞춰주세요. 기본: POST /notices/upsert (헤더 X-API-Key 필수)"
+      }
+    }
+  ],
+  "connections": {},
+  "settings": {
+    "note": "PLACEHOLDER. 실 사용 전 _todo 항목을 모두 처리하세요."
+  }
+}
