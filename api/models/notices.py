@@ -67,6 +67,16 @@ class NoticeListResponse(BaseModel):
     total_pages: int = 0
 
 
+class NoticeSummary(BaseModel):
+    active_total: int = 0
+    closing_today: int = 0
+    closing_7d: int = 0
+    needs_analysis: int = 0
+    needs_grade: int = 0
+    ready_for_submission: int = 0
+    blocked_documents: int = 0
+
+
 Lifecycle = Literal["active", "closed", "unknown", "all"]
 SortField = Literal["close_date", "updated_at", "base_price", "fit_score", "score_total"]
 SortDirection = Literal["asc", "desc"]

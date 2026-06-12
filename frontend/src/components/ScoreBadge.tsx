@@ -4,11 +4,6 @@ type Props = {
   mode?: "0to1" | "0to100";
 };
 
-/**
- * 점수 색상 코딩 배지.
- *  - `mode="0to1"` (기본): score_total/score_spec/score_qual/score_price 용.
- *  - `mode="0to100"`: fit_score 용. 내부적으로 /100 후 동일 임계치 적용.
- */
 export function ScoreBadge({ value, label, mode = "0to1" }: Props) {
   if (value === null || value === undefined) {
     return (

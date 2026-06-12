@@ -82,12 +82,6 @@ export async function actionValidateDocuments(noticeNo: string) {
   return result;
 }
 
-export async function actionCollect(start?: string, end?: string) {
-  const result = await api.triggerCollect(start, end);
-  revalidatePath("/notices");
-  return result;
-}
-
 export async function actionIngestSkus(payload: IngestRequest = {}) {
   return api.ingestSkus(payload);
 }

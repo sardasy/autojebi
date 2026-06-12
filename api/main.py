@@ -11,7 +11,6 @@ from api.db import MissingDatabaseUrl, get_engine
 from api.routers.notices import router as notices_router
 from api.routers.ontology import router as ontology_router
 from api.routers.skus import router as skus_router
-from api.routers.trigger import router as trigger_router
 
 
 @asynccontextmanager
@@ -45,7 +44,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(notices_router)
-    app.include_router(trigger_router)
     app.include_router(skus_router)
     app.include_router(ontology_router)
 
@@ -74,4 +72,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

@@ -28,15 +28,7 @@ export type Status =
   | "digest_queued"
   | "archived_low";
 
-export type Category =
-  | "HIL"
-  | "SW"
-  | "IGBT"
-  | "SCR"
-  | "수동소자"
-  | "ABB장비"
-  | "혼합"
-  | "비관련";
+export type Category = "HIL" | "SW" | "IGBT" | "SCR" | "수동소자" | "ABB장비" | "혼합" | "비분류";
 
 export interface NoticeRecord {
   notice_no: string;
@@ -80,6 +72,16 @@ export interface NoticeListResponse {
   page?: number;
   page_size?: number;
   total_pages?: number;
+}
+
+export interface NoticeSummary {
+  active_total: number;
+  closing_today: number;
+  closing_7d: number;
+  needs_analysis: number;
+  needs_grade: number;
+  ready_for_submission: number;
+  blocked_documents: number;
 }
 
 export type Lifecycle = "active" | "closed" | "unknown" | "all";
@@ -164,6 +166,17 @@ export async function listNotices(filters: ListFilters = {}): Promise<NoticeList
   const r = await fetch(url, { cache: "no-store", headers: defaultHeaders() });
   if (!r.ok) {
     throw new Error(`GET /notices failed: ${r.status} ${r.statusText}`);
+  }
+  return r.json();
+}
+
+export async function getNoticeSummary(): Promise<NoticeSummary> {
+  const r = await fetch(`${INTERNAL_API_BASE}/notices/summary`, {
+    cache: "no-store",
+    headers: defaultHeaders(),
+  });
+  if (!r.ok) {
+    throw new Error(`GET /notices/summary failed: ${r.status} ${r.statusText}`);
   }
   return r.json();
 }
@@ -344,12 +357,6 @@ export interface NoticeUpsertRequest {
   raw?: Record<string, unknown>;
 }
 
-export interface CollectResult {
-  fetched: number;
-  new: number;
-  skipped: number;
-}
-
 export interface IngestRequest {
   source?: string;
   skus?: unknown[];
@@ -466,20 +473,6 @@ export async function validateDocuments(
     `/notices/${encodeURIComponent(noticeNo)}/documents/validate`,
     {},
   );
-}
-
-export async function triggerCollect(
-  start?: string,
-  end?: string,
-): Promise<CollectResult> {
-  const params = qs({ start, end });
-  const r = await fetch(`${INTERNAL_API_BASE}/collect${params}`, {
-    method: "POST",
-    headers: defaultHeaders(),
-    cache: "no-store",
-  });
-  if (!r.ok) throw new Error(`POST /collect failed: ${r.status} ${r.statusText}`);
-  return r.json();
 }
 
 export async function ingestSkus(payload: IngestRequest = {}): Promise<IngestResult> {
