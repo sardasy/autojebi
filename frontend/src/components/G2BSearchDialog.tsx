@@ -193,7 +193,7 @@ export function G2BSearchDialog() {
                 <button
                   type="button"
                   onClick={() => fetchPage(page - 1)}
-                  disabled={searching || page <= 1}
+                  disabled={page <= 1}
                   className="rounded border border-slate-700 hover:border-brand-500 px-2 py-1 disabled:opacity-30"
                 >
                   ← 이전
@@ -201,7 +201,7 @@ export function G2BSearchDialog() {
                 <button
                   type="button"
                   onClick={() => fetchPage(page + 1)}
-                  disabled={searching || page >= meta.total_pages}
+                  disabled={page >= meta.total_pages}
                   className="rounded border border-slate-700 hover:border-brand-500 px-2 py-1 disabled:opacity-30"
                 >
                   다음 →

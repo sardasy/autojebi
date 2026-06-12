@@ -4,6 +4,7 @@ import math
 import os
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -45,6 +46,7 @@ from api.models.notices import (
     NoticeRecord,
     NoticeSearchRequest,
     NoticeSearchResponse,
+    NoticeSummary,
     NoticeUpsertRequest,
     NotifyRequest,
     NotifyResponse,
@@ -210,7 +212,8 @@ def search_notices_endpoint(payload: NoticeSearchRequest) -> NoticeSearchRespons
     422 — 빈 키워드 / start > end / 365일 초과 / page<1 / page_size 범위 위반.
     502 — G2B API 호출 실패 (네트워크/HTTP/파싱).
     """
-    from datetime import date as _date, timedelta as _td
+    from datetime import date as _date
+    from datetime import timedelta as _td
 
     from api.collector.pipeline import search_notices
 
@@ -739,6 +742,83 @@ def grade_notice(
         raise HTTPException(status_code=404, detail="notice not found")
     except GradeInvalidStatusError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+def _as_kst(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(ZoneInfo("Asia/Seoul"))
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _has_blocked_document(analysis: dict[str, Any] | None) -> bool:
+    doc = (analysis or {}).get("document_automation")
+    if not isinstance(doc, dict):
+        return False
+    checklist = doc.get("checklist")
+    if not isinstance(checklist, list):
+        return False
+    return any(isinstance(item, dict) and item.get("status") == "blocked" for item in checklist)
+
+
+def _is_ready_for_submission(analysis: dict[str, Any] | None) -> bool:
+    doc = (analysis or {}).get("document_automation")
+    return isinstance(doc, dict) and doc.get("ready_for_submission") is True
+
+
+@router.get("/summary", response_model=NoticeSummary)
+def get_notice_summary() -> NoticeSummary:
+    """Saved notice work-queue counters for the /notices console."""
+    engine = require_engine()
+    now = datetime.now(tz=UTC)
+    today_kst = now.astimezone(ZoneInfo("Asia/Seoul")).date()
+
+    stmt = select(
+        bid_pipeline.c.status,
+        bid_pipeline.c.close_date,
+        bid_pipeline.c.graded_at,
+        bid_pipeline.c.analysis,
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(stmt).mappings().all()
+
+    summary = NoticeSummary()
+    for row in rows:
+        close_date = _as_utc(row.get("close_date"))
+        is_active = close_date is None or close_date >= now
+        if is_active:
+            summary.active_total += 1
+
+            close_kst = _as_kst(close_date)
+            if close_kst is not None:
+                days_until_close = (close_kst.date() - today_kst).days
+                if days_until_close == 0:
+                    summary.closing_today += 1
+                if 0 <= days_until_close <= 7:
+                    summary.closing_7d += 1
+
+        status = row.get("status")
+        if status == "collected":
+            summary.needs_analysis += 1
+        if status == "analyzed" and row.get("graded_at") is None:
+            summary.needs_grade += 1
+
+        analysis = row.get("analysis") or {}
+        if _is_ready_for_submission(analysis):
+            summary.ready_for_submission += 1
+        if _has_blocked_document(analysis):
+            summary.blocked_documents += 1
+
+    return summary
 
 
 @router.get("/{notice_no}", response_model=NoticeRecord)

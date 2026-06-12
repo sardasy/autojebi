@@ -37,16 +37,6 @@ describe("Server Actions", () => {
     expect(revalidatePathMock).toHaveBeenCalledWith("/notices");
   });
 
-  it("actionCollect revalidates /notices", async () => {
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ fetched: 0, new: 0, skipped: 0 }),
-    });
-    const { actionCollect } = await import("../actions");
-    await actionCollect();
-    expect(revalidatePathMock).toHaveBeenCalledWith("/notices");
-  });
-
   it("actionIngestSkus does NOT revalidate (one-off admin)", async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: true,

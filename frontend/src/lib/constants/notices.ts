@@ -1,8 +1,3 @@
-/**
- * /notices 검색 UI에서 쓰는 옵션 상수.
- * 백엔드 status·category·bid_type·sort 화이트리스트와 동기화 유지.
- */
-
 import type { Lifecycle, SortDirection, SortField } from "@/lib/api";
 
 export const STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -22,15 +17,18 @@ export const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: "수동소자", label: "수동소자" },
   { value: "ABB장비", label: "ABB장비" },
   { value: "혼합", label: "혼합" },
-  { value: "비관련", label: "비관련" },
+  { value: "비분류", label: "비분류" },
 ];
 
-// G2B 입찰 유형 — bid_type 컬럼 값 (RawBid에서 들어온 그대로)
 export const BID_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "용역", label: "용역" },
   { value: "물품", label: "물품" },
   { value: "공사", label: "공사" },
   { value: "외자", label: "외자" },
+  { value: "goods", label: "물품(goods)" },
+  { value: "service", label: "용역(service)" },
+  { value: "construction", label: "공사(construction)" },
+  { value: "foreign", label: "외자(foreign)" },
 ];
 
 export const SOURCE_OPTIONS: { value: string; label: string }[] = [
@@ -39,7 +37,7 @@ export const SOURCE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export const LIFECYCLE_OPTIONS: { value: Lifecycle; label: string }[] = [
-  { value: "active", label: "진행 (마감 전 + 미확인)" },
+  { value: "active", label: "진행 중" },
   { value: "closed", label: "마감됨" },
   { value: "unknown", label: "마감 미확인" },
   { value: "all", label: "전체" },
@@ -60,7 +58,6 @@ export const DIRECTION_OPTIONS: { value: SortDirection; label: string }[] = [
 
 export const PAGE_SIZE_OPTIONS: number[] = [10, 20, 50, 100];
 
-// KJEBI 스타일 빠른 기간 칩. days=null은 "전체"(범위 비움).
 export const PERIOD_QUICK_OPTIONS: { value: string; label: string; days: number | null }[] = [
   { value: "all", label: "전체", days: null },
   { value: "today", label: "당일", days: 0 },
@@ -68,7 +65,6 @@ export const PERIOD_QUICK_OPTIONS: { value: string; label: string; days: number 
   { value: "m1", label: "1개월", days: 30 },
   { value: "m6", label: "6개월", days: 180 },
   { value: "y1", label: "1년", days: 365 },
-  { value: "y2", label: "2년", days: 730 },
 ];
 
 export const DEFAULT_LIFECYCLE: Lifecycle = "active";

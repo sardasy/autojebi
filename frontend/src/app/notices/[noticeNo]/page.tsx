@@ -1,11 +1,17 @@
 import Link from "next/link";
 
 import { CategoryBadge } from "@/components/CategoryBadge";
+import { DocumentPreparationPanel } from "@/components/DocumentPreparationPanel";
 import { MetricCard } from "@/components/MetricCard";
 import { NoticeActionsBar } from "@/components/NoticeActionsBar";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { getNotice, type NoticeRecord } from "@/lib/api";
+import {
+  documentSummaryText,
+  nextNoticeAction,
+  readDocumentAutomation,
+} from "@/lib/documentAutomation";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +27,7 @@ function fmt(s: string | null | undefined): string {
 function fmtPrice(p: number | string | null | undefined): string {
   if (p === null || p === undefined || p === "") return "-";
   const n = typeof p === "string" ? parseFloat(p) : p;
-  if (isNaN(n)) return "-";
+  if (Number.isNaN(n)) return "-";
   return new Intl.NumberFormat("ko-KR").format(n) + "원";
 }
 
@@ -42,12 +48,10 @@ export default async function NoticeDetailPage({
   if (error || !notice) {
     return (
       <div className="space-y-4">
-        <Link href="/notices" className="text-sm text-slate-400 hover:text-slate-200">
-          ← 목록
-        </Link>
+        <BackLink />
         <div className="rounded border border-red-700 bg-red-950/40 p-4 text-sm">
           <p className="font-semibold text-red-300">공고를 불러올 수 없습니다</p>
-          <p className="text-slate-300 mt-1">{error || "데이터 없음"}</p>
+          <p className="mt-1 text-slate-300">{error || "데이터 없음"}</p>
         </div>
       </div>
     );
@@ -56,49 +60,51 @@ export default async function NoticeDetailPage({
   const raw = (notice.raw || {}) as Record<string, unknown>;
   const elecSpec = (notice.analysis?.elec_spec || {}) as Record<string, unknown>;
   const grade = (notice.analysis?.grade || {}) as Record<string, unknown>;
-  const qualNotes = (grade.qual_notes || []) as string[];
-  const g2bUrl = ((raw.bidNtceDtlUrl as string) || (raw.bidNtceUrl as string) || "").trim();
+  const qualNotes = Array.isArray(grade.qual_notes) ? (grade.qual_notes as string[]) : [];
+  const g2bUrl = String(raw.bidNtceDtlUrl || raw.bidNtceUrl || "").trim();
+  const docs = readDocumentAutomation(notice);
 
   return (
     <div className="space-y-6">
-      <Link href="/notices" className="text-sm text-slate-400 hover:text-slate-200">
-        ← 목록
-      </Link>
+      <BackLink />
 
-      {/* 헤더 */}
       <section className="space-y-3">
-        <h1 className="text-2xl font-semibold">{notice.title || notice.notice_no}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <CategoryBadge value={notice.category} />
-          <StatusBadge value={notice.status} />
-          <ScoreBadge value={notice.score_total} label="종합" />
-          <ScoreBadge value={notice.fit_score} mode="0to100" label="fit" />
-          <span className="text-slate-400">담당자: {notice.assignee || "-"}</span>
-          <span className="text-slate-500 text-xs ml-auto">
-            notice_no: <code className="bg-slate-900 px-1 rounded">{notice.notice_no}</code>
-          </span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold">{notice.title || notice.notice_no}</h1>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <CategoryBadge value={notice.category} />
+              <StatusBadge value={notice.status} />
+              <ScoreBadge value={notice.score_total} label="종합" />
+              <ScoreBadge value={notice.fit_score} mode="0to100" label="fit" />
+              <span className="text-slate-400">담당자: {notice.assignee || "-"}</span>
+            </div>
+          </div>
+          <div className="rounded border border-brand-700 bg-brand-950/30 px-3 py-2 text-sm text-brand-100">
+            다음 작업: <span className="font-semibold">{nextNoticeAction(notice)}</span>
+          </div>
+        </div>
+        <div className="text-xs text-slate-500">
+          notice_no: <code className="rounded bg-slate-900 px-1">{notice.notice_no}</code>
         </div>
       </section>
 
-      {/* M8: 액션 바 */}
       <section>
-        <h2 className="text-sm font-semibold text-slate-300 mb-2">액션</h2>
+        <h2 className="mb-2 text-sm font-semibold text-slate-300">작업</h2>
         <NoticeActionsBar notice={notice} />
       </section>
 
-      {/* 3축 메트릭 */}
       <section>
-        <h2 className="text-sm font-semibold text-slate-300 mb-2">3축 그레이딩</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <h2 className="mb-2 text-sm font-semibold text-slate-300">3축 그레이딩</h2>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <MetricCard label="사양 (spec)" value={notice.score_spec} />
           <MetricCard label="자격 (qualification)" value={notice.score_qual} />
-          <MetricCard label="예가 (price)" value={notice.score_price} />
+          <MetricCard label="가격 (price)" value={notice.score_price} />
           <MetricCard label="종합 (total)" value={notice.score_total} />
         </div>
       </section>
 
-      {/* 추천 SKU / 적합 사유 / 위험 노트 */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <section className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Card title="추천 SKU">
           {notice.top_sku_name ? (
             <>
@@ -115,65 +121,75 @@ export default async function NoticeDetailPage({
           )}
         </Card>
         <Card title="적합 사유">
-          <p className="text-sm whitespace-pre-wrap text-slate-200">
-            {notice.grade_reason || "—"}
+          <p className="whitespace-pre-wrap text-sm text-slate-200">
+            {notice.grade_reason || "-"}
           </p>
         </Card>
-        <Card title="위험 노트">
+        <Card title="위험 메모">
           {notice.risk_note ? (
-            <p className="text-sm text-amber-300 whitespace-pre-wrap">⚠️ {notice.risk_note}</p>
+            <p className="whitespace-pre-wrap text-sm text-amber-300">
+              {notice.risk_note}
+            </p>
           ) : (
-            <span className="text-slate-500 text-sm">없음</span>
+            <span className="text-sm text-slate-500">없음</span>
           )}
         </Card>
       </section>
 
-      {/* ElecSpec */}
       <section>
-        <h2 className="text-sm font-semibold text-slate-300 mb-2">전기 사양 (ElecSpec)</h2>
+        <h2 className="mb-2 text-sm font-semibold text-slate-300">
+          전기 사양 (ElecSpec)
+        </h2>
         <Card>
           {Object.keys(elecSpec).length === 0 ? (
-            <span className="text-slate-500 text-sm">추출된 사양 없음</span>
+            <span className="text-sm text-slate-500">추출된 사양 없음</span>
           ) : (
-            <dl className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+            <dl className="grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
               {Object.entries(elecSpec).map(([k, v]) => (
-                <div key={k} className="flex flex-col">
-                  <dt className="text-xs text-slate-500">{k}</dt>
-                  <dd className="text-slate-100 break-all">
-                    {Array.isArray(v) ? v.join(", ") : String(v ?? "—")}
-                  </dd>
-                </div>
+                <Field key={k} label={k}>
+                  {Array.isArray(v) ? v.join(", ") : String(v ?? "-")}
+                </Field>
               ))}
             </dl>
           )}
         </Card>
       </section>
 
-      {/* 자격 메모 */}
       {qualNotes.length > 0 ? (
         <section>
-          <h2 className="text-sm font-semibold text-slate-300 mb-2">자격 평가 메모</h2>
+          <h2 className="mb-2 text-sm font-semibold text-slate-300">자격 평가 메모</h2>
           <Card>
-            <ul className="list-disc pl-5 text-sm text-slate-200 space-y-1">
-              {qualNotes.map((n, i) => (
-                <li key={i}>{n}</li>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-200">
+              {qualNotes.map((note, index) => (
+                <li key={`${note}-${index}`}>{note}</li>
               ))}
             </ul>
           </Card>
         </section>
       ) : null}
 
-      {/* G2B 메타데이터 */}
       <section>
-        <h2 className="text-sm font-semibold text-slate-300 mb-2">G2B 메타데이터</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-300">서류 준비</h2>
+          {docs ? (
+            <span className="text-xs text-slate-400">{documentSummaryText(docs)}</span>
+          ) : null}
+        </div>
         <Card>
-          <dl className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+          <DocumentPreparationPanel notice={notice} />
+        </Card>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-slate-300">G2B 메타데이터</h2>
+        <Card>
+          <dl className="grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
             <Field label="공고기관">
-              {notice.org_name || (raw.ntceInsttNm as string) || "-"}
+              {notice.org_name || String(raw.ntceInsttNm || "-")}
             </Field>
-            <Field label="수요기관">{(raw.dminsttNm as string) || "-"}</Field>
-            <Field label="입찰방식">{(raw.bidMethdNm as string) || "-"}</Field>
-            <Field label="계약방법">{(raw.cntrctCnclsMthdNm as string) || "-"}</Field>
+            <Field label="수요기관">{String(raw.dminsttNm || "-")}</Field>
+            <Field label="입찰방식">{String(raw.bidMethdNm || "-")}</Field>
+            <Field label="계약방법">{String(raw.cntrctCnclsMthdNm || "-")}</Field>
             <Field label="예가">
               {fmtPrice(
                 notice.base_price ??
@@ -196,16 +212,23 @@ export default async function NoticeDetailPage({
                 href={g2bUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block text-sm bg-brand-500 hover:bg-brand-600 text-white px-3 py-1.5 rounded font-medium"
+                className="inline-block rounded bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
               >
-                G2B 원문 →
+                G2B 원문
               </a>
             </div>
           ) : null}
         </Card>
       </section>
-
     </div>
+  );
+}
+
+function BackLink() {
+  return (
+    <Link href="/notices" className="text-sm text-slate-400 hover:text-slate-200">
+      목록
+    </Link>
   );
 }
 
@@ -217,9 +240,9 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 space-y-2">
+    <div className="space-y-2 rounded border border-slate-800 bg-slate-900/40 p-4">
       {title ? (
-        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           {title}
         </div>
       ) : null}
@@ -232,7 +255,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <div className="flex flex-col">
       <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="text-slate-100 break-all">{children}</dd>
+      <dd className="break-all text-slate-100">{children}</dd>
     </div>
   );
 }

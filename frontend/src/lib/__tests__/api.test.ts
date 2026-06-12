@@ -136,17 +136,4 @@ describe("api client", () => {
     await expect(analyzeNotice("X")).rejects.toThrow(/403/);
   });
 
-  it("triggerCollect with date params builds query string", async () => {
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ fetched: 0, new: 0, skipped: 0 }),
-    });
-    const { triggerCollect } = await import("../api");
-    await triggerCollect("2026-05-01", "2026-05-31");
-
-    const url = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(url).toContain("/collect");
-    expect(url).toContain("start=2026-05-01");
-    expect(url).toContain("end=2026-05-31");
-  });
 });

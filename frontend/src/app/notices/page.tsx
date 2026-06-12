@@ -1,14 +1,18 @@
 import Link from "next/link";
 
-import { CategoryBadge } from "@/components/CategoryBadge";
+import { G2BSearchResults } from "@/components/G2BSearchResults";
 import { NoticeFilterBar } from "@/components/NoticeFilterBar";
 import { Pagination } from "@/components/Pagination";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
+  getNoticeSummary,
   listNotices,
+  searchG2BNotices,
   type Lifecycle,
   type NoticeRecord,
+  type NoticeSearchItem,
+  type NoticeSummary,
   type SortDirection,
   type SortField,
 } from "@/lib/api";
@@ -20,10 +24,13 @@ import {
 } from "@/lib/constants/notices";
 import {
   documentSummaryText,
+  nextNoticeAction,
   readDocumentAutomation,
 } from "@/lib/documentAutomation";
 
 export const dynamic = "force-dynamic";
+
+type Mode = "saved" | "g2b";
 
 function fmtDate(s: string | null): string {
   if (!s) return "-";
@@ -40,34 +47,29 @@ function fmtDate(s: string | null): string {
   }
 }
 
-function fmtPrice(p: number | string | null): string {
-  if (p === null || p === undefined || p === "") return "-";
-  const n = typeof p === "string" ? parseFloat(p) : p;
-  if (isNaN(n)) return "-";
-  return new Intl.NumberFormat("ko-KR").format(n) + "원";
-}
-
 function asStr(v: string | string[] | undefined): string | undefined {
   if (Array.isArray(v)) return v[0];
   return v && v !== "" ? v : undefined;
 }
-function asArr(v: string | string[] | undefined): string[] {
-  if (!v) return [];
-  if (Array.isArray(v)) return v.filter((x) => x && x !== "");
-  return v ? [v] : [];
+
+function asStrArray(v: string | string[] | undefined): string[] | undefined {
+  if (Array.isArray(v)) return v.filter(Boolean);
+  return v ? [v] : undefined;
 }
+
 function asNum(v: string | string[] | undefined): number | undefined {
   const s = asStr(v);
   if (s === undefined) return undefined;
   const n = Number(s);
   return Number.isFinite(n) ? n : undefined;
 }
-function asBool(v: string | string[] | undefined): boolean | undefined {
-  const s = asStr(v);
-  if (s === undefined) return undefined;
-  if (s === "true") return true;
-  if (s === "false") return false;
-  return undefined;
+
+function toFromIso(d: string | undefined): string | undefined {
+  return d ? `${d.slice(0, 10)}T00:00:00` : undefined;
+}
+
+function toToIso(d: string | undefined): string | undefined {
+  return d ? `${d.slice(0, 10)}T23:59:59` : undefined;
 }
 
 export default async function NoticesPage({
@@ -77,281 +79,140 @@ export default async function NoticesPage({
 }) {
   const params = await searchParams;
 
-  const hasAnyQuery = Object.values(params).some(
-    (v) => v !== undefined && v !== "" && (!Array.isArray(v) || v.length > 0),
-  );
-
-  // 기본 텍스트
-  const q = asStr(params.q);
-  const org_name = asStr(params.org_name);
-  const assignee = asStr(params.assignee);
-
-  // 다중
-  const status = asArr(params.status);
-  const category = asArr(params.category);
-  const bid_type = asArr(params.bid_type);
-  const source = asArr(params.source);
-
-  // 날짜 (yyyy-mm-dd)
+  const mode: Mode = asStr(params.mode) === "g2b" ? "g2b" : "saved";
+  const q = asStr(params.q)?.trim();
+  const status = asStrArray(params.status);
+  const lifecycle = asStr(params.lifecycle) || DEFAULT_LIFECYCLE;
+  const sort = asStr(params.sort) || DEFAULT_SORT;
+  const direction = asStr(params.direction) || DEFAULT_DIRECTION;
   const open_from = asStr(params.open_from);
   const open_to = asStr(params.open_to);
   const close_from = asStr(params.close_from);
   const close_to = asStr(params.close_to);
-
-  // 숫자 범위
-  const min_base_price = asNum(params.min_base_price);
-  const max_base_price = asNum(params.max_base_price);
-  const min_fit_score = asNum(params.min_fit_score);
-  const max_fit_score = asNum(params.max_fit_score);
-  const min_score_total = asNum(params.min_score_total);
-  const max_score_total = asNum(params.max_score_total);
-
-  // bool 3-state
-  const has_grade = asBool(params.has_grade);
-  const has_documents = asBool(params.has_documents);
-  const has_uploads = asBool(params.has_uploads);
-  const ready_for_submission = asBool(params.ready_for_submission);
-
-  // 정렬·페이지·라이프사이클
-  const sort = (asStr(params.sort) || DEFAULT_SORT) as SortField;
-  const direction = (asStr(params.direction) || DEFAULT_DIRECTION) as SortDirection;
-  const lifecycle = (asStr(params.lifecycle) ||
-    (hasAnyQuery ? "all" : DEFAULT_LIFECYCLE)) as Lifecycle;
   const page = asNum(params.page) || 1;
   const page_size = asNum(params.page_size) || DEFAULT_PAGE_SIZE;
 
-  // yyyy-mm-dd → ISO datetime (날짜 범위는 하루 단위로 from 00:00, to 23:59 적용)
-  const toFromIso = (d: string | undefined) =>
-    d ? `${d.slice(0, 10)}T00:00:00` : undefined;
-  const toToIso = (d: string | undefined) =>
-    d ? `${d.slice(0, 10)}T23:59:59` : undefined;
+  const baseQuery = new URLSearchParams();
+  baseQuery.set("mode", mode);
+  if (q) baseQuery.set("q", q);
+  for (const value of status || []) baseQuery.append("status", value);
+  if (open_from) baseQuery.set("open_from", open_from);
+  if (open_to) baseQuery.set("open_to", open_to);
+  if (close_from) baseQuery.set("close_from", close_from);
+  if (close_to) baseQuery.set("close_to", close_to);
+  baseQuery.set("page_size", String(page_size));
+  if (mode === "saved") {
+    baseQuery.set("lifecycle", lifecycle);
+    baseQuery.set("sort", sort);
+    baseQuery.set("direction", direction);
+  }
 
+  return mode === "g2b" ? (
+    <G2BMode
+      q={q}
+      open_from={open_from}
+      open_to={open_to}
+      close_from={close_from}
+      close_to={close_to}
+      page={page}
+      page_size={page_size}
+      baseQuery={baseQuery}
+    />
+  ) : (
+    <SavedMode
+      q={q}
+      status={status}
+      lifecycle={lifecycle}
+      sort={sort}
+      direction={direction}
+      page={page}
+      page_size={page_size}
+      baseQuery={baseQuery}
+    />
+  );
+}
+
+async function SavedMode({
+  q,
+  status,
+  lifecycle,
+  sort,
+  direction,
+  page,
+  page_size,
+  baseQuery,
+}: {
+  q?: string;
+  status?: string[];
+  lifecycle: string;
+  sort: string;
+  direction: string;
+  page: number;
+  page_size: number;
+  baseQuery: URLSearchParams;
+}) {
   let items: NoticeRecord[] = [];
   let total = 0;
   let total_pages = 0;
+  let summary: NoticeSummary | null = null;
   let error: string | null = null;
+
   try {
-    const resp = await listNotices({
-      q,
-      status,
-      category,
-      bid_type,
-      source,
-      org_name,
-      assignee,
-      open_from: toFromIso(open_from),
-      open_to: toToIso(open_to),
-      close_from: toFromIso(close_from),
-      close_to: toToIso(close_to),
-      min_base_price,
-      max_base_price,
-      min_fit_score,
-      max_fit_score,
-      min_score_total,
-      max_score_total,
-      has_grade,
-      has_documents,
-      has_uploads,
-      ready_for_submission,
-      lifecycle,
-      sort,
-      direction,
-      page,
-      page_size,
-    });
-    items = resp.items;
-    total = resp.total ?? items.length;
-    total_pages = resp.total_pages ?? 1;
+    const [listResp, summaryResp] = await Promise.all([
+      listNotices({
+        q,
+        status,
+        lifecycle: lifecycle as Lifecycle,
+        sort: sort as SortField,
+        direction: direction as SortDirection,
+        page,
+        page_size,
+      }),
+      getNoticeSummary(),
+    ]);
+    items = listResp.items;
+    total = listResp.total || 0;
+    total_pages = listResp.total_pages || 0;
+    summary = summaryResp;
   } catch (e) {
     error = (e as Error).message;
   }
 
-  // 페이지 이동 시 보존할 쿼리 — page만 빼고 모두 복사
-  const baseQuery = new URLSearchParams();
-  const setStr = (k: string, v: string | undefined) => {
-    if (v) baseQuery.set(k, v);
-  };
-  const setNum = (k: string, v: number | undefined) => {
-    if (v !== undefined) baseQuery.set(k, String(v));
-  };
-  const setBool = (k: string, v: boolean | undefined) => {
-    if (v !== undefined) baseQuery.set(k, v ? "true" : "false");
-  };
-  setStr("q", q);
-  status.forEach((v) => baseQuery.append("status", v));
-  category.forEach((v) => baseQuery.append("category", v));
-  bid_type.forEach((v) => baseQuery.append("bid_type", v));
-  source.forEach((v) => baseQuery.append("source", v));
-  setStr("org_name", org_name);
-  setStr("assignee", assignee);
-  setStr("open_from", open_from);
-  setStr("open_to", open_to);
-  setStr("close_from", close_from);
-  setStr("close_to", close_to);
-  setNum("min_base_price", min_base_price);
-  setNum("max_base_price", max_base_price);
-  setNum("min_fit_score", min_fit_score);
-  setNum("max_fit_score", max_fit_score);
-  setNum("min_score_total", min_score_total);
-  setNum("max_score_total", max_score_total);
-  setBool("has_grade", has_grade);
-  setBool("has_documents", has_documents);
-  setBool("has_uploads", has_uploads);
-  setBool("ready_for_submission", ready_for_submission);
-  baseQuery.set("lifecycle", lifecycle);
-  baseQuery.set("sort", sort);
-  baseQuery.set("direction", direction);
-
   return (
     <div className="space-y-6">
-      <section className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-xl font-semibold">공고 목록</h1>
-      </section>
+      <Header title="저장 공고 업무 큐" />
+      <NoticeFilterBar
+        mode="saved"
+        q={q}
+        status={status}
+        lifecycle={lifecycle}
+        sort={sort}
+        direction={direction}
+        page_size={String(page_size)}
+      />
 
-      <section>
-        <NoticeFilterBar
-          q={q}
-          status={status}
-          category={category}
-          bid_type={bid_type}
-          source={source}
-          org_name={org_name}
-          assignee={assignee}
-          open_from={open_from}
-          open_to={open_to}
-          close_from={close_from}
-          close_to={close_to}
-          min_base_price={min_base_price?.toString()}
-          max_base_price={max_base_price?.toString()}
-          min_fit_score={min_fit_score?.toString()}
-          max_fit_score={max_fit_score?.toString()}
-          min_score_total={min_score_total?.toString()}
-          max_score_total={max_score_total?.toString()}
-          has_grade={has_grade === undefined ? "" : has_grade ? "true" : "false"}
-          has_documents={
-            has_documents === undefined ? "" : has_documents ? "true" : "false"
-          }
-          has_uploads={
-            has_uploads === undefined ? "" : has_uploads ? "true" : "false"
-          }
-          ready_for_submission={
-            ready_for_submission === undefined
-              ? ""
-              : ready_for_submission
-                ? "true"
-                : "false"
-          }
-          lifecycle={lifecycle}
-          sort={sort}
-          direction={direction}
-          page_size={String(page_size)}
-        />
-      </section>
+      {summary ? <SummaryCards summary={summary} /> : null}
 
       {error ? (
-        <div className="rounded border border-red-700 bg-red-950/40 p-4 text-sm">
-          <p className="font-semibold text-red-300">API 호출 실패</p>
-          <p className="text-slate-300 mt-1">{error}</p>
-        </div>
+        <ErrorBox title="저장 공고를 불러올 수 없습니다" error={error} />
       ) : items.length === 0 ? (
-        <div className="rounded border border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-400">
-          조건에 맞는 공고가 없습니다. (필터를 풀거나{" "}
-          <Link href="/notices" className="text-brand-400 hover:underline">
-            전체 초기화
+        <EmptyBox>
+          저장된 진행 공고가 없습니다.{" "}
+          <Link href="/notices?mode=g2b" className="text-brand-400 hover:underline">
+            G2B에서 검색하기
           </Link>
-          )
-        </div>
+        </EmptyBox>
       ) : (
         <>
-          <div className="flex justify-between items-center text-xs text-slate-400">
-            <Pagination
-              page={page}
-              totalPages={total_pages}
-              total={total}
-              pageSize={page_size}
-              baseQuery={baseQuery}
-            />
-          </div>
-          <div className="overflow-x-auto rounded border border-slate-800">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-900/80 text-slate-300">
-                <tr>
-                  <Th>종합</Th>
-                  <Th>적합도</Th>
-                  <Th>제목</Th>
-                  <Th>카테고리</Th>
-                  <Th>기관</Th>
-                  <Th>예가</Th>
-                  <Th>마감</Th>
-                  <Th>추천 SKU</Th>
-                  <Th>서류</Th>
-                  <Th>담당자</Th>
-                  <Th>상태</Th>
-                  <Th>업데이트</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it) => (
-                  <tr
-                    key={it.notice_no}
-                    className="border-t border-slate-800 hover:bg-slate-900/40"
-                  >
-                    <Td>
-                      <ScoreBadge value={it.score_total} />
-                    </Td>
-                    <Td>
-                      <ScoreBadge value={it.fit_score} mode="0to100" />
-                    </Td>
-                    <Td>
-                      <Link
-                        href={`/notices/${encodeURIComponent(it.notice_no)}`}
-                        className="text-slate-100 hover:text-brand-500"
-                      >
-                        {it.title || it.notice_no}
-                      </Link>
-                    </Td>
-                    <Td>
-                      <CategoryBadge value={it.category} />
-                    </Td>
-                    <Td className="text-slate-300">
-                      {it.org_name ||
-                        ((it.raw as Record<string, unknown> | null)
-                          ?.ntceInsttNm as string | undefined) ||
-                        "-"}
-                    </Td>
-                    <Td className="text-slate-300 tabular-nums">
-                      {fmtPrice(
-                        it.base_price ??
-                          ((it.raw as Record<string, unknown> | null)
-                            ?.presmptPrce as number | string | null | undefined) ??
-                          null,
-                      )}
-                    </Td>
-                    <Td className="text-slate-300 text-xs">
-                      {fmtDate(
-                        it.close_date ??
-                          ((it.raw as Record<string, unknown> | null)
-                            ?.bidClseDt as string | null | undefined) ??
-                          null,
-                      )}
-                    </Td>
-                    <Td className="text-slate-300">{it.top_sku_name || "-"}</Td>
-                    <Td className="text-slate-300 text-xs">
-                      {documentSummary(it)}
-                    </Td>
-                    <Td className="text-slate-300">{it.assignee || "-"}</Td>
-                    <Td>
-                      <StatusBadge value={it.status} />
-                    </Td>
-                    <Td className="text-slate-400 text-xs">
-                      {fmtDate(it.updated_at)}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex justify-end items-center text-xs text-slate-400">
+          <Pagination
+            page={page}
+            totalPages={total_pages}
+            total={total}
+            pageSize={page_size}
+            baseQuery={baseQuery}
+          />
+          <SavedNoticesTable items={items} />
+          <div className="flex justify-end">
             <Pagination
               page={page}
               totalPages={total_pages}
@@ -366,8 +227,230 @@ export default async function NoticesPage({
   );
 }
 
+async function G2BMode({
+  q,
+  open_from,
+  open_to,
+  close_from,
+  close_to,
+  page,
+  page_size,
+  baseQuery,
+}: {
+  q?: string;
+  open_from?: string;
+  open_to?: string;
+  close_from?: string;
+  close_to?: string;
+  page: number;
+  page_size: number;
+  baseQuery: URLSearchParams;
+}) {
+  const startDate = open_from || close_from;
+  const endDate = open_to || close_to;
+  let items: NoticeSearchItem[] = [];
+  let total = 0;
+  let total_pages = 0;
+  let error: string | null = null;
+
+  if (q) {
+    try {
+      const resp = await searchG2BNotices({
+        keyword: q,
+        start_date: toFromIso(startDate),
+        end_date: toToIso(endDate),
+        page,
+        page_size,
+      });
+      items = resp.items;
+      total = resp.total;
+      total_pages = resp.total_pages;
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Header title="G2B 실시간 공고 검색" />
+      <NoticeFilterBar
+        mode="g2b"
+        q={q}
+        open_from={open_from}
+        open_to={open_to}
+        close_from={close_from}
+        close_to={close_to}
+        page_size={String(page_size)}
+      />
+
+      {!q ? (
+        <EmptyBox>
+          검색어를 입력하면 나라장터 OpenAPI를 새로 조회합니다. 저장된 공고는{" "}
+          <Link href="/notices?mode=saved" className="text-brand-400 hover:underline">
+            저장 공고
+          </Link>
+          에서 확인합니다.
+        </EmptyBox>
+      ) : error ? (
+        <ErrorBox title="G2B 검색 실패" error={error} />
+      ) : items.length === 0 ? (
+        <EmptyBox>
+          조건에 맞는 G2B 공고가 없습니다.{" "}
+          <Link href="/notices?mode=g2b" className="text-brand-400 hover:underline">
+            초기화
+          </Link>
+        </EmptyBox>
+      ) : (
+        <>
+          <Pagination
+            page={page}
+            totalPages={total_pages}
+            total={total}
+            pageSize={page_size}
+            baseQuery={baseQuery}
+          />
+          <G2BSearchResults items={items} />
+          <div className="flex justify-end">
+            <Pagination
+              page={page}
+              totalPages={total_pages}
+              total={total}
+              pageSize={page_size}
+              baseQuery={baseQuery}
+            />
+          </div>
+          <p className="text-xs text-slate-500">
+            최대 365일까지 검색할 수 있습니다. 저장 시 source=G2B로 등록되며,
+            저장 후 상세 화면에서 분석과 서류 준비를 진행합니다.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Header({ title }: { title: string }) {
+  return (
+    <section className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="text-xl font-semibold">{title}</h1>
+        <p className="mt-1 text-sm text-slate-400">
+          저장된 공고를 처리하고, 필요한 경우 G2B에서 신규 공고를 찾아 등록합니다.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function SummaryCards({ summary }: { summary: NoticeSummary }) {
+  const cards = [
+    ["진행 공고", summary.active_total],
+    ["오늘 마감", summary.closing_today],
+    ["7일 내 마감", summary.closing_7d],
+    ["분석 필요", summary.needs_analysis],
+    ["Grade 필요", summary.needs_grade],
+    ["제출 준비", summary.ready_for_submission],
+    ["서류 막힘", summary.blocked_documents],
+  ];
+  return (
+    <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      {cards.map(([label, value]) => (
+        <div key={label} className="rounded border border-slate-800 bg-slate-900/40 p-3">
+          <div className="text-xs text-slate-500">{label}</div>
+          <div className="mt-1 text-xl font-semibold text-slate-100">{value}</div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function SavedNoticesTable({ items }: { items: NoticeRecord[] }) {
+  return (
+    <div className="overflow-x-auto rounded border border-slate-800">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-900/80 text-slate-300">
+          <tr>
+            <Th>공고번호</Th>
+            <Th>제목</Th>
+            <Th>기관</Th>
+            <Th>마감</Th>
+            <Th>상태</Th>
+            <Th>fit</Th>
+            <Th>종합점수</Th>
+            <Th>추천 SKU</Th>
+            <Th>서류 준비</Th>
+            <Th>다음 작업</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((notice) => {
+            const docs = readDocumentAutomation(notice);
+            return (
+              <tr
+                key={notice.notice_no}
+                className="border-t border-slate-800 hover:bg-slate-900/40"
+              >
+                <Td className="font-mono text-xs text-slate-300">
+                  {notice.notice_no}
+                </Td>
+                <Td>
+                  <Link
+                    href={`/notices/${encodeURIComponent(notice.notice_no)}`}
+                    className="text-slate-100 hover:text-brand-500"
+                  >
+                    {notice.title || notice.notice_no}
+                  </Link>
+                </Td>
+                <Td className="text-slate-300">{notice.org_name || "-"}</Td>
+                <Td className="text-xs text-slate-300">{fmtDate(notice.close_date)}</Td>
+                <Td>
+                  <StatusBadge value={notice.status} />
+                </Td>
+                <Td>
+                  <ScoreBadge value={notice.fit_score} mode="0to100" />
+                </Td>
+                <Td>
+                  <ScoreBadge value={notice.score_total} />
+                </Td>
+                <Td className="text-slate-300">
+                  {notice.top_sku_name || notice.top_sku || "-"}
+                </Td>
+                <Td className="min-w-[220px] text-xs text-slate-300">
+                  {docs ? documentSummaryText(docs) : "서류 분석 전"}
+                </Td>
+                <Td>
+                  <span className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200">
+                    {nextNoticeAction(notice)}
+                  </span>
+                </Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function EmptyBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded border border-slate-800 bg-slate-900/40 p-6 text-center text-sm text-slate-400">
+      {children}
+    </div>
+  );
+}
+
+function ErrorBox({ title, error }: { title: string; error: string }) {
+  return (
+    <div className="rounded border border-red-700 bg-red-950/40 p-4 text-sm">
+      <p className="font-semibold text-red-300">{title}</p>
+      <p className="mt-1 text-slate-300">{error}</p>
+    </div>
+  );
+}
+
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="text-left font-medium px-3 py-2">{children}</th>;
+  return <th className="px-3 py-2 text-left font-medium">{children}</th>;
 }
 
 function Td({
@@ -378,9 +461,4 @@ function Td({
   className?: string;
 }) {
   return <td className={`px-3 py-2 ${className || ""}`}>{children}</td>;
-}
-
-function documentSummary(notice: NoticeRecord): string {
-  const docs = readDocumentAutomation(notice);
-  return docs ? documentSummaryText(docs) : "-";
 }

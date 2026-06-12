@@ -1,12 +1,5 @@
 type Props = { value: string };
 
-/**
- * 상태머신 단계별 색상.
- *  - 진행 단계: slate/cyan/indigo (점진적 진행)
- *  - 최종 적합: emerald (강조)
- *  - 최종 보류: amber
- *  - 최종 폐기: slate-800
- */
 const PALETTE: Record<string, string> = {
   collected: "bg-slate-600 text-white",
   analyzed: "bg-cyan-700 text-white",
