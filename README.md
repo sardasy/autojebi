@@ -1,6 +1,6 @@
 # autojebi — 미림씨스콘 입찰 자동화
 
-G2B(나라장터)·KJEBI 메일로 들어오는 전력기기 입찰공고를 자동 수집 → Claude 분석 → 3축 그레이딩 → Slack/Teams 알림 → HWP 입찰양식 자동 작성 → 서류 체크리스트/업로드/Excel·HWP 내보내기까지 한 파이프라인으로 처리한다. M1~M11 마일스톤 완료(FastAPI + PostgreSQL + Next.js 15 + Qdrant + milim-hwp-agent).
+G2B(나라장터)·KJEBI 메일로 들어오는 전력기기 입찰공고를 실시간 검색/등록 → Claude 분석 → 3축 그레이딩 → Slack/Teams 알림 → HWP 입찰양식 자동 작성 → 서류 체크리스트/업로드/Excel·HWP 내보내기까지 한 파이프라인으로 처리한다. M1~M11 마일스톤 완료(FastAPI + PostgreSQL + Next.js 15 + Qdrant + milim-hwp-agent).
 
 이 문서는 **신규 유저(영업·검토자·운영자) 매뉴얼** + **API 레퍼런스**다.
 
@@ -26,11 +26,11 @@ G2B(나라장터)·KJEBI 메일로 들어오는 전력기기 입찰공고를 자
 ## 1. 한눈에 보기
 
 ### 무엇을 해주는가
-- 매일 아침 G2B에서 키워드 매칭 공고를 자동 수집 (`ABB,차단기,변압기,인버터,전력변환,UPS,배전반,IGBT,모터드라이브` 기본)
+- G2B에서 키워드 매칭 공고를 실시간 검색하고, 사용자가 확인한 건만 저장 (`POST /notices/search` → `POST /notices/upsert`)
 - 공고 제목 + G2B 첫 첨부(HWP/PDF)를 Claude로 분석해 **전기 사양(ElecSpec)** 추출 → 카테고리·담당자 자동 라우팅
 - ABB SKU 카탈로그(Qdrant)와 임베딩 매칭 → 3축(사양·자격·예가) 그레이딩 → 0.6 이상 자동 Slack 알림
 - 적합 공고는 [milim-hwp-agent](../../Desktop/milim-hwp-agent)에 위임해 HWP 입찰양식의 회사정보/공고메타 placeholder 자동 채움
-- 사용자는 Next.js 콘솔(`/notices`, `/notices/[id]`, `/admin`)에서 조회·트리거·상태 확정
+- 사용자는 Next.js 콘솔(`/notices`, `/notices/[noticeNo]`, `/admin`)에서 조회·트리거·상태 확정
 
 ### 토폴로지
 ```
@@ -49,7 +49,7 @@ autojebi는 OS-무관한 **중앙 파이프라인 서버**, milim-hwp-agent는 *
 ### 마일스톤 (M1~M14)
 | M# | 영역 | 핵심 산출물 |
 |----|------|------------|
-| M1 | 수집 | G2B OpenAPI 클라이언트, daily 스케줄러, `POST /collect`, `POST /notices/upsert` |
+| M1 | 수집 | G2B OpenAPI 클라이언트, 실시간 검색/사용자 저장, `POST /notices/search`, `POST /notices/upsert` |
 | M2 | 분석 | Claude tool-use(ElecSpec 추출), G2B 첫 첨부 자동 다운, 카테고리 라우팅 |
 | M3 | 그레이딩 기반 | 3축 점수 컬럼, Qdrant SKU 인제스트(`POST /skus/ingest`), Slack 알림 |
 | M4 | 알림+양식 | Teams 알림(`/notify`), HWP autofill(`/autofill-form`), 상태머신 |
@@ -58,10 +58,11 @@ autojebi는 OS-무관한 **중앙 파이프라인 서버**, milim-hwp-agent는 *
 | M7 | 프론트 | Next.js 15 콘솔, CORS, server-side fetch |
 | M8 | UI 일원화 | Streamlit 제거, 모든 액션 Server Action으로 통합, `/admin` 추가 |
 | M9 | 보안 | API 키 인증 (`X-API-Key`), 프론트 server-side 주입 |
-| M10 | 서류 자동화 v1 | 룰+LLM 체크리스트, 초안(기술대응표·요약·HWP 보강), 제출 전 검증 (`POST /notices/{id}/documents/analyze` 외) |
-| M11 | 서류 자동화 v2 | 파일 업로드/삭제/다운로드, Excel·HWP 내보내기 (`POST /notices/{id}/documents/uploads`, `.../exports/{kind}`) |
+| M10 | 서류 자동화 v1 | 룰+LLM 체크리스트, 초안(기술대응표·요약·HWP 보강), 제출 전 검증 (`POST /notices/{notice_no}/documents/analyze` 외) |
+| M11 | 서류 자동화 v2 | 파일 업로드/삭제/다운로드, Excel·HWP 내보내기 (`POST /notices/{notice_no}/documents/uploads`, `.../exports/{kind}`) |
 | M13 | G2B 라이브 검색 | `POST /notices/search` 페이지네이션(`page`/`page_size`/`total_pages`), 등록 전 `already_exists` 확인, 5엔드포인트×30일윈도우 병렬 페치 |
 | M14 (Stage 1) | 온톨로지 기반 | `0003_ontology` 마이그레이션 8 테이블 + `GET /ontology/*` 읽기 API + 통제어휘 시드(`python -m api.ontology seed`) |
+| M14 (Stage 2) | HWP 제안서 자동 생성 | 공고 메타·규격 항목·서류 분석·SKU 추천을 모아 `POST /proposal/compose`로 HWP 제안서 작성 |
 
 ---
 
@@ -117,6 +118,10 @@ cd frontend && npm test    # Vitest 단위
 # Playwright e2e — docker 풀스택 선행 + override 표준 포트(:3001)
 cd frontend && E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:8001 \
   E2E_API_KEY="${API_KEY:-}" npm run e2e
+
+# 운영 근접 live smoke — 실제 G2B/Claude/Qdrant/HWP agent 준비 시에만 opt-in
+cd frontend && E2E_OPS_LIVE=1 E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:8001 \
+  E2E_API_KEY="${API_KEY:-}" npm run e2e -- --project=chromium-ops-live
 ```
 
 ---
@@ -125,7 +130,7 @@ cd frontend && E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:
 
 ### 백엔드 (FastAPI, :8001)
 - 엔트리: [api/main.py](api/main.py) — 라이프스팬에서 스케줄러 start/stop, CORS 미들웨어, `/healthz`
-- 라우터: 3개 ([api/routers/notices.py](api/routers/notices.py), [api/routers/trigger.py](api/routers/trigger.py), [api/routers/skus.py](api/routers/skus.py))
+- 라우터: [api/routers/notices.py](api/routers/notices.py), [api/routers/skus.py](api/routers/skus.py), [api/routers/ontology.py](api/routers/ontology.py)
 - 모든 라우터에 `Depends(verify_api_key)` 적용 ([api/auth.py](api/auth.py)) — `API_KEY` 빈값이면 인증 비활성
 
 ### 프론트엔드 (Next.js 15, :3000)
@@ -160,16 +165,21 @@ cd frontend && E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:
 
 [api/services/status.py:4-32](api/services/status.py) — `FINAL_STATUSES`, `can_transition`, `compute_notify_status`.
 
+API 식별자와 route의 정합성 기준은 [docs/api-spec-v0.2.md](docs/api-spec-v0.2.md)를 따른다. 공고 path parameter는 `notice_no`만 사용한다.
+
 ```
 (없음)
-   │ POST /collect | /notices/upsert
+   │ POST /notices/search 확인 후 /notices/upsert
    ▼
 collected ──────────────┐
-   │ POST /notices/{id}/analyze
+   │ POST /notices/{notice_no}/analyze
    ▼
 analyzed ──────────────┐
-   │ POST /autofill-form              │ POST /notify (또는 fit_score 기반 자동)
+   │ attachments/documents/spec/HWP   │ POST /notify (또는 fit_score 기반 자동)
    ▼                                  │
+attachments_fetched → documents_analyzed → spec_extracted → hwp_composed
+   │
+   ▼
 form_filled ───────────────────────► (분기)
                                        │
             ┌──────────────────────────┼──────────────────────────┐
@@ -184,8 +194,12 @@ form_filled ──────────────────────�
 |------|---------|
 | (없음) | `collected` |
 | `collected` | `analyzed` |
-| `analyzed` | `form_filled`, `notified`, `digest_queued`, `archived_low` |
-| `form_filled` | `notified`, `digest_queued`, `archived_low` |
+| `analyzed` | `attachments_fetched`, `documents_analyzed`, `spec_extracted`, `hwp_composed`, `form_filled`, FINAL 3종 |
+| `attachments_fetched` | 이후 처리 상태 또는 FINAL 3종 |
+| `documents_analyzed` | 이후 처리 상태 또는 FINAL 3종 |
+| `spec_extracted` | `hwp_composed`, `form_filled`, FINAL 3종 |
+| `hwp_composed` | `form_filled`, FINAL 3종 |
+| `form_filled` | FINAL 3종 |
 | FINAL 3종 | (전이 불가) |
 
 ### 자동 분기 임계치 ([status.py:11-16](api/services/status.py))
@@ -193,7 +207,7 @@ form_filled ──────────────────────�
 - `40 ≤ fit_score < 70` → `digest_queued` (주간 다이제스트 대기)
 - `fit_score < 40` → `archived_low` (보관, 수동 검토 가능)
 
-> 상태 다운그레이드 금지 — G2B에서 재수집돼도 `analyzed`/`form_filled`/FINAL은 유지된다 ([collector/pipeline.py](api/collector/pipeline.py)).
+> 상태 다운그레이드 금지 — G2B 검색 결과를 다시 저장해도 `analyzed`/`form_filled`/FINAL은 유지된다 ([collector/pipeline.py](api/collector/pipeline.py)).
 
 ---
 
@@ -203,7 +217,6 @@ form_filled ──────────────────────�
 
 | 잡 | 기본 스케줄 | 끄는 법 |
 |----|-----------|--------|
-| **G2B 일일 수집** | 매일 KST 08:00 (`COLLECT_HOUR=8`, `COLLECT_MINUTE=0`) | `SCHEDULER_ENABLED=false` |
 | **자동 그레이딩 배치** | 30분 간격, `analyzed` & `graded_at IS NULL` 공고 최대 50건 | `SCHEDULER_GRADE_ENABLED=false` 또는 `GRADE_INTERVAL_MINUTES=0` |
 | **자동 Slack 알림** | grade 결과 `score_total ≥ 0.6` 시 (`GRADE_ALERT_THRESHOLD`) | `SLACK_WEBHOOK_URL` 빈값 |
 | **자격 API 24h 캐시** | grade 중 자동 (`QUAL_CACHE_TTL_HOURS=24`) | `QUAL_CACHE_ENABLED=false` |
@@ -211,10 +224,11 @@ form_filled ──────────────────────�
 ### 유저가 수동 트리거하는 일
 | 작업 | 어디서 | 언제 |
 |------|--------|------|
-| 긴급 수집 | `POST /collect` 또는 콘솔 `/notices` "G2B 수집 트리거" | 스케줄러 대기 싫을 때, 특정 기간 재수집 |
+| G2B 신규 검색/저장 | 콘솔 `/notices?mode=g2b` 또는 `POST /notices/search` 후 `POST /notices/upsert` | 특정 키워드/기간의 공고를 확인하고 저장할 때 |
 | 단건 Claude 분석 | 콘솔 공고 상세 [분석] | `collected` 공고를 즉시 분석 |
 | 단건 그레이딩 | 콘솔 공고 상세 [Grade] | 스케줄러 대기 싫을 때, 단건 평가 |
 | Teams 알림 발송 | 콘솔 공고 상세 [Notify] | 의사결정 후 최종 상태 확정 |
+| G2B 첨부 가져오기 | 콘솔 공고 상세 [첨부 서류 가져오기] | 저장된 G2B raw 첨부 PDF/HWP/HWPX를 내려받아 서류 준비 목록에 연결 |
 | HWP 양식 자동 작성 | 콘솔 공고 상세 [HWP Autofill] | 입찰 준비 단계 |
 | KJEBI 수동 등록 | 콘솔 `/admin` → 공고 수동 Upsert | 메일 시스템 미연동 또는 보강 |
 | SKU 카탈로그 인제스트 | 콘솔 `/admin` → SKU 인제스트 | 초기 셋업, ABB 라인 갱신 |
@@ -225,13 +239,13 @@ form_filled ──────────────────────�
 
 ### `/notices` — 공고 목록 ([page.tsx](frontend/src/app/notices/page.tsx))
 
-상단 액션:
-- **"G2B 수집 트리거"** ([components/CollectButton.tsx](frontend/src/components/CollectButton.tsx)) → `POST /collect`, 응답 `{ fetched, new, skipped }`
+상단 동선:
+- **G2B 실시간 검색** (`/notices?mode=g2b`) → 나라장터 OpenAPI를 즉시 조회하고, 필요한 공고만 저장
 
 검색·필터 (M-search) — [NoticeFilterBar.tsx](frontend/src/components/NoticeFilterBar.tsx):
 - **통합 검색** (`q`): 제목·공고번호·기관·담당자·카테고리·추천SKU·grade_reason·risk_note에 부분일치(대소문자 무시). 검색어·비교 대상 양쪽 모두 공백 제거 후 매칭 — 띄어쓰기 변형 무시(예: q `제어기시험장치` ↔ title `제 어기시험장치`)
 - **진행 상태** (`lifecycle`): `active`(마감 전 또는 미확인 — **첫 진입 시 기본값**) / `closed` / `unknown` / `all`
-- **상태 다중** (`status`): 6종(collected/analyzed/form_filled/notified/digest_queued/archived_low) 체크박스 칩
+- **상태 다중** (`status`): 수집/분석/첨부/서류/규격/HWP/완료/final 상태 체크박스 칩
 - **마감 기간** (`close_from`/`close_to`)
 - **정렬** (`sort`/`direction`): `close_date` / `updated_at` / `base_price` / `fit_score` / `score_total` × asc·desc. 기본 = 마감일 오름차순(NULL 뒤), 동률은 `updated_at desc`
 - **고급 패널** — "▶ 고급 필터" 클릭 시 펼침:
@@ -267,22 +281,22 @@ form_filled ──────────────────────�
 
 액션 바 ([components/NoticeActionsBar.tsx](frontend/src/components/NoticeActionsBar.tsx)) — 4개 버튼:
 
-1. **분석** (`status==collected`일 때만 활성) → `POST /notices/{id}/analyze`
+1. **분석** (`status==collected`일 때만 활성) → `POST /notices/{notice_no}/analyze`
    - Claude tool-use로 ElecSpec 추출 + 첫 첨부 자동 다운(`LLM_ATTACHMENT_FETCH=true`)
    - 응답: `{ category, fit_score, assignee, analysis, status }`
    - 상태: `collected → analyzed`
 
-2. **Grade** (`status` ∈ {`analyzed`, `form_filled`}일 때) → 모달에서 "Slack 알림" 체크박스 선택 후 → `POST /notices/{id}/grade`
+2. **Grade** (`status` ∈ {`analyzed`, `form_filled`}일 때) → 모달에서 "Slack 알림" 체크박스 선택 후 → `POST /notices/{notice_no}/grade`
    - 요청: `{ alert: true|false }`
    - 응답: `{ score_spec, score_qual, score_price, score_total, top_sku, top_sku_name, grade_reason, risk_note, slack_delivered, status }`
    - 상태: 변경 없음 (점수만 갱신, `fit_score = int(score_total*100)` 동기화)
 
-3. **Notify** (`status` ∈ {`analyzed`, `form_filled`}) → 모달에서 "dry_run" 선택 후 → `POST /notices/{id}/notify`
+3. **Notify** (`status` ∈ {`analyzed`, `form_filled`}) → 모달에서 "dry_run" 선택 후 → `POST /notices/{notice_no}/notify`
    - 요청: `{ dry_run: true|false }`
    - 응답: `{ status, delivered }`
    - 상태: `fit_score` 기준 자동 분기 ([§ 4 자동 분기 임계치](#자동-분기-임계치))
 
-4. **HWP Autofill** (`status` ∈ {`analyzed`, `form_filled`}) → 모달에서 template_path / output_path / values(JSON) 입력 → `POST /notices/{id}/autofill-form`
+4. **HWP Autofill** (`status` ∈ {`analyzed`, `form_filled`}) → 모달에서 template_path / output_path / values(JSON) 입력 → `POST /notices/{notice_no}/autofill-form`
    - 응답: `{ replaced, missing, remaining_placeholders }`
    - 상태: `analyzed → form_filled`
    - 부수효과: `analysis.document_automation.drafts.bid_form` 및 `bid_form` 체크리스트 항목이 `generated`로 전환 (M10)
@@ -291,13 +305,14 @@ form_filled ──────────────────────�
 
 공고 상세 페이지 하단의 별도 섹션. 분석된 공고에 대해 제출서류 체크리스트·검토용 초안·위험 메모를 한 화면에서 관리한다.
 
-- **서류 분석** (`status` ∈ {`analyzed`, `form_filled`}) → `POST /notices/{id}/documents/analyze`
+- **서류 분석** (`status` ∈ {`analyzed`, `form_filled`}) → `POST /notices/{notice_no}/documents/analyze`
   - 룰 기반 9개 기본 체크리스트(입찰참가신청서·사업자등록증·법인등기/인감·제조사 공급확약서·카탈로그·규격대응표·실적증명·입찰보증·자격면허) + Claude 추가 제안 병합
   - drafts: `bid_form_values`(HWP autofill 보강 입력값), `technical_compliance`(규격대응표 Markdown 초안), `submission_summary`(요약 메모)
   - risks: 마감 임박/계약방식/자격 경고
-- **체크리스트 행 상태 변경** → `PATCH /notices/{id}/documents/checklist/{item_id}` 자동 호출
+- **첨부 서류 가져오기** → G2B raw의 `ntceSpecDocUrl*` / `ntceSpecFileNm*`를 순회해 PDF/HWP/HWPX를 저장·분석하고 업로드 목록에 `G2B 첨부`로 표시 (`POST /notices/{notice_no}/attachments/fetch`)
+- **체크리스트 행 상태 변경** → `PATCH /notices/{notice_no}/documents/checklist/{item_id}` 자동 호출
   - 수동 수정값(`status`, `owner`, `note`)은 다음 분석 시에도 보존 (`_preserve_manual_updates`)
-- **제출 전 검증** (서류 분석 결과가 있을 때) → `POST /notices/{id}/documents/validate`
+- **제출 전 검증** (서류 분석 결과가 있을 때) → `POST /notices/{notice_no}/documents/validate`
   - `ready_for_submission=true` → 토스트로 통과 알림
   - `false` → 필수 누락 항목 이름을 토스트에 표시
 - **초안 복사** — 각 draft 카드의 복사 버튼으로 클립보드 복사
@@ -328,16 +343,13 @@ form_filled ──────────────────────�
 
 모든 엔드포인트는 `API_KEY`가 설정돼 있으면 `X-API-Key: <키>` 헤더 필요.
 
-### `POST /collect` — G2B 수집 트리거 ([trigger.py](api/routers/trigger.py))
+### `POST /notices/search` — G2B 실시간 검색 (M13)
 ```bash
-# 오늘 날짜 수집
-curl -X POST http://localhost:8001/collect -H "X-API-Key: $API_KEY"
-
-# 기간 지정
-curl -X POST "http://localhost:8001/collect?start=2026-05-01&end=2026-05-31" \
-     -H "X-API-Key: $API_KEY"
+curl -X POST http://localhost:8001/notices/search \
+  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"keyword":"ABB 차단기","start_date":"2026-05-01T00:00:00","end_date":"2026-05-31T23:59:59","page":1,"page_size":50}'
 ```
-응답: `{"fetched": N, "new": M, "skipped": K}` — `new`는 새로 적재된 공고 수.
+응답: `{"items":[...],"total":N,"page":1,"page_size":50,"total_pages":M}`. 각 item에는 `already_exists`가 포함된다. 검색은 DB write가 없으며, 저장은 선택한 결과를 `POST /notices/upsert`로 보낸다.
 
 ### `POST /notices/upsert` — 수동 등록 ([notices.py](api/routers/notices.py))
 ```bash
@@ -437,6 +449,17 @@ curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/validate 
 ```
 응답: `{ "notice_no": "...", "ready_for_submission": true|false, "missing_required": [...], "checklist": [...] }`. 필수 항목 중 `ready`/`generated`가 아닌 것을 누락으로 반환.
 
+### `POST /notices/{notice_no}/attachments/fetch` — G2B 첨부 가져오기
+```bash
+curl -X POST http://localhost:8001/notices/R26BK01543282-000/attachments/fetch \
+     -H "X-API-Key: $API_KEY"
+```
+응답: `{ "notice_no": "...", "job_id": 1, "status": "completed|completed_with_errors", "files": [...], "fetched": [UploadedDocument, ...], "errors": [...] }`.
+- `raw.ntceSpecDocUrl*` / `raw.ntceSpecFileNm*`에서 PDF/HWP/HWPX만 저장하고 `source_ref="g2b_attachment"`로 `analysis.document_automation.uploads[]`에 연결.
+- PDF는 텍스트 추출, HWP/HWPX는 milim-hwp-agent 분석을 best-effort로 수행한다.
+- 파일별 다운로드/분석 실패는 `attachment_fetch_jobs` / `attachment_fetch_files`, `notice_errors`, `errors[]`, `document_automation.errors[]`에 기록하고 전체 흐름은 계속 진행한다.
+- 같은 파일명/출처는 재호출해도 중복 저장하지 않는다.
+
 ### `POST /notices/{notice_no}/documents/uploads` — 사용자 파일 업로드 (M11)
 ```bash
 curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/uploads \
@@ -458,18 +481,30 @@ curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/uploads \
 서버가 저장한 파일을 그대로 스트리밍. 프론트는 `/api/notices/{notice_no}/documents/uploads/{upload_id}/download` Next.js route로 프록시 호출.
 
 ### `POST /notices/{notice_no}/documents/exports/{kind}` — Excel/HWP 생성 (M11)
-`kind` ∈ {`excel`, `hwp`}.
+`kind` ∈ {`excel`, `hwp`}. `proposal_hwp`는 `POST /notices/{notice_no}/documents/proposal-compose`로 생성한다.
 ```bash
 curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/exports/excel \
      -H "X-API-Key: $API_KEY"
 ```
-응답: `{ "notice_no": "...", "export": { "kind", "draft_id", "output_path", "mime", "generated_at", "notes" } }`.
-- Excel은 autojebi가 `openpyxl`로 직접 생성 — milim-hwp-agent 의존 없음.
-- HWP는 milim-hwp-agent의 `POST /document/insert-table` 호출 위임. 에이전트 미구현 시 502.
-- `analysis.document_automation.exports[]`에 누적. 동일 kind 재호출 시 이전 기록 교체.
+응답: `{ "notice_no": "...", "export": { "id", "kind", "draft_id", "output_path", "mime", "generated_at", "version", "validation_status", "file_size", "sha256", ... } }`.
+- Excel은 autojebi가 `openpyxl`로 직접 생성 — milim-hwp-agent 의존 없음. 기본 버전은 `compliance_excel_v2`, 요청 body `{"version":"compliance_excel_v1"}`로 기존 단일 시트 포맷 생성 가능.
+- HWP는 생성 전 `validate_pre_compose()`로 규격 항목/필수 서류/필수 작성값을 확인하고, 통과 시 milim-hwp-agent의 `POST /document/insert-table` 호출을 위임한다.
+- 낮은 confidence, `candidate`, `review_priority=high` 규격 항목은 생성 차단이 아니라 `validation_status=warning`과 `validation_errors[]`로 남긴다.
+- `notice_exports`가 우선 저장소이며 `analysis.document_automation.exports[]`에는 프론트 호환 mirror를 유지한다. 동일 `(kind,draft_id)` 재호출 시 이전 active row는 soft-delete된다.
+
+### `POST /notices/{notice_no}/documents/proposal-compose` — HWP 제안서 생성 (M14)
+요청: `{ "template_path": "templates/제안서_양식.hwp", "values_override": {}, "visible": false }`.
+응답: `{ "notice_no", "export", "proposal", "remaining_placeholders", "errors" }`.
+- 입력 소스는 공고 정규 컬럼/raw, `analysis.document_automation`, `notice_spec_items`, grade/SKU 결과다.
+- `notice_spec_items`가 없으면 409(`규격 항목 추출 필요`).
+- milim-hwp-agent의 `POST /proposal/compose`에 `{ template_path, output_path, values, sections, tables, visible }`를 위임한다.
+- agent 실패 시 제안서 draft와 `errors[]`는 저장하고, HWP 파일이 생성된 경우에만 `proposal_hwp` export를 기록한다. `remaining_placeholders`가 남으면 export는 저장하되 `validation_status=warning`으로 표시한다.
+
+### `GET /notices/{notice_no}/documents/exports/by-id/{export_id}/download` — 생성 결과 다운로드
+`ExportRecord.id`가 있는 경우 이 경로를 우선 사용한다. active export row가 없으면 404, metadata는 있으나 파일이 없으면 410.
 
 ### `GET /notices/{notice_no}/documents/exports/{kind}/download` — 생성 결과 다운로드
-`POST .../exports/{kind}` 실행 후 호출. 미생성 시 404. 디스크 파일 누락 시 410.
+기존 호환 경로. 해당 `kind`의 최신 active export를 다운로드한다. 미생성 시 404. 디스크 파일 누락 시 410.
 
 ### `POST /skus/ingest` — ABB SKU 카탈로그 인제스트 (M3)
 ```bash
@@ -632,7 +667,7 @@ fit_score   = int(score_total × 100)                           # 0~100
 
 ## 9. HWP 양식 자동 작성
 
-[milim-hwp-agent](../../Desktop/milim-hwp-agent)는 Windows 데스크톱에서 HWP COM을 통해 입찰참가신청서/제안서를 자동 작성한다. autojebi는 `POST /notices/{id}/autofill-form` 호출 시 그 에이전트의 `/bid-form/autofill`을 위임한다.
+[milim-hwp-agent](../../Desktop/milim-hwp-agent)는 Windows 데스크톱에서 HWP COM을 통해 입찰참가신청서/제안서를 자동 작성한다. autojebi는 `POST /notices/{notice_no}/autofill-form` 호출 시 `/bid-form/autofill`, `POST /notices/{notice_no}/documents/proposal-compose` 호출 시 `/proposal/compose`를 위임한다.
 
 ### 전송되는 값
 **환경변수 (회사 상수)** — [.env](#11-환경변수-레퍼런스)에서 로드:
@@ -704,7 +739,8 @@ docker compose -f infra/docker-compose.yml ps
 ```bash
 python -m pytest -v           # 백엔드 262 tests (인증 8개)
 cd frontend && npm test       # Vitest 단위
-cd frontend && npm run e2e    # Playwright Chromium (`docker compose -f infra/docker-compose.yml up -d db api frontend` 선행)
+cd frontend && npm run e2e    # Playwright smoke/workflow (`docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.yml up -d db api frontend` 선행)
+cd frontend && E2E_OPS_LIVE=1 npm run e2e -- --project=chromium-ops-live  # 실제 외부 의존성 smoke
 ```
 
 ### 포트 충돌 override
@@ -852,7 +888,9 @@ services:
 ### curl 호출
 ```bash
 export API_KEY=your-32-char-secret
-curl -X POST http://localhost:8001/collect -H "X-API-Key: $API_KEY"
+curl -X POST http://localhost:8001/notices/search \
+  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"keyword":"ABB","page":1,"page_size":20}'
 ```
 
 ### 코드 위치
@@ -883,7 +921,7 @@ curl -X POST http://localhost:8001/collect -H "X-API-Key: $API_KEY"
 - 해결: 누락된 값 채우거나 요청 본문 `values`에 직접 주입
 
 ### "스케줄러가 안 돔"
-- 증상: 매일 08:00 수집이 안 일어남, 30분 grade 갱신 안 됨
+- 증상: 30분 grade 갱신이 안 됨
 - 확인: `docker compose logs api | grep scheduler` 또는 환경변수 `SCHEDULER_ENABLED`, `SCHEDULER_GRADE_ENABLED`, `GRADE_INTERVAL_MINUTES`
 - 해결: 모두 `true`/양수로 설정, API 컨테이너 재기동
 
@@ -894,8 +932,8 @@ curl -X POST http://localhost:8001/collect -H "X-API-Key: $API_KEY"
 - 증상: 컨테이너 부팅 시 `permission denied for schema`
 - 해결: 도커 컴포즈는 `autojebi/autojebi/autojebi`로 자동 셋업이지만, 외부 DB 사용 시 해당 유저에게 CREATE 권한 부여
 
-### "G2B 수집 0건"
-- 확인: `BID_KEYWORDS`가 너무 좁지 않은지, `DATA_GO_KR_API_KEY` 유효한지, 검색 기간(`start`/`end`)이 휴일에 걸리지 않는지
+### "G2B 검색 0건"
+- 확인: 검색어가 너무 좁지 않은지, `DATA_GO_KR_API_KEY` 유효한지, 검색 기간(`start_date`/`end_date`)이 휴일에 걸리지 않는지
 
 ---
 
@@ -906,7 +944,7 @@ curl -X POST http://localhost:8001/collect -H "X-API-Key: $API_KEY"
 | 앱 부팅 | [api/main.py](api/main.py) |
 | 설정 | [api/config.py](api/config.py), [.env.example](.env.example) |
 | 인증 | [api/auth.py](api/auth.py) |
-| 라우터 | [api/routers/notices.py](api/routers/notices.py), [api/routers/trigger.py](api/routers/trigger.py), [api/routers/skus.py](api/routers/skus.py) |
+| 라우터 | [api/routers/notices.py](api/routers/notices.py), [api/routers/skus.py](api/routers/skus.py), [api/routers/ontology.py](api/routers/ontology.py) |
 | 수집 | [api/collector/pipeline.py](api/collector/pipeline.py), [api/collector/scheduler.py](api/collector/scheduler.py) |
 | 분석 (Claude) | [api/services/claude_analyzer.py](api/services/claude_analyzer.py), [api/llm/extractor.py](api/llm/extractor.py), [api/llm/prompts.py](api/llm/prompts.py), [api/llm/schemas.py](api/llm/schemas.py) |
 | 첨부 처리 | [api/services/attachments.py](api/services/attachments.py) |

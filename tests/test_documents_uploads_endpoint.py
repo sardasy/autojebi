@@ -145,6 +145,97 @@ def test_upload_creates_metadata_and_promotes_item(client, sqlite_engine):
     assert "upload" in bizn["source"]
 
 
+def test_pdf_upload_auto_detects_and_promotes_item(client, sqlite_engine, monkeypatch):
+    _seed_with_document_automation(sqlite_engine)
+    monkeypatch.setattr(
+        "api.services.uploads.extract_pdf_text",
+        lambda _b: "사업자등록증 사업자등록번호 회사명",
+    )
+    r = client.post(
+        "/notices/DOC-1/documents/uploads",
+        files={"file": ("company.pdf", b"%PDF", "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
+    uploaded = r.json()["uploaded"]
+    assert uploaded["detected_item_id"] == "business_registration"
+    assert uploaded["item_id"] == "business_registration"
+    assert uploaded["detect_confidence"] >= 0.75
+    assert "사업자등록증" in uploaded["analysis_summary"]
+
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(
+            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == "DOC-1")
+        ).mappings().one()
+    docs = row["analysis"]["document_automation"]
+    bizn = next(i for i in docs["checklist"] if i["id"] == "business_registration")
+    assert bizn["status"] == "ready"
+
+
+def test_explicit_item_id_wins_over_auto_detection(client, sqlite_engine, monkeypatch):
+    _seed_with_document_automation(sqlite_engine)
+    monkeypatch.setattr(
+        "api.services.uploads.extract_pdf_text",
+        lambda _b: "사업자등록증 사업자등록번호 회사명",
+    )
+    r = client.post(
+        "/notices/DOC-1/documents/uploads",
+        files={"file": ("company.pdf", b"%PDF", "application/pdf")},
+        data={"item_id": "bid_form"},
+    )
+    assert r.status_code == 200, r.text
+    uploaded = r.json()["uploaded"]
+    assert uploaded["detected_item_id"] == "business_registration"
+    assert uploaded["item_id"] == "bid_form"
+
+
+def test_hwp_agent_failure_records_error_but_upload_succeeds(client, sqlite_engine, monkeypatch):
+    _seed_with_document_automation(sqlite_engine)
+
+    class FailingClient:
+        def analyze_document(self, _path):
+            from api.services.hwp_agent_client import HwpAgentError
+
+            raise HwpAgentError("agent down")
+
+    monkeypatch.setattr("api.routers.notices._make_hwp_agent_client", lambda: FailingClient())
+    r = client.post(
+        "/notices/DOC-1/documents/uploads",
+        files={"file": ("form.hwp", b"HWP", "application/x-hwp")},
+    )
+    assert r.status_code == 200, r.text
+    uploaded = r.json()["uploaded"]
+    assert uploaded["text_extract_error"]
+    assert "agent down" in uploaded["text_extract_error"]
+
+
+def test_common_upload_import_promotes_current_notice_item(client, sqlite_engine, monkeypatch):
+    _seed_with_document_automation(sqlite_engine)
+    monkeypatch.setattr(
+        "api.services.uploads.extract_pdf_text",
+        lambda _b: "사업자등록증 사업자등록번호 회사명",
+    )
+    common = client.post(
+        "/documents/common/uploads",
+        files={"file": ("common-biz.pdf", b"%PDF", "application/pdf")},
+    )
+    assert common.status_code == 200, common.text
+    upload_id = common.json()["uploaded"]["id"]
+
+    r = client.post(f"/notices/DOC-1/documents/import-common/{upload_id}")
+    assert r.status_code == 200, r.text
+    imported = r.json()["uploaded"]
+    assert imported["source_ref"] == "common_library"
+    assert imported["item_id"] == "business_registration"
+
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(
+            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == "DOC-1")
+        ).mappings().one()
+    docs = row["analysis"]["document_automation"]
+    bizn = next(i for i in docs["checklist"] if i["id"] == "business_registration")
+    assert bizn["status"] == "ready"
+
+
 def test_list_uploads_returns_persisted_items(client, sqlite_engine):
     _seed_with_document_automation(sqlite_engine)
     client.post(

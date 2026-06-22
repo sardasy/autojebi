@@ -69,6 +69,35 @@ describe("G2BSearchDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows attachment availability from G2B raw fields", async () => {
+    const { actionSearchG2B } = await import("@/lib/actions");
+    (actionSearchG2B as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        items: [
+          makeItem({
+            raw: {
+              bidNtceNo: "R26X001",
+              ntceSpecDocUrl1: "data:application/pdf;base64,JVBERg==",
+            },
+          }),
+        ],
+        total: 1,
+        page: 1,
+        page_size: 50,
+        total_pages: 1,
+      },
+    });
+
+    await openDialog();
+    fireEvent.change(screen.getByPlaceholderText(/ABB 차단기/), {
+      target: { value: "ABB" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^검색$/ }));
+
+    await waitFor(() => expect(screen.getByText("있음")).toBeInTheDocument());
+  });
+
   it("shows '이미 등록' badge for already_exists items", async () => {
     const { actionSearchG2B } = await import("@/lib/actions");
     (actionSearchG2B as ReturnType<typeof vi.fn>).mockResolvedValueOnce({

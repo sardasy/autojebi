@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 from sqlalchemy import insert
 
+from api.routers import notices
 from api.routers.notices import bid_pipeline
 
 
@@ -54,13 +56,22 @@ def test_notice_summary_empty_db(client):
     }
 
 
-def test_notice_summary_counts_work_queue_buckets(client, sqlite_engine):
-    now = datetime.now(tz=UTC)
+def test_notice_summary_counts_work_queue_buckets(client, sqlite_engine, monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = datetime(2026, 6, 21, 1, 0, tzinfo=UTC)
+            return fixed if tz is None else fixed.astimezone(tz)
+
+    monkeypatch.setattr(notices, "datetime", FixedDateTime)
+    today_kst = FixedDateTime.now(tz=ZoneInfo("Asia/Seoul")).date()
+    today_close = datetime.combine(today_kst, time(15, 0), tzinfo=ZoneInfo("Asia/Seoul"))
+    now = today_close.astimezone(UTC)
     _seed_notice(
         sqlite_engine,
         notice_no="COLLECTED-000",
         status="collected",
-        close_date=now + timedelta(hours=2),
+        close_date=now,
     )
     _seed_notice(
         sqlite_engine,

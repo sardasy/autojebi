@@ -18,8 +18,8 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
   if (uploads.length === 0) {
     return (
       <div className="rounded border border-slate-800 bg-slate-900/30 p-3 text-xs text-slate-400">
-        업로드된 파일이 없습니다. "파일 업로드"로 사업자등록증·인감·실적증명 등을 첨부할 수
-        있습니다.
+        업로드된 파일이 없습니다. "첨부 서류 가져오기" 또는 "파일 업로드"로 공고 첨부와
+        사업자등록증·인감·실적증명 등을 첨부할 수 있습니다.
       </div>
     );
   }
@@ -44,6 +44,7 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
             <th className="px-3 py-2 text-left font-medium">파일</th>
             <th className="px-3 py-2 text-left font-medium">크기</th>
             <th className="px-3 py-2 text-left font-medium">연결 항목</th>
+            <th className="px-3 py-2 text-left font-medium">분석 요약</th>
             <th className="px-3 py-2 text-left font-medium">업로드</th>
             <th className="px-3 py-2 text-right font-medium">동작</th>
           </tr>
@@ -61,7 +62,29 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
                 </a>
               </td>
               <td className="px-3 py-2 text-slate-300">{formatBytes(up.size)}</td>
-              <td className="px-3 py-2 text-slate-300">{up.item_id || "-"}</td>
+              <td className="px-3 py-2 text-slate-300">
+                <div>{up.item_id || "-"}</div>
+                {!up.item_id && up.detected_item_id ? (
+                  <div className="text-xs text-amber-300">
+                    추천: {up.detected_item_id}
+                    {typeof up.detect_confidence === "number"
+                      ? ` (${up.detect_confidence.toFixed(2)})`
+                      : ""}
+                  </div>
+                ) : null}
+                {up.source_ref === "common_library" ? (
+                  <div className="text-xs text-cyan-300">공통 서류함</div>
+                ) : null}
+                {up.source_ref === "g2b_attachment" ? (
+                  <div className="text-xs text-emerald-300">G2B 첨부</div>
+                ) : null}
+              </td>
+              <td className="max-w-md px-3 py-2 text-xs text-slate-400">
+                {up.analysis_summary || "-"}
+                {up.text_extract_error ? (
+                  <div className="mt-1 text-rose-300">{up.text_extract_error}</div>
+                ) : null}
+              </td>
               <td className="px-3 py-2 text-xs text-slate-400">
                 {formatDate(up.uploaded_at)}
               </td>

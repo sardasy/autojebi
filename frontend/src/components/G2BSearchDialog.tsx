@@ -36,6 +36,15 @@ function fmtPrice(p: number | null): string {
   return new Intl.NumberFormat("ko-KR").format(p) + "원";
 }
 
+function hasG2BAttachment(item: NoticeSearchItem): boolean {
+  return Object.entries(item.raw || {}).some(
+    ([key, value]) =>
+      key.startsWith("ntceSpecDocUrl") &&
+      typeof value === "string" &&
+      value.trim().length > 0,
+  );
+}
+
 function todayPlusDays(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
@@ -220,6 +229,7 @@ export function G2BSearchDialog() {
                     <th className="text-left font-medium px-3 py-2">기관</th>
                     <th className="text-right font-medium px-3 py-2">예가</th>
                     <th className="text-left font-medium px-3 py-2">마감</th>
+                    <th className="text-left font-medium px-3 py-2">첨부</th>
                     <th className="text-right font-medium px-3 py-2">액션</th>
                   </tr>
                 </thead>
@@ -241,6 +251,15 @@ export function G2BSearchDialog() {
                       </td>
                       <td className="px-3 py-2 text-slate-300 text-xs">
                         {fmtDate(it.close_date)}
+                      </td>
+                      <td className="px-3 py-2">
+                        {hasG2BAttachment(it) ? (
+                          <span className="rounded border border-cyan-700 bg-cyan-950/40 px-2 py-1 text-xs text-cyan-200">
+                            있음
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500">없음</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right">
                         {it.already_exists ? (

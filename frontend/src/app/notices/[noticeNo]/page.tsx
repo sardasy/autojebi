@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CategoryBadge } from "@/components/CategoryBadge";
+import { BidWorkflowRail } from "@/components/BidWorkflowRail";
 import { DocumentPreparationPanel } from "@/components/DocumentPreparationPanel";
 import { MetricCard } from "@/components/MetricCard";
 import { NoticeActionsBar } from "@/components/NoticeActionsBar";
@@ -9,7 +10,6 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { getNotice, type NoticeRecord } from "@/lib/api";
 import {
   documentSummaryText,
-  nextNoticeAction,
   readDocumentAutomation,
 } from "@/lib/documentAutomation";
 
@@ -80,21 +80,20 @@ export default async function NoticeDetailPage({
               <span className="text-slate-400">담당자: {notice.assignee || "-"}</span>
             </div>
           </div>
-          <div className="rounded border border-brand-700 bg-brand-950/30 px-3 py-2 text-sm text-brand-100">
-            다음 작업: <span className="font-semibold">{nextNoticeAction(notice)}</span>
-          </div>
         </div>
         <div className="text-xs text-slate-500">
           notice_no: <code className="rounded bg-slate-900 px-1">{notice.notice_no}</code>
         </div>
       </section>
 
-      <section>
+      <BidWorkflowRail notice={notice} />
+
+      <section id="work-actions" className="scroll-mt-24">
         <h2 className="mb-2 text-sm font-semibold text-slate-300">작업</h2>
         <NoticeActionsBar notice={notice} />
       </section>
 
-      <section>
+      <section id="grading" className="scroll-mt-24">
         <h2 className="mb-2 text-sm font-semibold text-slate-300">3축 그레이딩</h2>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <MetricCard label="사양 (spec)" value={notice.score_spec} />
@@ -168,7 +167,7 @@ export default async function NoticeDetailPage({
         </section>
       ) : null}
 
-      <section>
+      <section id="documents" className="scroll-mt-24">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-300">서류 준비</h2>
           {docs ? (

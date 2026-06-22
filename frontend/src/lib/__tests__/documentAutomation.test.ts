@@ -6,7 +6,9 @@ import type {
   NoticeRecord,
 } from "../api";
 import {
+  bidWorkflowSteps,
   documentSummaryText,
+  nextNoticeAction,
   readDocumentAutomation,
 } from "../documentAutomation";
 
@@ -29,6 +31,7 @@ function mkItem(
 
 function mkNotice(
   analysis: Record<string, unknown> | null,
+  overrides: Partial<NoticeRecord> = {},
 ): NoticeRecord {
   return {
     notice_no: "T1",
@@ -61,6 +64,10 @@ function mkNotice(
     top_sku_name: null,
     sku_match_score: null,
     graded_at: null,
+    unresolved_error_count: 0,
+    export_count: 0,
+    spec_item_count: 0,
+    ...overrides,
   };
 }
 
@@ -188,5 +195,203 @@ describe("documentSummaryText", () => {
       errors: [],
     });
     expect(text).toBe("서류: 1/2 준비 · 누락 1 · 초안 0");
+  });
+});
+
+describe("nextNoticeAction", () => {
+  const readyDocs: DocumentAutomationResult = {
+    checklist: [
+      mkItem({ id: "bid_form", status: "generated" }),
+      mkItem({ id: "business_registration", status: "ready" }),
+      mkItem({ id: "technical_compliance", status: "generated" }),
+    ],
+    drafts: {
+      technical_compliance: { kind: "markdown", content: "x" },
+    },
+    risks: [],
+    generated_at: "",
+    source: "rule",
+    ready_for_submission: false,
+    missing_required: [],
+    errors: [],
+    uploads: [],
+    exports: [],
+  };
+
+  it("walks the bid operations workflow in order", () => {
+    expect(nextNoticeAction(mkNotice({}, { status: "collected" }))).toBe("공고 분석 필요");
+
+    expect(nextNoticeAction(mkNotice({}, { status: "analyzed" }))).toBe("그레이딩 필요");
+
+    expect(
+      nextNoticeAction(
+        mkNotice({}, { status: "analyzed", graded_at: "2026-06-22T00:00:00+09:00" }),
+      ),
+    ).toBe("서류 분석 필요");
+
+    expect(
+      nextNoticeAction(
+        mkNotice(
+          {
+            document_automation: {
+              ...readyDocs,
+              checklist: [
+                mkItem({ id: "bid_form", status: "needed" }),
+                mkItem({ id: "business_registration", status: "ready" }),
+              ],
+            },
+          },
+          { graded_at: "2026-06-22T00:00:00+09:00" },
+        ),
+      ),
+    ).toBe("필수 서류 준비 필요 (1건)");
+
+    expect(
+      nextNoticeAction(
+        mkNotice(
+          { document_automation: readyDocs },
+          { graded_at: "2026-06-22T00:00:00+09:00", spec_item_count: 0 },
+        ),
+      ),
+    ).toBe("규격 추출 필요");
+
+    expect(
+      nextNoticeAction(
+        mkNotice(
+          { document_automation: readyDocs },
+          { graded_at: "2026-06-22T00:00:00+09:00", spec_item_count: 3 },
+        ),
+      ),
+    ).toBe("규격대응표 작성 필요");
+
+    expect(
+      nextNoticeAction(
+        mkNotice(
+          {
+            document_automation: {
+              ...readyDocs,
+              exports: [
+                {
+                  kind: "excel",
+                  draft_id: "technical_compliance",
+                  output_path: "x.xlsx",
+                  mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  generated_at: "2026-06-22T00:00:00+09:00",
+                },
+              ],
+            },
+          },
+          { graded_at: "2026-06-22T00:00:00+09:00", spec_item_count: 3 },
+        ),
+      ),
+    ).toBe("제안서 초안 생성 필요");
+  });
+
+  it("returns final-review action once proposal draft exists and documents are ready", () => {
+    expect(
+      nextNoticeAction(
+        mkNotice(
+          {
+            document_automation: {
+              ...readyDocs,
+              ready_for_submission: true,
+              drafts: {
+                ...readyDocs.drafts,
+                proposal: { kind: "hwp_proposal", values: {} },
+              },
+              exports: [
+                {
+                  kind: "excel",
+                  draft_id: "technical_compliance",
+                  output_path: "x.xlsx",
+                  mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  generated_at: "2026-06-22T00:00:00+09:00",
+                },
+              ],
+            },
+          },
+          { graded_at: "2026-06-22T00:00:00+09:00", spec_item_count: 3 },
+        ),
+      ),
+    ).toBe("최종 검토 가능");
+  });
+});
+
+describe("bidWorkflowSteps", () => {
+  it("marks the current step according to review-document-spec-compliance-proposal order", () => {
+    const notice = mkNotice(
+      {
+        document_automation: {
+          checklist: [
+            mkItem({ id: "bid_form", status: "generated" }),
+            mkItem({ id: "business_registration", status: "ready" }),
+            mkItem({ id: "technical_compliance", status: "generated" }),
+          ],
+          drafts: { technical_compliance: { kind: "markdown", content: "x" } },
+          risks: [],
+          generated_at: "",
+          source: "rule",
+          ready_for_submission: false,
+          missing_required: [],
+          errors: [],
+          exports: [],
+        },
+      },
+      {
+        status: "documents_analyzed",
+        graded_at: "2026-06-22T00:00:00+09:00",
+        spec_item_count: 0,
+      },
+    );
+
+    expect(bidWorkflowSteps(notice).map((step) => [step.id, step.state])).toEqual([
+      ["review", "done"],
+      ["documents", "done"],
+      ["spec", "current"],
+      ["compliance", "pending"],
+      ["proposal", "pending"],
+    ]);
+  });
+
+  it("marks proposal done when proposal draft exists after compliance export", () => {
+    const notice = mkNotice(
+      {
+        document_automation: {
+          checklist: [mkItem({ id: "technical_compliance", status: "generated" })],
+          drafts: {
+            technical_compliance: { kind: "markdown", content: "x" },
+            proposal: { kind: "hwp_proposal", values: {} },
+          },
+          risks: [],
+          generated_at: "",
+          source: "rule",
+          ready_for_submission: true,
+          missing_required: [],
+          errors: [],
+          exports: [
+            {
+              kind: "excel",
+              draft_id: "technical_compliance",
+              output_path: "x.xlsx",
+              mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              generated_at: "2026-06-22T00:00:00+09:00",
+            },
+          ],
+        },
+      },
+      {
+        status: "hwp_composed",
+        graded_at: "2026-06-22T00:00:00+09:00",
+        spec_item_count: 5,
+      },
+    );
+
+    expect(bidWorkflowSteps(notice).map((step) => step.state)).toEqual([
+      "done",
+      "done",
+      "done",
+      "done",
+      "done",
+    ]);
   });
 });

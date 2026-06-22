@@ -1,6 +1,6 @@
 import pytest
 
-from api.services.status import can_transition, compute_notify_status
+from api.services.status import advance_status, can_transition, compute_notify_status
 
 
 @pytest.mark.parametrize(
@@ -29,11 +29,13 @@ def test_can_transition_blocks_invalid():
 
 
 def test_can_transition_form_filled_path():
-    # analyzed can go to form_filled (intermediate) or skip straight to a final state
-    assert can_transition("analyzed", "form_filled")
+    assert can_transition("analyzed", "attachments_fetched")
+    assert can_transition("attachments_fetched", "documents_analyzed")
+    assert can_transition("documents_analyzed", "spec_extracted")
+    assert can_transition("spec_extracted", "hwp_composed")
+    assert can_transition("hwp_composed", "form_filled")
     assert can_transition("analyzed", "notified")
 
-    # form_filled feeds into all three final states
     assert can_transition("form_filled", "notified")
     assert can_transition("form_filled", "digest_queued")
     assert can_transition("form_filled", "archived_low")
@@ -45,3 +47,8 @@ def test_can_transition_form_filled_rejects_backwards():
     assert not can_transition("form_filled", "form_filled")
     assert not can_transition("collected", "form_filled")
 
+
+def test_advance_status_blocks_downgrade():
+    assert advance_status("spec_extracted", "documents_analyzed") == "spec_extracted"
+    assert advance_status("documents_analyzed", "spec_extracted") == "spec_extracted"
+    assert advance_status("notified", "spec_extracted") == "notified"

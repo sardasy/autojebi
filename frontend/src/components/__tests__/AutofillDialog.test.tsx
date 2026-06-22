@@ -88,4 +88,41 @@ describe("AutofillDialog", () => {
     fireEvent.change(valuesArea, { target: { value: "{not valid" } });
     expect(screen.getByText(/values JSON 파싱 실패/)).toBeInTheDocument();
   });
+
+  it("uses bid_form_values draft as default JSON", async () => {
+    const AutofillDialog = await loadDialog();
+    render(
+      <ToastProvider>
+        <AutofillDialog
+          open={true}
+          onClose={() => {}}
+          notice={{
+            ...fakeNotice,
+            analysis: {
+              document_automation: {
+                checklist: [],
+                drafts: {
+                  bid_form_values: {
+                    values: {
+                      org_name: "한국전력",
+                      top_sku_name: "ABB-X1",
+                    },
+                  },
+                },
+                risks: [],
+                generated_at: "",
+                source: "rule",
+                ready_for_submission: false,
+                missing_required: [],
+                errors: [],
+              },
+            },
+          }}
+        />
+      </ToastProvider>,
+    );
+    const valuesArea = screen.getByText(/values \(JSON/).nextElementSibling as HTMLTextAreaElement;
+    expect(valuesArea.value).toContain('"org_name": "한국전력"');
+    expect(valuesArea.value).toContain('"top_sku_name": "ABB-X1"');
+  });
 });

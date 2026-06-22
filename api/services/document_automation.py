@@ -41,7 +41,7 @@ def analyze_document_requirements(row: Any) -> dict[str, Any]:
     # v2 — uploads로 채워진 항목 status를 ready로 자동 승격 (수동 변경 보존 후 적용)
     checklist = _apply_uploads_to_checklist(checklist, existing.get("uploads") or [])
 
-    drafts = _build_drafts(row, checklist, llm_payload)
+    drafts = _build_drafts(row, checklist, llm_payload, existing)
     existing_drafts = existing.get("drafts") if isinstance(existing, dict) else None
     if isinstance(existing_drafts, dict) and isinstance(existing_drafts.get("bid_form"), dict):
         drafts["bid_form"] = existing_drafts["bid_form"]
@@ -131,6 +131,87 @@ def validate_document_automation(document_automation: dict[str, Any]) -> dict[st
     updated = dict(document_automation)
     _refresh_validation(updated)
     return updated
+
+
+def validate_pre_compose(
+    document_automation: dict[str, Any],
+    *,
+    spec_rows: list[dict[str, Any]],
+    values: dict[str, Any] | None = None,
+    target_item_ids: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """HWP/제안서 생성 전 품질 게이트.
+
+    생성 대상 서류 자체는 이 단계에서 만들어질 수 있으므로 누락 차단 대상에서 제외한다.
+    낮은 confidence/검토 후보는 담당자가 볼 수 있는 경고로만 반환한다.
+    """
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    targets = target_item_ids or set()
+
+    if not spec_rows:
+        errors.append(
+            {
+                "stage": "pre_compose.spec_items",
+                "severity": "error",
+                "detail": "규격 항목 추출 필요",
+            }
+        )
+
+    checklist = document_automation.get("checklist") if isinstance(document_automation, dict) else None
+    if isinstance(checklist, list):
+        for item in checklist:
+            if not isinstance(item, dict):
+                continue
+            if item.get("id") in targets:
+                continue
+            if item.get("required") is True and item.get("status") not in READY_STATUSES:
+                errors.append(
+                    {
+                        "stage": "pre_compose.required_document",
+                        "severity": "error",
+                        "detail": f"필수 서류 누락: {item.get('name') or item.get('id')}",
+                        "item_id": item.get("id"),
+                    }
+                )
+
+    merged_values = {key: str(value) for key, value in (values or {}).items()}
+    drafts = document_automation.get("drafts") if isinstance(document_automation, dict) else None
+    if isinstance(drafts, dict):
+        bid_values = drafts.get("bid_form_values")
+        if isinstance(bid_values, dict):
+            existing_values = bid_values.get("values")
+            if isinstance(existing_values, dict):
+                merged_values = {
+                    **{key: str(value) for key, value in existing_values.items()},
+                    **merged_values,
+                }
+            required = bid_values.get("required_placeholders") or []
+            for key in required:
+                if not merged_values.get(str(key)):
+                    errors.append(
+                        {
+                            "stage": "pre_compose.required_value",
+                            "severity": "error",
+                            "detail": f"필수 작성값 누락: {key}",
+                            "placeholder": str(key),
+                        }
+                    )
+
+    for row in spec_rows:
+        status = str(row.get("status") or "")
+        confidence = float(row.get("confidence") or 0)
+        if status == "candidate" or row.get("review_priority") == "high" or confidence < 0.75:
+            warnings.append(
+                {
+                    "stage": "pre_compose.spec_review",
+                    "severity": "warning",
+                    "detail": f"검토 권장 규격 항목: {row.get('label') or row.get('item_key')}",
+                    "item_key": row.get("item_key"),
+                }
+            )
+
+    return errors, warnings
 
 
 def attach_bid_form_result(
@@ -292,12 +373,21 @@ def _preserve_manual_updates(
     return fresh
 
 
-def _build_drafts(row: Any, checklist: list[DocumentChecklistItem], llm_payload: dict[str, Any]) -> dict[str, Any]:
+def _build_drafts(
+    row: Any,
+    checklist: list[DocumentChecklistItem],
+    llm_payload: dict[str, Any],
+    existing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     analysis = dict(row["analysis"] or {})
     raw = dict(row["raw"] or {})
     elec_spec = dict(analysis.get("elec_spec") or {})
     title = str(row["title"] or row["notice_no"] or "")
     top_sku_name = str(row.get("top_sku_name") or "") if hasattr(row, "get") else ""
+    org_name = str(row.get("org_name") or raw.get("ntceInsttNm") or raw.get("dminsttNm") or "")
+    close_date = row.get("close_date") if hasattr(row, "get") else None
+    close_date_text = close_date.isoformat() if hasattr(close_date, "isoformat") else str(close_date or "")
+    uploads = list((existing or {}).get("uploads") or [])
 
     technical_lines = [
         "| 항목 | 공고 요구사양 | 추출/추천 값 | 확인 |",
@@ -329,6 +419,8 @@ def _build_drafts(row: Any, checklist: list[DocumentChecklistItem], llm_payload:
         "주의: 검토용 초안이며 최종 제출 전 원문 공고와 나라장터 화면 확인이 필요합니다.",
     ]
 
+    technical_content = "\n".join(technical_lines)
+    upload_summaries = _upload_summaries(uploads)
     drafts = {
         "bid_form_values": {
             "kind": "json",
@@ -336,16 +428,21 @@ def _build_drafts(row: Any, checklist: list[DocumentChecklistItem], llm_payload:
             "values": {
                 "notice_no": str(row["notice_no"] or ""),
                 "title": title,
+                "org_name": org_name,
+                "close_date": close_date_text,
                 "category": str(row["category"] or ""),
                 "assignee": str(row["assignee"] or ""),
                 "fit_score": str(row["fit_score"] or 0),
+                "top_sku_name": top_sku_name,
+                "technical_compliance_summary": _compact_text(technical_content, 500),
+                "uploaded_document_summary": upload_summaries,
             },
             "review_note": "회사 기본정보는 환경변수 또는 HWP 실행 모달 values에서 최종 보강합니다.",
         },
         "technical_compliance": {
             "kind": "markdown",
             "label": "규격대응표 초안",
-            "content": "\n".join(technical_lines),
+            "content": technical_content,
         },
         "submission_summary": {
             "kind": "markdown",
@@ -356,6 +453,23 @@ def _build_drafts(row: Any, checklist: list[DocumentChecklistItem], llm_payload:
     if isinstance(llm_payload, dict) and isinstance(llm_payload.get("drafts"), dict):
         drafts.update(llm_payload["drafts"])
     return drafts
+
+
+def _upload_summaries(uploads: list[Any]) -> str:
+    lines: list[str] = []
+    for item in uploads:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "upload")
+        mapped = str(item.get("item_id") or item.get("detected_item_id") or "-")
+        summary = str(item.get("analysis_summary") or "")
+        lines.append(_compact_text(f"{name}: {mapped} {summary}".strip(), 180))
+    return "\n".join(lines)
+
+
+def _compact_text(value: str, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _rule_risks(raw: dict[str, Any], analysis: dict[str, Any]) -> list[str]:

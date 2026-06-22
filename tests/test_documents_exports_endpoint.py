@@ -10,13 +10,13 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, func, insert, select
 from sqlalchemy.pool import StaticPool
 
 from api.config import settings
 from api.main import app
 from api.routers import notices as notices_router
-from api.routers.notices import bid_pipeline, metadata
+from api.routers.notices import bid_pipeline, metadata, notice_exports, notice_spec_items
 from api.services.hwp_agent_client import HwpAgentError
 
 
@@ -86,18 +86,63 @@ def _seed(engine, *, with_drafts=True):
         )
 
 
+def _seed_spec_item(engine):
+    with engine.begin() as conn:
+        conn.execute(
+            insert(notice_spec_items).values(
+                notice_no="DOC-1",
+                item_key="product_category",
+                label="품목",
+                required_value="변압기",
+                proposed_value="ABB 변압기",
+                unit="",
+                category="technical",
+                source="test",
+                confidence=0.95,
+                evidence={},
+                status="matched",
+                sort_order=1,
+            )
+        )
+
+
 def test_export_excel_writes_xlsx_and_persists(client, sqlite_engine):
     _seed(sqlite_engine)
     r = client.post("/notices/DOC-1/documents/exports/excel")
     assert r.status_code == 200, r.text
     body = r.json()["export"]
+    assert body["id"]
     assert body["kind"] == "excel"
+    assert body["version"] == "compliance_excel_v2"
+    assert body["validation_status"] == "passed"
+    assert body["file_size"] > 0
+    assert body["sha256"]
     assert body["output_path"].endswith(".xlsx")
 
     wb = load_workbook(body["output_path"])
     ws = wb.active
     assert ws.cell(row=1, column=1).value == "항목"
     assert ws.cell(row=2, column=1).value == "품목"
+    assert "검토요약" in wb.sheetnames
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(select(notice_exports).where(notice_exports.c.notice_no == "DOC-1")).mappings().one()
+    assert row["kind"] == "excel"
+    assert row["version"] == "compliance_excel_v2"
+    assert row["file_size"] == body["file_size"]
+    assert row["deleted_at"] is None
+
+
+def test_export_excel_v1_keeps_legacy_single_sheet(client, sqlite_engine):
+    _seed(sqlite_engine)
+    r = client.post(
+        "/notices/DOC-1/documents/exports/excel",
+        json={"version": "compliance_excel_v1"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()["export"]
+    assert body["version"] == "compliance_excel_v1"
+    wb = load_workbook(body["output_path"])
+    assert wb.sheetnames == ["규격대응표"]
 
 
 def test_export_excel_409_when_draft_missing(client, sqlite_engine):
@@ -108,6 +153,7 @@ def test_export_excel_409_when_draft_missing(client, sqlite_engine):
 
 def test_export_hwp_returns_502_when_agent_errors(client, sqlite_engine, monkeypatch):
     _seed(sqlite_engine)
+    _seed_spec_item(sqlite_engine)
 
     class FakeClient:
         def generate_compliance_table(self, **kw):
@@ -121,6 +167,7 @@ def test_export_hwp_returns_502_when_agent_errors(client, sqlite_engine, monkeyp
 
 def test_export_hwp_uses_agent_output_path_and_persists(client, sqlite_engine, monkeypatch, tmp_path):
     _seed(sqlite_engine)
+    _seed_spec_item(sqlite_engine)
     final_path = tmp_path / "compliance.hwp"
     final_path.write_bytes(b"HWPCONTENT")
 
@@ -136,7 +183,7 @@ def test_export_hwp_uses_agent_output_path_and_persists(client, sqlite_engine, m
 
 def test_export_download_streams_generated_file(client, sqlite_engine):
     _seed(sqlite_engine)
-    client.post("/notices/DOC-1/documents/exports/excel")
+    create = client.post("/notices/DOC-1/documents/exports/excel")
     r = client.get("/notices/DOC-1/documents/exports/excel/download")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith(
@@ -145,8 +192,60 @@ def test_export_download_streams_generated_file(client, sqlite_engine):
     # xlsx zip 매직넘버 = PK\x03\x04
     assert r.content[:2] == b"PK"
 
+    export_id = create.json()["export"]["id"]
+    r2 = client.get(f"/notices/DOC-1/documents/exports/by-id/{export_id}/download")
+    assert r2.status_code == 200
+    assert r2.content[:2] == b"PK"
+
+
+def test_export_regeneration_soft_deletes_previous_active_row(client, sqlite_engine):
+    _seed(sqlite_engine)
+    client.post("/notices/DOC-1/documents/exports/excel")
+    client.post("/notices/DOC-1/documents/exports/excel")
+
+    with sqlite_engine.begin() as conn:
+        total = conn.execute(select(func.count()).select_from(notice_exports)).scalar_one()
+        active = conn.execute(
+            select(func.count())
+            .select_from(notice_exports)
+            .where(notice_exports.c.deleted_at.is_(None))
+        ).scalar_one()
+    assert total == 2
+    assert active == 1
+
 
 def test_export_download_404_when_not_generated(client, sqlite_engine):
     _seed(sqlite_engine)
     r = client.get("/notices/DOC-1/documents/exports/excel/download")
     assert r.status_code == 404
+
+
+def test_export_hwp_precompose_validation_blocks_missing_required_doc(client, sqlite_engine):
+    _seed(sqlite_engine)
+    with sqlite_engine.begin() as conn:
+        analysis = conn.execute(
+            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == "DOC-1")
+        ).scalar_one()
+        docs = analysis["document_automation"]
+        docs["checklist"] = [
+            {
+                "id": "business_registration",
+                "name": "사업자등록증",
+                "required": True,
+                "status": "needed",
+            }
+        ]
+        conn.execute(
+            bid_pipeline.update()
+            .where(bid_pipeline.c.notice_no == "DOC-1")
+            .values(analysis=analysis)
+        )
+
+    r = client.post("/notices/DOC-1/documents/exports/hwp")
+
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["errors"][0]["stage"] == "pre_compose.spec_items"
+    with sqlite_engine.begin() as conn:
+        rows = conn.execute(select(notice_exports)).all()
+    assert rows == []

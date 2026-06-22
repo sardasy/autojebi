@@ -1,0 +1,26 @@
+{
+  "notice_no": "E2E-LOWFIT-000",
+  "title": "청사 조경용 화분 구매",
+  "source": "G2B",
+  "org_name": "E2E 테스트기관",
+  "base_price": 1200000,
+  "open_date": "2026-06-01T09:00:00+09:00",
+  "close_date": "2026-06-15T18:00:00+09:00",
+  "raw": {
+    "bidNtceNo": "E2E-LOWFIT",
+    "bidNtceOrd": "000",
+    "bidNtceNm": "청사 조경용 화분 구매",
+    "ntceInsttNm": "E2E 테스트기관",
+    "dminsttNm": "E2E 테스트기관",
+    "bidBeginDt": "2026-06-01 09:00:00",
+    "bidClseDt": "2026-06-15 18:00:00",
+    "presmptPrce": "1200000",
+    "asignBdgtAmt": "1200000",
+    "cntrctCnclsMthdNm": "수의계약",
+    "prdctSpecNm": "화분 및 조경 소모품",
+    "prdctQty": "20",
+    "prdctUnit": "개",
+    "ntceSpecDocUrl1": "",
+    "ntceSpecFileNm1": ""
+  }
+}

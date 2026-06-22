@@ -74,6 +74,7 @@ services:
       EXPORT_DIR: /app/exports
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-30000000}
       UPLOAD_ALLOWED_EXTS: ${UPLOAD_ALLOWED_EXTS:-pdf,hwp,hwpx,jpg,jpeg,png,xlsx,docx}
+      E2E_CLEANUP_ENABLED: ${E2E_CLEANUP_ENABLED:-false}
     ports:
       - "8001:8000"
     volumes:

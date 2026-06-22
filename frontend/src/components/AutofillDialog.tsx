@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { actionAutofill } from "@/lib/actions";
 import type { NoticeRecord } from "@/lib/api";
+import { readDocumentAutomation } from "@/lib/documentAutomation";
 import { Modal } from "./Modal";
 import { useToast } from "./Toast";
 
@@ -19,6 +20,26 @@ const DEFAULT_VALUES = {
   ceo_name: "",
   address: "",
 };
+
+function defaultValuesForNotice(notice: NoticeRecord): Record<string, string> {
+  const docs = readDocumentAutomation(notice);
+  const draft = docs?.drafts?.bid_form_values;
+  if (draft && typeof draft === "object" && !Array.isArray(draft)) {
+    const values = (draft as Record<string, unknown>).values;
+    if (values && typeof values === "object" && !Array.isArray(values)) {
+      return {
+        ...DEFAULT_VALUES,
+        ...Object.fromEntries(
+          Object.entries(values as Record<string, unknown>).map(([key, value]) => [
+            key,
+            String(value ?? ""),
+          ]),
+        ),
+      };
+    }
+  }
+  return DEFAULT_VALUES;
+}
 
 function isUnsafePath(p: string): boolean {
   if (!p) return true;
@@ -37,7 +58,7 @@ export function AutofillDialog({ open, onClose, notice }: Props) {
   );
   const [visible, setVisible] = useState(false);
   const [valuesText, setValuesText] = useState(
-    JSON.stringify(DEFAULT_VALUES, null, 2),
+    JSON.stringify(defaultValuesForNotice(notice), null, 2),
   );
   const [pending, startTransition] = useTransition();
   const toast = useToast();

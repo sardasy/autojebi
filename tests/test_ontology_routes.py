@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -174,9 +176,9 @@ def test_list_role_bindings_filter_by_assignee(client, seeded_engine):
 
 def test_list_role_bindings_active_at(client, seeded_engine):
     """시드된 binding은 valid_from=NOW(), valid_to=None이므로 "현재"는 모두 활성."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    now_iso = datetime.now(tz=timezone.utc).isoformat()
+    now_iso = datetime.now(tz=UTC).isoformat()
     r = client.get("/ontology/role-bindings", params={"active_at": now_iso})
     assert r.status_code == 200
     body = r.json()

@@ -57,6 +57,9 @@ class NoticeRecord(BaseModel):
     top_sku_name: str | None = None
     sku_match_score: float | None = None
     graded_at: datetime | None = None
+    unresolved_error_count: int = 0
+    export_count: int = 0
+    spec_item_count: int = 0
 
 
 class NoticeListResponse(BaseModel):
@@ -181,6 +184,8 @@ class DocumentAutomationResult(BaseModel):
     ready_for_submission: bool = False
     missing_required: list[DocumentChecklistItem] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
+    uploads: list[dict[str, Any]] = Field(default_factory=list)
+    exports: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DocumentAutomationResponse(BaseModel):
@@ -203,7 +208,10 @@ class DocumentValidationResponse(BaseModel):
 
 # M11 — 서류 자동화 v2: 사용자 업로드 + Excel/HWP 내보내기
 
-ExportKind = Literal["excel", "hwp"]
+ExportKind = Literal["excel", "hwp", "proposal_hwp"]
+ExportVersion = Literal["compliance_excel_v1", "compliance_excel_v2"]
+ExportValidationStatus = Literal["passed", "warning", "failed"]
+UploadSourceRef = Literal["uploaded", "common_library", "g2b_attachment"]
 
 
 class UploadedDocument(BaseModel):
@@ -218,6 +226,11 @@ class UploadedDocument(BaseModel):
     storage_path: str = Field(description="서버 로컬 저장 경로.")
     uploaded_at: str
     sha256: str | None = None
+    detected_item_id: str | None = None
+    detect_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    analysis_summary: str | None = None
+    text_extract_error: str | None = None
+    source_ref: UploadSourceRef | None = "uploaded"
 
 
 class UploadResponse(BaseModel):
@@ -230,18 +243,191 @@ class UploadListResponse(BaseModel):
     items: list[UploadedDocument]
 
 
+AttachmentFetchJobStatus = Literal["completed", "completed_with_errors"]
+AttachmentFetchFileStatus = Literal["pending", "success", "failed", "skipped"]
+
+
+class AttachmentFetchFileResult(BaseModel):
+    id: int
+    filename: str
+    url: str
+    status: AttachmentFetchFileStatus
+    upload_id: str | None = None
+    error: str | None = None
+    source_ref: Literal["g2b_attachment"] = "g2b_attachment"
+
+
+class AttachmentFetchResponse(BaseModel):
+    notice_no: str
+    job_id: int | None = None
+    status: AttachmentFetchJobStatus = "completed"
+    files: list[AttachmentFetchFileResult] = Field(default_factory=list)
+    fetched: list[UploadedDocument] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+SpecItemStatus = Literal["candidate", "reviewed", "matched", "gap", "ignored"]
+ReviewPriority = Literal["normal", "high"]
+
+
+class SpecItemEvidence(BaseModel):
+    excerpt: str | None = None
+    file_name: str | None = None
+    page: str | None = None
+    section: str | None = None
+    method: str = "rule"
+    note: str | None = None
+
+
+class NoticeSpecItem(BaseModel):
+    id: int
+    notice_no: str
+    item_key: str
+    label: str
+    required_value: str | None = None
+    proposed_value: str | None = None
+    unit: str | None = None
+    category: str = "technical"
+    source: str = "rule"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    status: SpecItemStatus = "candidate"
+    sort_order: int = 0
+    note: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: Any | None = None
+    locked_fields: list[str] = Field(default_factory=list)
+    source_text: str | None = None
+    source_file_name: str | None = None
+    source_page: str | None = None
+    review_priority: ReviewPriority = "normal"
+    created_at: Any | None = None
+    updated_at: Any | None = None
+
+
+class SpecItemListResponse(BaseModel):
+    notice_no: str
+    items: list[NoticeSpecItem]
+
+
+class SpecItemExtractResponse(BaseModel):
+    notice_no: str
+    items: list[NoticeSpecItem]
+    upserted: int
+
+
+class SpecItemUpdateRequest(BaseModel):
+    required_value: str | None = None
+    proposed_value: str | None = None
+    unit: str | None = None
+    category: str | None = None
+    source: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence: dict[str, Any] | None = None
+    status: SpecItemStatus | None = None
+    sort_order: int | None = None
+    note: str | None = None
+    reviewed_by: str | None = None
+    locked_fields: list[str] | None = None
+    source_text: str | None = None
+    source_file_name: str | None = None
+    source_page: str | None = None
+    review_priority: ReviewPriority | None = None
+
+
+class HwpComposeRequest(BaseModel):
+    bid_form_template_path: str = "templates/입찰참가신청서_양식.hwp"
+    bid_form_output_path: str | None = None
+    values: dict[str, str] = Field(default_factory=dict)
+    visible: bool = False
+    include_bid_form: bool = True
+    include_technical_compliance: bool = True
+
+
+class ExportCreateRequest(BaseModel):
+    version: ExportVersion = "compliance_excel_v2"
+
+
+class HwpComposeBidFormResult(BaseModel):
+    template_path: str
+    output_path: str
+    replaced: list[str]
+    missing: list[str]
+    remaining_placeholders: list[str]
+
+
+class ProposalComposeRequest(BaseModel):
+    template_path: str = "templates/제안서_양식.hwp"
+    output_path: str | None = None
+    values_override: dict[str, str] = Field(default_factory=dict)
+    visible: bool = False
+
+
+class ProposalComposeResult(BaseModel):
+    output_path: str | None = None
+    replaced: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    remaining_placeholders: list[str] = Field(default_factory=list)
+    section_count: int = 0
+    table_count: int = 0
+
+
+class CommonUploadResponse(BaseModel):
+    uploaded: UploadedDocument
+
+
+class CommonUploadListResponse(BaseModel):
+    items: list[UploadedDocument]
+
+
+class E2ECleanupResponse(BaseModel):
+    deleted_notices: int = 0
+    deleted_files: int = 0
+    prefix: str = "E2E-"
+
+
+class HwpAgentHealthResponse(BaseModel):
+    ok: bool
+    base_url: str
+    detail: str | None = None
+
+
 class ExportRecord(BaseModel):
+    id: int | None = None
     kind: ExportKind
     draft_id: str = Field(description="원본 draft 식별자 (예: technical_compliance).")
     output_path: str
     mime: str
     generated_at: str
     notes: str | None = None
+    version: str | None = None
+    template_version: str | None = None
+    validation_status: ExportValidationStatus | None = None
+    validation_errors: list[dict[str, Any]] = Field(default_factory=list)
+    file_size: int | None = None
+    sha256: str | None = None
 
 
 class ExportResponse(BaseModel):
     notice_no: str
     export: ExportRecord
+
+
+class HwpComposeResponse(BaseModel):
+    notice_no: str
+    status: str
+    bid_form: HwpComposeBidFormResult | None = None
+    technical_compliance: ExportRecord | None = None
+    remaining_placeholders: list[str] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ProposalComposeResponse(BaseModel):
+    notice_no: str
+    export: ExportRecord | None = None
+    proposal: dict[str, Any]
+    remaining_placeholders: list[str] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # M12 — KJEBI 메일 paste-UI 추출

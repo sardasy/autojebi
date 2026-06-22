@@ -33,6 +33,15 @@ function fmtPrice(p: number | string | null): string {
   return new Intl.NumberFormat("ko-KR").format(n) + "원";
 }
 
+function hasG2BAttachment(item: NoticeSearchItem): boolean {
+  return Object.entries(item.raw || {}).some(
+    ([key, value]) =>
+      key.startsWith("ntceSpecDocUrl") &&
+      typeof value === "string" &&
+      value.trim().length > 0,
+  );
+}
+
 export function G2BSearchResults({ items }: Props) {
   const [rows, setRows] = useState(items);
   const [savingNoticeNo, setSavingNoticeNo] = useState<string | null>(null);
@@ -68,6 +77,7 @@ export function G2BSearchResults({ items }: Props) {
             <Th>예가</Th>
             <Th>게시</Th>
             <Th>마감</Th>
+            <Th>첨부</Th>
             <Th>등록 상태</Th>
             <Th>작업</Th>
           </tr>
@@ -95,6 +105,15 @@ export function G2BSearchResults({ items }: Props) {
               <Td className="tabular-nums text-slate-300">{fmtPrice(it.base_price)}</Td>
               <Td className="text-xs text-slate-300">{fmtDate(it.open_date)}</Td>
               <Td className="text-xs text-slate-300">{fmtDate(it.close_date)}</Td>
+              <Td>
+                {hasG2BAttachment(it) ? (
+                  <span className="rounded border border-cyan-700 bg-cyan-950/40 px-2 py-1 text-xs text-cyan-200">
+                    있음
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-500">없음</span>
+                )}
+              </Td>
               <Td>
                 {it.already_exists ? (
                   <span className="rounded border border-emerald-700 bg-emerald-950/50 px-2 py-1 text-xs text-emerald-200">

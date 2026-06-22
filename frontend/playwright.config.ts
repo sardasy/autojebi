@@ -13,5 +13,21 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3001",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium-smoke",
+      testMatch: /.*(?:program-smoke|notices-flow|notices-search|notices-search-api|ontology-api)\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "chromium-workflow",
+      testMatch: /.*(?:program-search-save|program-bid-workflow|program-spec-hwp|program-admin|real-notice-document-flow)\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "chromium-ops-live",
+      testMatch: /.*program-ops-live\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
 });

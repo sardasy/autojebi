@@ -27,6 +27,17 @@ class AutofillOutcome:
     raw: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ProposalComposeOutcome:
+    output_path: str
+    replaced: list[str]
+    missing: list[str]
+    remaining_placeholders: list[str]
+    section_count: int
+    table_count: int
+    raw: dict[str, Any]
+
+
 class HwpAgentClient:
     """Thin httpx wrapper around the local milim-hwp-agent FastAPI service.
 
@@ -163,3 +174,32 @@ class HwpAgentClient:
             "table": {"headers": headers, "rows": rows},
         }
         return self._request("POST", "/document/insert-table", json=payload)
+
+    def compose_proposal(
+        self,
+        *,
+        template_path: str,
+        output_path: str,
+        values: dict[str, str],
+        sections: list[dict[str, str]],
+        tables: list[dict[str, Any]],
+        visible: bool = False,
+    ) -> ProposalComposeOutcome:
+        payload = {
+            "template_path": template_path,
+            "output_path": output_path,
+            "values": values,
+            "sections": sections,
+            "tables": tables,
+            "visible": visible,
+        }
+        body = self._request("POST", "/proposal/compose", json=payload)
+        return ProposalComposeOutcome(
+            output_path=str(body.get("output_path") or output_path),
+            replaced=list(body.get("replaced") or []),
+            missing=list(body.get("missing") or []),
+            remaining_placeholders=list(body.get("remaining_placeholders") or []),
+            section_count=int(body.get("section_count") or len(sections)),
+            table_count=int(body.get("table_count") or len(tables)),
+            raw=body,
+        )

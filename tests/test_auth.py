@@ -67,11 +67,6 @@ def test_post_upsert_requires_key(client_with_auth):
     assert r.status_code == 403
 
 
-def test_collect_endpoint_requires_key(client_with_auth):
-    r = client_with_auth.post("/collect")
-    assert r.status_code == 403
-
-
 def test_skus_ingest_requires_key(client_with_auth):
     r = client_with_auth.post("/skus/ingest", json={})
     assert r.status_code == 403

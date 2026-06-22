@@ -7,7 +7,11 @@ describe("StatusBadge", () => {
   const cases: [string, string][] = [
     ["collected", "수집"],
     ["analyzed", "분석"],
-    ["form_filled", "양식"],
+    ["attachments_fetched", "첨부"],
+    ["documents_analyzed", "서류"],
+    ["spec_extracted", "규격"],
+    ["hwp_composed", "HWP"],
+    ["form_filled", "작성"],
     ["notified", "알림"],
     ["digest_queued", "다이제스트"],
     ["archived_low", "보류"],

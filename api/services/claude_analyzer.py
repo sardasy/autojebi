@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from api.config import settings
-from api.llm.extractor import extract_specs
+from api.llm.extractor import extract_specs_with_validation
 from api.llm.schemas import ElecSpec
 from api.services.attachments import fetch_first_attachment_text
 from api.services.hwp_agent_client import HwpAgentClient
@@ -175,19 +175,22 @@ class ClaudeAnalyzer:
             if settings.llm_attachment_fetch and raw:
                 attachment_text = fetch_first_attachment_text(raw, self._hwp)
 
-            spec = extract_specs(
+            extraction = extract_specs_with_validation(
                 bid_title=title or "",
                 attachment_text=attachment_text,
                 raw_json_summary=_summarize_raw_g2b(raw),
             )
+            spec = extraction.spec
 
             category = map_elec_to_category(spec, title)
             fit_score = compute_fit_score(spec, category)
 
             analysis = {
-                "source": "claude",
+                "source": "claude_schema_v1",
                 "model": settings.anthropic_model,
                 "elec_spec": spec.model_dump(exclude_none=True),
+                "schema_valid": extraction.schema_valid,
+                "schema_errors": extraction.schema_errors,
                 "attachment_used": attachment_text is not None,
                 "summary": (title or "")[:200],
             }

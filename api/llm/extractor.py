@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import io
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 import anthropic
 import pdfplumber
+from pydantic import ValidationError
 
 from api.config import settings
 from api.llm.prompts import SYSTEM_PROMPT, build_user_message
@@ -29,6 +31,13 @@ _TOOL_DEF: dict[str, Any] = {
     "description": "Extract electrical specification details from the Korean procurement bid document.",
     "input_schema": ElecSpec.model_json_schema(),
 }
+
+
+@dataclass(frozen=True)
+class ExtractSpecsResult:
+    spec: ElecSpec
+    schema_valid: bool
+    schema_errors: list[str]
 
 
 def extract_pdf_text(pdf_bytes: bytes) -> str:
@@ -47,6 +56,18 @@ def extract_specs(
     attachment_text: str | None = None,
     raw_json_summary: str | None = None,
 ) -> ElecSpec:
+    return extract_specs_with_validation(
+        bid_title=bid_title,
+        attachment_text=attachment_text,
+        raw_json_summary=raw_json_summary,
+    ).spec
+
+
+def extract_specs_with_validation(
+    bid_title: str,
+    attachment_text: str | None = None,
+    raw_json_summary: str | None = None,
+) -> ExtractSpecsResult:
     """Claude API를 통해 전기 사양을 추출.
 
     Args:
@@ -55,7 +76,7 @@ def extract_specs(
         raw_json_summary: G2B API raw JSON 주요 필드 요약 문자열.
 
     Returns:
-        ElecSpec — 관련 없는 공고면 모든 필드 None.
+        ExtractSpecsResult — 관련 없는 공고면 빈 ElecSpec.
     """
     user_msg = build_user_message(bid_title, attachment_text, raw_json_summary)
 
@@ -79,14 +100,24 @@ def extract_specs(
 
     for block in message.content:
         if block.type == "tool_use" and block.name == "extract_electrical_specs":
-            spec = ElecSpec.model_validate(block.input)
+            spec, errors = validate_elec_spec_input(block.input)
+            if errors:
+                log.warning("[LLM] schema validation failed: %s", errors[:2])
+                return ExtractSpecsResult(ElecSpec(), False, errors)
             log.info(
                 "[LLM] 사양 추출 — 제품: %s, 전압: %s kV, 용량: %s kVA",
                 spec.product_category,
                 spec.rated_voltage_kv,
                 spec.rated_power_kva,
             )
-            return spec
+            return ExtractSpecsResult(spec, True, [])
 
     log.warning("[LLM] tool_use 블록 없음 — 빈 ElecSpec 반환")
-    return ElecSpec()
+    return ExtractSpecsResult(ElecSpec(), False, ["tool_use block missing"])
+
+
+def validate_elec_spec_input(value: Any) -> tuple[ElecSpec, list[str]]:
+    try:
+        return ElecSpec.model_validate(value), []
+    except ValidationError as exc:
+        return ElecSpec(), [err.get("msg", str(err)) for err in exc.errors()]

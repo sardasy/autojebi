@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     upload_max_bytes: int = 30_000_000  # 30MB
     upload_allowed_exts: str = "pdf,hwp,hwpx,jpg,jpeg,png,xlsx,docx"
 
+    # E2E test helper endpoints. Keep disabled by default, especially in production.
+    e2e_cleanup_enabled: bool = False
+
     @property
     def keyword_list(self) -> list[str]:
         return [k.strip() for k in self.bid_keywords.split(",") if k.strip()]

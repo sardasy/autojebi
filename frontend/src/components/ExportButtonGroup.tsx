@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { actionExportDocument } from "@/lib/actions";
 import type { ExportKind, ExportRecord } from "@/lib/api";
@@ -14,15 +15,39 @@ type Props = {
 const KIND_LABELS: Record<ExportKind, string> = {
   excel: "Excel",
   hwp: "HWP",
+  proposal_hwp: "제안서 HWP",
 };
+
+const VALIDATION_LABELS: Record<string, string> = {
+  passed: "검증 통과",
+  warning: "검토 필요",
+  failed: "검증 실패",
+};
+
+function downloadHref(noticeNo: string, rec: ExportRecord): string {
+  if (rec.id) {
+    return `/api/notices/${encodeURIComponent(noticeNo)}/documents/exports/by-id/${rec.id}/download`;
+  }
+  return `/api/notices/${encodeURIComponent(noticeNo)}/documents/exports/${rec.kind}/download`;
+}
+
+function exportSummary(rec: ExportRecord): string {
+  const parts = [
+    rec.version || rec.template_version,
+    rec.validation_status ? VALIDATION_LABELS[rec.validation_status] || rec.validation_status : null,
+    rec.file_size ? `${Math.ceil(rec.file_size / 1024)}KB` : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
 
 export function ExportButtonGroup({ noticeNo, exports }: Props) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
+  const router = useRouter();
 
   const byKind = new Map<ExportKind, ExportRecord>();
   for (const rec of exports) {
-    if (rec.kind === "excel" || rec.kind === "hwp") {
+    if (rec.kind === "excel" || rec.kind === "hwp" || rec.kind === "proposal_hwp") {
       byKind.set(rec.kind, rec);
     }
   }
@@ -35,6 +60,7 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
           "success",
           `${KIND_LABELS[kind]} 파일 생성 완료: ${r.export.output_path}`,
         );
+        router.refresh();
       } catch (e) {
         toast.push("error", `${KIND_LABELS[kind]} 생성 실패: ${(e as Error).message}`);
       }
@@ -60,17 +86,45 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
                 {pending ? "생성 중…" : `${KIND_LABELS[kind]} 생성`}
               </button>
               {existing ? (
-                <a
-                  href={`/api/notices/${encodeURIComponent(noticeNo)}/documents/exports/${kind}/download`}
-                  className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
-                  download={`${noticeNo}-compliance.${kind === "excel" ? "xlsx" : "hwp"}`}
-                >
-                  ⬇ 다운로드
-                </a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={downloadHref(noticeNo, existing)}
+                    className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+                    download={`${noticeNo}-compliance.${kind === "excel" ? "xlsx" : "hwp"}`}
+                    title={
+                      existing.validation_status === "warning"
+                        ? "검토 경고가 있는 파일입니다"
+                        : undefined
+                    }
+                  >
+                    다운로드
+                  </a>
+                  {exportSummary(existing) ? (
+                    <span className="text-xs text-slate-400">
+                      {exportSummary(existing)}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           );
         })}
+        {byKind.get("proposal_hwp") ? (
+          <div className="flex items-center gap-2">
+            <a
+              href={downloadHref(noticeNo, byKind.get("proposal_hwp") as ExportRecord)}
+              className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+              download={`${noticeNo}-proposal.hwp`}
+            >
+              제안서 HWP 다운로드
+            </a>
+            {exportSummary(byKind.get("proposal_hwp") as ExportRecord) ? (
+              <span className="text-xs text-slate-400">
+                {exportSummary(byKind.get("proposal_hwp") as ExportRecord)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <p className="mt-2 text-xs text-slate-500">
         HWP 출력은 Windows 데스크톱의 milim-hwp-agent가 가동돼 있어야 합니다 (

@@ -22,10 +22,10 @@ from api.models.ontology import (
     ConceptKind,
     ConceptListResponse,
     Evidence,
-    RelationPredicate,
     Relation,
-    Rule,
+    RelationPredicate,
     RoleBinding,
+    Rule,
     WorkTask,
 )
 from api.ontology.tables import (

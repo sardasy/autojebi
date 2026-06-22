@@ -6,20 +6,25 @@ AnalyzeResult 합성이 올바른지 + 예외 시 안전한 폴백을 확인.
 
 from __future__ import annotations
 
+from api.llm.extractor import ExtractSpecsResult
 from api.llm.schemas import ElecSpec
 from api.services import claude_analyzer
+
+
+def _result(spec: ElecSpec) -> ExtractSpecsResult:
+    return ExtractSpecsResult(spec=spec, schema_valid=True, schema_errors=[])
 
 
 def test_analyze_returns_abb_장비_for_transformer(monkeypatch):
     monkeypatch.setattr(
         claude_analyzer,
-        "extract_specs",
-        lambda **_: ElecSpec(
+        "extract_specs_with_validation",
+        lambda **_: _result(ElecSpec(
             product_category="변압기",
             rated_voltage_kv=22.9,
             rated_power_kva=1000.0,
             quantity=2,
-        ),
+        )),
     )
     monkeypatch.setattr(
         claude_analyzer, "fetch_first_attachment_text", lambda *_a, **_kw: None
@@ -32,15 +37,14 @@ def test_analyze_returns_abb_장비_for_transformer(monkeypatch):
 
     assert result.category == "ABB장비"
     assert 60 <= result.fit_score <= 90
-    assert result.analysis["source"] == "claude"
+    assert result.analysis["source"] == "claude_schema_v1"
+    assert result.analysis["schema_valid"] is True
     assert result.analysis["elec_spec"]["product_category"] == "변압기"
     assert result.analysis["attachment_used"] is False
 
 
 def test_analyze_unrelated_returns_비관련_with_zero_score(monkeypatch):
-    monkeypatch.setattr(
-        claude_analyzer, "extract_specs", lambda **_: ElecSpec()
-    )
+    monkeypatch.setattr(claude_analyzer, "extract_specs_with_validation", lambda **_: _result(ElecSpec()))
     monkeypatch.setattr(
         claude_analyzer, "fetch_first_attachment_text", lambda *_a, **_kw: None
     )
@@ -54,7 +58,7 @@ def test_analyze_unrelated_returns_비관련_with_zero_score(monkeypatch):
 
 def test_analyze_hil_via_keyword(monkeypatch):
     """ElecSpec에 product_category가 없어도 title 키워드로 HIL 잡힘."""
-    monkeypatch.setattr(claude_analyzer, "extract_specs", lambda **_: ElecSpec())
+    monkeypatch.setattr(claude_analyzer, "extract_specs_with_validation", lambda **_: _result(ElecSpec()))
     monkeypatch.setattr(
         claude_analyzer, "fetch_first_attachment_text", lambda *_a, **_kw: None
     )
@@ -72,7 +76,7 @@ def test_analyze_never_raises_on_extractor_exception(monkeypatch):
     def boom(**_):
         raise RuntimeError("anthropic down")
 
-    monkeypatch.setattr(claude_analyzer, "extract_specs", boom)
+    monkeypatch.setattr(claude_analyzer, "extract_specs_with_validation", boom)
     monkeypatch.setattr(
         claude_analyzer, "fetch_first_attachment_text", lambda *_a, **_kw: None
     )
@@ -94,9 +98,9 @@ def test_attachment_fetched_when_setting_enabled(monkeypatch):
 
     def capturing_extract(**kwargs):
         captured.update(kwargs)
-        return ElecSpec(product_category="변압기")
+        return _result(ElecSpec(product_category="변압기"))
 
-    monkeypatch.setattr(claude_analyzer, "extract_specs", capturing_extract)
+    monkeypatch.setattr(claude_analyzer, "extract_specs_with_validation", capturing_extract)
     monkeypatch.setattr(
         claude_analyzer,
         "fetch_first_attachment_text",
@@ -123,8 +127,8 @@ def test_attachment_skipped_when_setting_disabled(monkeypatch):
     )
     monkeypatch.setattr(
         claude_analyzer,
-        "extract_specs",
-        lambda **_: ElecSpec(product_category="변압기"),
+        "extract_specs_with_validation",
+        lambda **_: _result(ElecSpec(product_category="변압기")),
     )
 
     analyzer = claude_analyzer.ClaudeAnalyzer()
@@ -137,9 +141,9 @@ def test_summary_keys_from_raw_passed_to_extractor(monkeypatch):
 
     def capturing_extract(**kwargs):
         captured.update(kwargs)
-        return ElecSpec()
+        return _result(ElecSpec())
 
-    monkeypatch.setattr(claude_analyzer, "extract_specs", capturing_extract)
+    monkeypatch.setattr(claude_analyzer, "extract_specs_with_validation", capturing_extract)
     monkeypatch.setattr(
         claude_analyzer, "fetch_first_attachment_text", lambda *_a, **_kw: None
     )
@@ -158,3 +162,22 @@ def test_summary_keys_from_raw_passed_to_extractor(monkeypatch):
     assert "presmptPrce: 50000000" in summary
     assert "ntceInsttNm: 조달청" in summary
     assert "unused_key" not in summary
+
+
+def test_analyze_records_schema_validation_errors(monkeypatch):
+    monkeypatch.setattr(
+        claude_analyzer,
+        "extract_specs_with_validation",
+        lambda **_: ExtractSpecsResult(
+            spec=ElecSpec(),
+            schema_valid=False,
+            schema_errors=["Input should be a valid number"],
+        ),
+    )
+    monkeypatch.setattr(claude_analyzer, "fetch_first_attachment_text", lambda *_a, **_kw: None)
+
+    analyzer = claude_analyzer.ClaudeAnalyzer()
+    result = analyzer.analyze_notice(notice_no="BAD-SCHEMA", title="변압기", raw={})
+
+    assert result.analysis["schema_valid"] is False
+    assert result.analysis["schema_errors"] == ["Input should be a valid number"]

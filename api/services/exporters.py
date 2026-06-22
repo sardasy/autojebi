@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -29,6 +30,8 @@ _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.\-]")
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 HWP_MIME = "application/x-hwp"
+COMPLIANCE_EXCEL_V1 = "compliance_excel_v1"
+COMPLIANCE_EXCEL_V2 = "compliance_excel_v2"
 
 
 class ExportError(HTTPException):
@@ -98,10 +101,16 @@ def build_excel(
     notice_no: str,
     draft: dict[str, Any],
     title: str | None = None,
+    version: str = COMPLIANCE_EXCEL_V2,
+    notice_meta: dict[str, Any] | None = None,
+    validation_warnings: list[dict[str, Any]] | None = None,
 ) -> ExportRecord:
-    """``technical_compliance`` 초안을 .xlsx로 저장. 단일 시트, 헤더 굵게."""
+    """``technical_compliance`` 초안을 .xlsx로 저장.
+
+    v1은 기존 단일 시트 포맷이고, v2는 검토용 메타/경고 시트와 필터를 추가한다.
+    """
     from openpyxl import Workbook
-    from openpyxl.styles import Font
+    from openpyxl.styles import Alignment, Font, PatternFill
 
     content = str(draft.get("content") or "")
     if not content:
@@ -112,17 +121,49 @@ def build_excel(
     ws = wb.active
     ws.title = "규격대응표"
     bold = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="E2E8F0")
     for col_index, header in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col_index, value=header)
         cell.font = bold
+        if version == COMPLIANCE_EXCEL_V2:
+            cell.fill = header_fill
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
     for row_index, row in enumerate(rows, start=2):
         for col_index, value in enumerate(row, start=1):
-            ws.cell(row=row_index, column=col_index, value=value)
+            cell = ws.cell(row=row_index, column=col_index, value=value)
+            if version == COMPLIANCE_EXCEL_V2:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
     for col_index, _ in enumerate(headers, start=1):
-        ws.column_dimensions[ws.cell(row=1, column=col_index).column_letter].width = 22
+        ws.column_dimensions[ws.cell(row=1, column=col_index).column_letter].width = (
+            28 if version == COMPLIANCE_EXCEL_V2 else 22
+        )
 
     if title:
         ws.cell(row=ws.max_row + 2, column=1, value=title)
+
+    if version == COMPLIANCE_EXCEL_V2:
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        meta_ws = wb.create_sheet("검토요약")
+        meta_ws.append(["항목", "값"])
+        meta_ws["A1"].font = bold
+        meta_ws["B1"].font = bold
+        meta = {
+            "notice_no": notice_no,
+            "title": title or "",
+            "version": version,
+            "generated_at": datetime.now(tz=UTC).isoformat(),
+            **(notice_meta or {}),
+        }
+        for key, value in meta.items():
+            meta_ws.append([key, str(value or "")])
+        warnings = validation_warnings or []
+        if warnings:
+            meta_ws.append(["warnings", f"{len(warnings)}건"])
+            for item in warnings:
+                meta_ws.append([str(item.get("stage") or "warning"), str(item.get("detail") or item)])
+        meta_ws.column_dimensions["A"].width = 24
+        meta_ws.column_dimensions["B"].width = 80
 
     target = notice_dir(notice_no) / f"compliance_{uuid.uuid4().hex}.xlsx"
     try:
@@ -131,13 +172,19 @@ def build_excel(
         log.exception("[exporters] excel write failed: %s", exc)
         raise ExportError(status_code=500, detail=f"failed to write excel: {exc}") from exc
 
-    return ExportRecord(
-        kind="excel",
-        draft_id="technical_compliance",
-        output_path=str(target),
-        mime=EXCEL_MIME,
-        generated_at=datetime.now(tz=UTC).isoformat(),
-        notes=str(draft.get("label") or ""),
+    return with_file_metadata(
+        ExportRecord(
+            kind="excel",
+            draft_id="technical_compliance",
+            output_path=str(target),
+            mime=EXCEL_MIME,
+            generated_at=datetime.now(tz=UTC).isoformat(),
+            notes=str(draft.get("label") or ""),
+            version=version,
+            template_version=version,
+            validation_status="warning" if validation_warnings else "passed",
+            validation_errors=validation_warnings or [],
+        )
     )
 
 
@@ -169,14 +216,35 @@ def build_hwp(
         raise ExportError(status_code=502, detail=f"hwp agent failed: {exc}") from exc
 
     resolved_path = str(result.get("output_path") or output_path)
-    return ExportRecord(
-        kind="hwp",
-        draft_id="technical_compliance",
-        output_path=resolved_path,
-        mime=HWP_MIME,
-        generated_at=datetime.now(tz=UTC).isoformat(),
-        notes=str(result.get("sheet_count") or "") or None,
+    return with_file_metadata(
+        ExportRecord(
+            kind="hwp",
+            draft_id="technical_compliance",
+            output_path=resolved_path,
+            mime=HWP_MIME,
+            generated_at=datetime.now(tz=UTC).isoformat(),
+            notes=str(result.get("sheet_count") or "") or None,
+            version="technical_compliance_hwp_v1",
+            template_version="document_insert_table_v1",
+            validation_status="passed",
+        )
     )
+
+
+def with_file_metadata(export: ExportRecord) -> ExportRecord:
+    path = Path(export.output_path)
+    if not path.is_file():
+        return export
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return export.model_copy(
+            update={"file_size": path.stat().st_size, "sha256": digest.hexdigest()}
+        )
+    except OSError:
+        return export
 
 
 def merge_export_into_document_automation(

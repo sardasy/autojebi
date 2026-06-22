@@ -36,6 +36,9 @@ export function Modal({ open, onClose, title, children, size = "md" }: Props) {
     >
       <div
         className={`relative w-full ${widthCls} rounded-lg border border-slate-700 bg-slate-900 shadow-xl`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">

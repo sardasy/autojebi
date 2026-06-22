@@ -14,10 +14,13 @@ import type {
   AutofillFormRequest,
   ChecklistUpdateRequest,
   ExportKind,
+  HwpComposeRequest,
+  ProposalComposeRequest,
   IngestRequest,
   MailExtractRequest,
   NoticeSearchItem,
   NoticeSearchRequest,
+  SpecItemUpdateRequest,
   NoticeUpsertRequest,
 } from "./api";
 
@@ -64,6 +67,13 @@ export async function actionAnalyzeDocuments(noticeNo: string) {
   return result;
 }
 
+export async function actionFetchG2BAttachments(noticeNo: string) {
+  const result = await api.fetchG2BAttachments(noticeNo);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  revalidatePath("/notices");
+  return result;
+}
+
 export async function actionUpdateDocumentChecklistItem(
   noticeNo: string,
   itemId: string,
@@ -79,6 +89,27 @@ export async function actionValidateDocuments(noticeNo: string) {
   const result = await api.validateDocuments(noticeNo);
   revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
   revalidatePath("/notices");
+  return result;
+}
+
+export async function actionExtractSpecItems(noticeNo: string) {
+  const result = await api.extractSpecItems(noticeNo);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  revalidatePath("/notices");
+  return result;
+}
+
+export async function actionListSpecItems(noticeNo: string) {
+  return api.listSpecItems(noticeNo);
+}
+
+export async function actionUpdateSpecItem(
+  noticeNo: string,
+  itemId: number,
+  payload: SpecItemUpdateRequest,
+) {
+  const result = await api.updateSpecItem(noticeNo, itemId, payload);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
   return result;
 }
 
@@ -103,6 +134,25 @@ export async function actionListDocumentUploads(noticeNo: string) {
   return api.listDocumentUploads(noticeNo);
 }
 
+export async function actionUploadCommonDocument(file: File, itemId?: string) {
+  return api.uploadCommonDocument(file, itemId);
+}
+
+export async function actionListCommonUploads() {
+  return api.listCommonUploads();
+}
+
+export async function actionGetHwpAgentHealth() {
+  return api.getHwpAgentHealth();
+}
+
+export async function actionImportCommonUpload(noticeNo: string, uploadId: string) {
+  const result = await api.importCommonUpload(noticeNo, uploadId);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  revalidatePath("/notices");
+  return result;
+}
+
 export async function actionDeleteDocumentUpload(noticeNo: string, uploadId: string) {
   const result = await api.deleteDocumentUpload(noticeNo, uploadId);
   revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
@@ -113,6 +163,26 @@ export async function actionDeleteDocumentUpload(noticeNo: string, uploadId: str
 export async function actionExportDocument(noticeNo: string, kind: ExportKind) {
   const result = await api.exportDocument(noticeNo, kind);
   revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  return result;
+}
+
+export async function actionComposeHwpDocuments(
+  noticeNo: string,
+  payload: HwpComposeRequest,
+) {
+  const result = await api.composeHwpDocuments(noticeNo, payload);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  revalidatePath("/notices");
+  return result;
+}
+
+export async function actionComposeProposalDocument(
+  noticeNo: string,
+  payload: ProposalComposeRequest,
+) {
+  const result = await api.composeProposalDocument(noticeNo, payload);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  revalidatePath("/notices");
   return result;
 }
 

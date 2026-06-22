@@ -32,7 +32,7 @@ def _iter_windows(start: date, end: date, max_days: int) -> list[tuple[date, dat
     return out
 
 
-def _dedupe_by_bid_key(bids: list["RawBid"]) -> list["RawBid"]:
+def _dedupe_by_bid_key(bids: list[RawBid]) -> list[RawBid]:
     """(bid_no, bid_seq) 쌍 기준 dedup — 페이지·키워드·엔드포인트 중복 방어.
 
     G2B 응답이 같은 공고를 여러 페이지/엔드포인트에 걸쳐 반환할 수 있으므로 항상 적용.

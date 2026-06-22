@@ -15,12 +15,16 @@ export function ScoreBadge({ value, label, mode = "0to1" }: Props) {
   const raw = typeof value === "string" ? parseFloat(value) : value;
   const n = mode === "0to100" ? raw / 100 : raw;
 
-  let cls = "bg-slate-700 text-slate-200";
-  if (n >= 0.8) cls = "bg-emerald-600 text-white";
-  else if (n >= 0.6) cls = "bg-amber-500 text-slate-900";
-  else if (n >= 0.4) cls = "bg-orange-500 text-white";
-  else if (n > 0) cls = "bg-red-700 text-white";
-  else cls = "bg-slate-700 text-slate-400";
+  const cls =
+    n >= 0.8
+      ? "bg-emerald-600 text-white"
+      : n >= 0.6
+        ? "bg-amber-500 text-slate-900"
+        : n >= 0.4
+          ? "bg-orange-500 text-white"
+          : n > 0
+            ? "bg-red-700 text-white"
+            : "bg-slate-700 text-slate-400";
 
   const display = mode === "0to100" ? raw.toFixed(0) : n.toFixed(2);
   return (

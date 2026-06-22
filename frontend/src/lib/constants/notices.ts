@@ -3,7 +3,11 @@ import type { Lifecycle, SortDirection, SortField } from "@/lib/api";
 export const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "collected", label: "수집" },
   { value: "analyzed", label: "분석" },
-  { value: "form_filled", label: "양식" },
+  { value: "attachments_fetched", label: "첨부" },
+  { value: "documents_analyzed", label: "서류" },
+  { value: "spec_extracted", label: "규격" },
+  { value: "hwp_composed", label: "HWP" },
+  { value: "form_filled", label: "작성" },
   { value: "notified", label: "알림" },
   { value: "digest_queued", label: "다이제스트" },
   { value: "archived_low", label: "보류" },

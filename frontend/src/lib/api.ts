@@ -23,6 +23,10 @@ function defaultHeaders(includeContentType = false): Record<string, string> {
 export type Status =
   | "collected"
   | "analyzed"
+  | "attachments_fetched"
+  | "documents_analyzed"
+  | "spec_extracted"
+  | "hwp_composed"
   | "form_filled"
   | "notified"
   | "digest_queued"
@@ -63,6 +67,9 @@ export interface NoticeRecord {
   top_sku_name: string | null;
   sku_match_score: number | null;
   graded_at: string | null;
+  unresolved_error_count?: number;
+  export_count?: number;
+  spec_item_count?: number;
 }
 
 export interface NoticeListResponse {
@@ -304,6 +311,11 @@ export interface UploadedDocument {
   storage_path: string;
   uploaded_at: string;
   sha256?: string | null;
+  detected_item_id?: string | null;
+  detect_confidence?: number | null;
+  analysis_summary?: string | null;
+  text_extract_error?: string | null;
+  source_ref?: "uploaded" | "common_library" | "g2b_attachment" | null;
 }
 
 export interface UploadResponse {
@@ -316,20 +328,160 @@ export interface UploadListResponse {
   items: UploadedDocument[];
 }
 
-export type ExportKind = "excel" | "hwp";
+export type AttachmentFetchJobStatus = "completed" | "completed_with_errors";
+export type AttachmentFetchFileStatus = "pending" | "success" | "failed" | "skipped";
+
+export interface AttachmentFetchFileResult {
+  id: number;
+  filename: string;
+  url: string;
+  status: AttachmentFetchFileStatus;
+  upload_id?: string | null;
+  error?: string | null;
+  source_ref: "g2b_attachment";
+}
+
+export interface AttachmentFetchResponse {
+  notice_no: string;
+  job_id?: number | null;
+  status: AttachmentFetchJobStatus;
+  files: AttachmentFetchFileResult[];
+  fetched: UploadedDocument[];
+  errors: Array<Record<string, unknown>>;
+}
+
+export interface CommonUploadResponse {
+  uploaded: UploadedDocument;
+}
+
+export interface CommonUploadListResponse {
+  items: UploadedDocument[];
+}
+
+export interface HwpAgentHealthResponse {
+  ok: boolean;
+  base_url: string;
+  detail?: string | null;
+}
+
+export type ExportKind = "excel" | "hwp" | "proposal_hwp";
 
 export interface ExportRecord {
+  id?: number | null;
   kind: ExportKind;
   draft_id: string;
   output_path: string;
   mime: string;
   generated_at: string;
   notes?: string | null;
+  version?: string | null;
+  template_version?: string | null;
+  validation_status?: "passed" | "warning" | "failed" | null;
+  validation_errors?: Array<Record<string, unknown>>;
+  file_size?: number | null;
+  sha256?: string | null;
 }
 
 export interface ExportResponse {
   notice_no: string;
   export: ExportRecord;
+}
+
+export type SpecItemStatus = "candidate" | "reviewed" | "matched" | "gap" | "ignored";
+
+export interface NoticeSpecItem {
+  id: number;
+  notice_no: string;
+  item_key: string;
+  label: string;
+  required_value?: string | null;
+  proposed_value?: string | null;
+  unit?: string | null;
+  category: string;
+  source: string;
+  confidence: number;
+  evidence: Record<string, unknown>;
+  status: SpecItemStatus;
+  sort_order: number;
+  note?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  locked_fields?: string[];
+  source_text?: string | null;
+  source_file_name?: string | null;
+  source_page?: string | null;
+  review_priority?: "normal" | "high";
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SpecItemListResponse {
+  notice_no: string;
+  items: NoticeSpecItem[];
+}
+
+export interface SpecItemExtractResponse extends SpecItemListResponse {
+  upserted: number;
+}
+
+export interface SpecItemUpdateRequest {
+  required_value?: string | null;
+  proposed_value?: string | null;
+  unit?: string | null;
+  category?: string | null;
+  source?: string | null;
+  confidence?: number | null;
+  evidence?: Record<string, unknown> | null;
+  status?: SpecItemStatus | null;
+  sort_order?: number | null;
+  note?: string | null;
+  reviewed_by?: string | null;
+  locked_fields?: string[] | null;
+  source_text?: string | null;
+  source_file_name?: string | null;
+  source_page?: string | null;
+  review_priority?: "normal" | "high" | null;
+}
+
+export interface HwpComposeRequest {
+  bid_form_template_path?: string;
+  bid_form_output_path?: string | null;
+  values?: Record<string, string>;
+  visible?: boolean;
+  include_bid_form?: boolean;
+  include_technical_compliance?: boolean;
+}
+
+export interface HwpComposeBidFormResult {
+  template_path: string;
+  output_path: string;
+  replaced: string[];
+  missing: string[];
+  remaining_placeholders: string[];
+}
+
+export interface HwpComposeResponse {
+  notice_no: string;
+  status: string;
+  bid_form?: HwpComposeBidFormResult | null;
+  technical_compliance?: ExportRecord | null;
+  remaining_placeholders: string[];
+  errors: { stage?: string; detail?: string }[];
+}
+
+export interface ProposalComposeRequest {
+  template_path?: string;
+  output_path?: string | null;
+  values_override?: Record<string, string>;
+  visible?: boolean;
+}
+
+export interface ProposalComposeResponse {
+  notice_no: string;
+  export?: ExportRecord | null;
+  proposal: Record<string, unknown>;
+  remaining_placeholders: string[];
+  errors: { stage?: string; detail?: string }[];
 }
 
 export interface DocumentAutomationResponse {
@@ -437,6 +589,49 @@ export async function analyzeDocuments(
   );
 }
 
+export async function fetchG2BAttachments(
+  noticeNo: string,
+): Promise<AttachmentFetchResponse> {
+  return postJson<AttachmentFetchResponse>(
+    `/notices/${encodeURIComponent(noticeNo)}/attachments/fetch`,
+    {},
+  );
+}
+
+export async function extractSpecItems(noticeNo: string): Promise<SpecItemExtractResponse> {
+  return postJson<SpecItemExtractResponse>(
+    `/notices/${encodeURIComponent(noticeNo)}/spec-items/extract`,
+    {},
+  );
+}
+
+export async function listSpecItems(noticeNo: string): Promise<SpecItemListResponse> {
+  const r = await fetch(
+    `${INTERNAL_API_BASE}/notices/${encodeURIComponent(noticeNo)}/spec-items`,
+    { headers: defaultHeaders(), cache: "no-store" },
+  );
+  if (!r.ok) throw new Error(`GET spec items failed: ${r.status}`);
+  return r.json();
+}
+
+export async function updateSpecItem(
+  noticeNo: string,
+  itemId: number,
+  payload: SpecItemUpdateRequest,
+): Promise<NoticeSpecItem> {
+  const r = await fetch(
+    `${INTERNAL_API_BASE}/notices/${encodeURIComponent(noticeNo)}/spec-items/${itemId}`,
+    {
+      method: "PATCH",
+      headers: defaultHeaders(true),
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    },
+  );
+  if (!r.ok) throw new Error(`PATCH spec item failed: ${r.status}`);
+  return r.json();
+}
+
 export async function updateDocumentChecklistItem(
   noticeNo: string,
   itemId: string,
@@ -520,6 +715,51 @@ export async function listDocumentUploads(noticeNo: string): Promise<UploadListR
   return r.json();
 }
 
+export async function uploadCommonDocument(
+  file: File,
+  itemId?: string,
+): Promise<CommonUploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (itemId) form.append("item_id", itemId);
+  const r = await fetch(`${INTERNAL_API_BASE}/documents/common/uploads`, {
+    method: "POST",
+    headers: defaultHeaders(false),
+    body: form,
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error(`POST common upload failed: ${r.status}`);
+  return r.json();
+}
+
+export async function listCommonUploads(): Promise<CommonUploadListResponse> {
+  const r = await fetch(`${INTERNAL_API_BASE}/documents/common/uploads`, {
+    headers: defaultHeaders(),
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error(`GET common uploads failed: ${r.status}`);
+  return r.json();
+}
+
+export async function getHwpAgentHealth(): Promise<HwpAgentHealthResponse> {
+  const r = await fetch(`${INTERNAL_API_BASE}/documents/hwp-agent/health`, {
+    headers: defaultHeaders(),
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error(`GET hwp agent health failed: ${r.status}`);
+  return r.json();
+}
+
+export async function importCommonUpload(
+  noticeNo: string,
+  uploadId: string,
+): Promise<UploadResponse> {
+  return postJson<UploadResponse>(
+    `/notices/${encodeURIComponent(noticeNo)}/documents/import-common/${encodeURIComponent(uploadId)}`,
+    {},
+  );
+}
+
 export async function deleteDocumentUpload(
   noticeNo: string,
   uploadId: string,
@@ -539,6 +779,26 @@ export async function exportDocument(
   return postJson<ExportResponse>(
     `/notices/${encodeURIComponent(noticeNo)}/documents/exports/${kind}`,
     {},
+  );
+}
+
+export async function composeHwpDocuments(
+  noticeNo: string,
+  payload: HwpComposeRequest,
+): Promise<HwpComposeResponse> {
+  return postJson<HwpComposeResponse>(
+    `/notices/${encodeURIComponent(noticeNo)}/documents/hwp-compose`,
+    payload,
+  );
+}
+
+export async function composeProposalDocument(
+  noticeNo: string,
+  payload: ProposalComposeRequest,
+): Promise<ProposalComposeResponse> {
+  return postJson<ProposalComposeResponse>(
+    `/notices/${encodeURIComponent(noticeNo)}/documents/proposal-compose`,
+    payload,
   );
 }
 

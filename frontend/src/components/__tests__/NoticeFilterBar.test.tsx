@@ -39,6 +39,9 @@ describe("NoticeFilterBar", () => {
     expect(screen.getByText("저장 공고 업무 큐")).toBeInTheDocument();
     expect(container.querySelector('select[name="lifecycle"]')).not.toBeNull();
     expect(container.querySelector('input[name="status"]')).not.toBeNull();
+    for (const label of ["첨부", "서류", "규격", "HWP", "작성"]) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
   });
 
   it("quick period chips are visible in G2B mode", () => {

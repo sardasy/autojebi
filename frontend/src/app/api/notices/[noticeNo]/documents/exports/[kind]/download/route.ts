@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchDownloadBlob } from "@/lib/api";
 
 /**
- * Excel/HWP export 다운로드 프록시 (M11 v2).
+ * Excel/HWP export 다운로드 프록시 (M11 v2 + M14 proposal).
  *
  * 브라우저에서 `<a href="/api/notices/.../documents/exports/excel/download">` 클릭 시
  * X-API-Key 헤더 직접 전달이 어려우므로, Next.js API route가 서버사이드에서
@@ -14,7 +14,7 @@ export async function GET(
   ctx: { params: Promise<{ noticeNo: string; kind: string }> },
 ) {
   const { noticeNo, kind } = await ctx.params;
-  if (kind !== "excel" && kind !== "hwp") {
+  if (kind !== "excel" && kind !== "hwp" && kind !== "proposal_hwp") {
     return NextResponse.json({ error: "invalid kind" }, { status: 400 });
   }
   const path = `/notices/${encodeURIComponent(noticeNo)}/documents/exports/${kind}/download`;
