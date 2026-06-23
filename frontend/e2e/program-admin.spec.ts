@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { cleanupE2ENotices, uniqueE2EId } from "./helpers";
+import { cleanupE2ENotices, expectToast, uniqueE2EId } from "./helpers";
 
 test.describe("program admin workflows", () => {
   test.beforeEach(async ({ request }) => {
@@ -43,10 +43,12 @@ test.describe("program admin workflows", () => {
       ].join("\n"),
     );
     await mailSection.getByRole("button", { name: "추출 & 등록" }).click();
-    await expect(page.getByText(/등록 완료|notice_no 추출 실패|추출 실패/)).toBeVisible();
+    // 메일 추출은 Claude tool-use라 지연이 크다.
+    await expectToast(page, /등록 완료|notice_no 추출 실패|추출 실패/);
 
     const skuSection = page.locator("section", { hasText: "SKU 카탈로그 인제스트" });
     await skuSection.getByRole("button", { name: "Qdrant에 인제스트" }).click();
-    await expect(page.getByText(/Qdrant 인제스트 완료|인제스트 실패/)).toBeVisible();
+    // 카탈로그 임베딩+Qdrant upsert는 수 초 소요 — 기본 5초 대기로는 불안정했다.
+    await expectToast(page, /Qdrant 인제스트 완료|인제스트 실패/);
   });
 });

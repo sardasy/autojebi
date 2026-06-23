@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 import {
   DEFAULT_DIRECTION,
@@ -51,8 +52,35 @@ function fmtDateInput(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      className={`animate-spin ${className}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+      />
+    </svg>
+  );
+}
+
 export function NoticeFilterBar(props: Props) {
   const mode = props.mode || "g2b";
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   const initialDateField: DateField =
     props.open_from || props.open_to ? "open" : "close";
   const [dateField, setDateField] = useState<DateField>(initialDateField);
@@ -78,12 +106,39 @@ export function NoticeFilterBar(props: Props) {
     setPeriodTo(fmtDateInput(offsetDays(today, days)));
   };
 
+  // 네이티브 폼 GET은 하드 네비게이션이라 G2B 조회(최대 1~3분) 동안 진행 표시가
+  // 전혀 없다. 제출을 가로채 소프트 네비게이션(router.push) + useTransition으로
+  // 바꿔서 pending 상태(스피너·배너·상단바)를 노출한다. name 속성은 그대로 두어
+  // JS 미동작 환경에서는 기존 GET 폼으로 폴백된다.
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const query = new URLSearchParams();
+    for (const [key, value] of formData.entries()) {
+      if (typeof value === "string" && value.trim() !== "") {
+        query.append(key, value);
+      }
+    }
+    startTransition(() => {
+      router.push(`/notices?${query.toString()}`);
+    });
+  };
+
   return (
     <form
       method="get"
       action="/notices"
-      className="rounded border border-slate-800 bg-slate-900/40"
+      onSubmit={handleSubmit}
+      aria-busy={pending}
+      className="overflow-hidden rounded border border-slate-800 bg-slate-900/40"
     >
+      {pending ? (
+        <div
+          role="progressbar"
+          aria-label="검색 진행 중"
+          className="h-0.5 w-full animate-pulse bg-brand-500"
+        />
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-2">
         <div className="text-sm font-semibold text-slate-200">
           {mode === "saved" ? "저장 공고 업무 큐" : "G2B 실시간 검색"}
@@ -159,6 +214,21 @@ export function NoticeFilterBar(props: Props) {
           />
         )}
 
+        {pending ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-2 rounded border border-brand-500/40 bg-brand-500/10 px-3 py-2 text-xs text-brand-200"
+          >
+            <Spinner className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              {mode === "g2b"
+                ? "나라장터 OpenAPI를 조회하는 중입니다… 기간이 길면 1~3분 걸릴 수 있습니다."
+                : "검색 중입니다…"}
+            </span>
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
           <Link
             href={mode === "saved" ? "/notices?mode=saved" : "/notices"}
@@ -168,9 +238,18 @@ export function NoticeFilterBar(props: Props) {
           </Link>
           <button
             type="submit"
-            className="rounded bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
+            disabled={pending}
+            aria-busy={pending}
+            className="inline-flex items-center gap-2 rounded bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            검색
+            {pending ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                검색 중…
+              </>
+            ) : (
+              "검색"
+            )}
           </button>
         </div>
       </div>

@@ -102,8 +102,14 @@ export async function seedDocumentAutomation(
   return notice;
 }
 
-export async function expectToast(page: { getByText: (text: RegExp | string) => any }, text: RegExp | string) {
-  await expect(page.getByText(text).first()).toBeVisible();
+// LLM/외부 호출 결과 토스트는 실호출 지연이 커서 호출자가 더 긴 타임아웃을 줄 수 있다.
+// 기본값은 LLM 의존 단계(analyze·grade·문서분석·규격추출)에 맞춰 넉넉히 잡는다.
+export async function expectToast(
+  page: { getByText: (text: RegExp | string) => any },
+  text: RegExp | string,
+  timeout = 90_000,
+) {
+  await expect(page.getByText(text).first()).toBeVisible({ timeout });
 }
 
 export async function postApi(

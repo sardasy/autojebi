@@ -46,7 +46,7 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
         "0004_backfill_open_close_date",
         "0005_notice_spec_items",
         "0006_phase1_tracking",
-        "0007_phase2_analysis_stabilization",
+        "0007_phase2_stabilization",
         "0008_export_quality_control",
     ):
         assert rev in chain, f"{rev} missing from chain: {chain}"

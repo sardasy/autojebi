@@ -10,15 +10,8 @@ test.describe("program ops-live smoke", () => {
   test("live G2B search, analyze, grade, document, and HWP agent smoke", async ({
     request,
   }) => {
-    const hwpHealth = await request.get(`${API_BASE}/documents/hwp-agent/health`, {
-      headers: apiHeaders(false),
-    });
-    test.skip(
-      !hwpHealth.ok(),
-      `HWP health endpoint unavailable: ${hwpHealth.status()} ${await hwpHealth.text()}`,
-    );
-    const hwpHealthBody = await hwpHealth.json();
-
+    // HWP 에이전트 가용성은 compose 직전에만 검사한다. 에이전트가 없어도
+    // 라이브 G2B 검색→분석→그레이드→문서분석→규격추출은 끝까지 검증한다.
     const search = await postApi(request, "/notices/search", {
       keyword: LIVE_KEYWORD,
       page: 1,
@@ -53,27 +46,39 @@ test.describe("program ops-live smoke", () => {
       analyze.status() === 502,
       `Claude analysis unavailable: ${await analyze.text()}`,
     );
-    if (!analyze.ok()) {
+    // 같은 라이브 공고를 재실행하면 이미 분석/진행된 상태(409 invalid transition)일 수 있다.
+    // 그 경우 공고는 이미 분석되어 있으므로 정상으로 간주하고 계속 진행한다.
+    if (!analyze.ok() && analyze.status() !== 409) {
       throw new Error(`live analyze failed: ${analyze.status()} ${await analyze.text()}`);
     }
+
+    // 재실행 시 공고가 이미 진행된 상태면 일부 단계가 409(invalid transition)를 반환할 수 있다.
+    // 라이브 코어 스모크의 목적상 409(이미 처리됨)는 정상으로 간주한다.
+    const okOr409 = (status: number) => status >= 200 && status < 300 || status === 409;
 
     const grade = await postApi(request, `/notices/${encodeURIComponent(item.notice_no)}/grade`, {
       alert: false,
     });
-    if (!grade.ok()) {
+    if (!okOr409(grade.status())) {
       throw new Error(`live grade failed: ${grade.status()} ${await grade.text()}`);
     }
 
     const docs = await postApi(request, `/notices/${encodeURIComponent(item.notice_no)}/documents/analyze`);
-    if (!docs.ok()) {
+    if (!okOr409(docs.status())) {
       throw new Error(`live document analyze failed: ${docs.status()} ${await docs.text()}`);
     }
 
     const spec = await postApi(request, `/notices/${encodeURIComponent(item.notice_no)}/spec-items/extract`);
-    if (!spec.ok()) {
+    if (!okOr409(spec.status())) {
       throw new Error(`live spec extract failed: ${spec.status()} ${await spec.text()}`);
     }
 
+    // ── 여기까지 라이브 코어(G2B/Claude/grade/문서/규격) 검증 완료 ──
+    // HWP 에이전트가 도달 가능할 때만 compose/proposal까지 진행한다.
+    const hwpHealth = await request.get(`${API_BASE}/documents/hwp-agent/health`, {
+      headers: apiHeaders(false),
+    });
+    const hwpHealthBody = hwpHealth.ok() ? await hwpHealth.json() : { ok: false, base_url: "?", detail: `health endpoint ${hwpHealth.status()}` };
     test.skip(
       !hwpHealthBody.ok,
       `HWP agent unavailable at ${hwpHealthBody.base_url}: ${hwpHealthBody.detail ?? "health=false"}`,

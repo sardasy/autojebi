@@ -24,6 +24,7 @@ import httpx
 
 from api.config import settings
 from api.llm.extractor import extract_pdf_text
+from api.services.g2b_attachments import read_data_url
 from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError
 
 log = logging.getLogger(__name__)
@@ -83,6 +84,12 @@ def _file_suffix(fname: str) -> str:
 
 def _download(url: str, dest: Path) -> bool:
     try:
+        # data: URL은 g2b_attachments와 동일하게 디코드 (E2E 픽스처/임베디드 첨부 지원).
+        if url.startswith("data:"):
+            content, _mime = read_data_url(url)
+            dest.write_bytes(content)
+            log.info("[attachments] data URL 디코드 %s (%d bytes)", dest.name, len(content))
+            return True
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url)
             resp.raise_for_status()
@@ -90,7 +97,8 @@ def _download(url: str, dest: Path) -> bool:
             log.info("[attachments] downloaded %s (%d bytes)", dest.name, len(resp.content))
             return True
     except Exception as exc:  # noqa: BLE001
-        log.warning("[attachments] download 실패 %s: %s", url, exc)
+        # data: URL은 매우 길 수 있어 로그에는 앞부분만 남긴다.
+        log.warning("[attachments] download 실패 %s: %s", url[:80], exc)
         return False
 
 

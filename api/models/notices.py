@@ -229,6 +229,10 @@ class UploadedDocument(BaseModel):
     detected_item_id: str | None = None
     detect_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     analysis_summary: str | None = None
+    text_excerpt: str | None = Field(
+        default=None,
+        description="추출 본문 일부(서류 필요/해당없음 판정 재사용용). UI 표시는 analysis_summary 사용.",
+    )
     text_extract_error: str | None = None
     source_ref: UploadSourceRef | None = "uploaded"
 

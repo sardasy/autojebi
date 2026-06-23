@@ -18,3 +18,9 @@ services:
   frontend:
     ports: !override
       - "3001:3000"
+    # API를 호스트에서 실행할 때(HWP 에이전트 연동) 프론트엔드 서버측 호출을 호스트 API로 보냄.
+    # 브라우저 호출은 빌드 시 baked된 NEXT_PUBLIC_API_BASE(http://localhost:8001)를 사용.
+    environment:
+      INTERNAL_API_BASE: http://host.docker.internal:8001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

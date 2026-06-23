@@ -138,6 +138,114 @@ def test_fetch_g2b_attachment_is_idempotent(client, sqlite_engine, monkeypatch):
     assert second.json()["fetched"][0]["id"] == uploads[0]["id"]
 
 
+def test_fetch_retries_failed_upload_and_resolves_prior_error(
+    client,
+    sqlite_engine,
+    monkeypatch,
+):
+    """에이전트/추출 복구 후 재실행하면 이전 실패를 재처리하고 묵은 오류를 해소한다."""
+    _seed_notice(
+        sqlite_engine,
+        raw={"ntceSpecDocUrl1": PDF_DATA_URL, "ntceSpecFileNm1": "spec.pdf"},
+    )
+
+    def _boom(_b):
+        raise RuntimeError("pdf parse boom")
+
+    monkeypatch.setattr("api.services.uploads.extract_pdf_text", _boom)
+    first = client.post("/notices/ATT-1/attachments/fetch")
+    assert first.status_code == 200
+    assert first.json()["status"] == "completed_with_errors"
+    with sqlite_engine.begin() as conn:
+        unresolved = conn.execute(
+            select(notice_errors).where(
+                notice_errors.c.notice_no == "ATT-1",
+                notice_errors.c.resolved_at.is_(None),
+            )
+        ).mappings().all()
+    assert len(unresolved) >= 1
+
+    # 복구: 추출 성공 → 재실행은 skip이 아니라 재처리(success) + 묵은 오류 resolved.
+    monkeypatch.setattr(
+        "api.services.uploads.extract_pdf_text", lambda _b: "규격 사양 spec ok"
+    )
+    second = client.post("/notices/ATT-1/attachments/fetch")
+    assert second.status_code == 200, second.text
+    body = second.json()
+    assert body["status"] == "completed"
+    assert body["errors"] == []
+    assert body["files"][0]["status"] == "success"
+    with sqlite_engine.begin() as conn:
+        unresolved = conn.execute(
+            select(notice_errors).where(
+                notice_errors.c.notice_no == "ATT-1",
+                notice_errors.c.resolved_at.is_(None),
+            )
+        ).mappings().all()
+        row = conn.execute(
+            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == "ATT-1")
+        ).mappings().one()
+    assert unresolved == []
+    uploads = row["analysis"]["document_automation"]["uploads"]
+    assert len(uploads) == 1
+    assert not uploads[0].get("text_extract_error")
+
+
+def test_fetch_reevaluates_checklist_from_attachment_text(client, sqlite_engine, monkeypatch):
+    """첨부 fetch 후 자동 재평가: 받은 첨부 본문 근거로 체크리스트 required가 갱신된다."""
+    _seed_notice(
+        sqlite_engine,
+        raw={"ntceSpecDocUrl1": PDF_DATA_URL, "ntceSpecFileNm1": "공고서.pdf"},
+    )
+    # 분석 전 초기 상태: 보증 키워드가 메타데이터에 없어 bid_bond는 해당없음/선택.
+    monkeypatch.setattr(
+        "api.services.uploads.extract_pdf_text",
+        lambda _b: "본 입찰은 입찰보증금 납부 조건이 적용됩니다.",
+    )
+
+    r = client.post("/notices/ATT-1/attachments/fetch")
+    assert r.status_code == 200, r.text
+
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(
+            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == "ATT-1")
+        ).mappings().one()
+    by_id = {i["id"]: i for i in row["analysis"]["document_automation"]["checklist"]}
+    # 첨부 본문에 "입찰보증금"이 있으므로 재평가 후 bid_bond가 필요(required=True)로 승격.
+    assert by_id["bid_bond"]["required"] is True
+
+
+def test_fetch_resets_stale_attachment_errors_but_preserves_other_stages(
+    client,
+    sqlite_engine,
+    monkeypatch,
+):
+    """UI가 읽는 document_automation['errors']는 재실행 시 attachment 단계만 교체하고
+    다른 단계(autofill 등) 오류는 보존해야 한다(과거 실패 무한 누적 방지)."""
+    stale = [
+        {"stage": "g2b_attachment_analysis", "severity": "warning", "detail": "old hwp fail"},
+        {"stage": "g2b_attachment_fetch", "detail": "old write fail"},
+        {"stage": "autofill_form", "detail": "keep me"},
+    ]
+    _seed_notice(
+        sqlite_engine,
+        raw={"ntceSpecDocUrl1": PDF_DATA_URL, "ntceSpecFileNm1": "spec.pdf"},
+        analysis={"document_automation": {"checklist": [], "uploads": [], "errors": stale}},
+    )
+    monkeypatch.setattr("api.services.uploads.extract_pdf_text", lambda _b: "규격 사양 ok")
+
+    resp = client.post("/notices/ATT-1/attachments/fetch")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "completed"
+
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(
+            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == "ATT-1")
+        ).mappings().one()
+    stages = [e["stage"] for e in row["analysis"]["document_automation"]["errors"]]
+    assert stages == ["autofill_form"]
+
+
 def test_fetch_g2b_attachment_records_file_error_without_failing_notice(
     client,
     sqlite_engine,

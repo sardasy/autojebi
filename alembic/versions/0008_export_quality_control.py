@@ -1,7 +1,7 @@
 """Add Phase 3 export quality metadata.
 
 Revision ID: 0008_export_quality_control
-Revises: 0007_phase2_analysis_stabilization
+Revises: 0007_phase2_stabilization
 Create Date: 2026-06-21
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0008_export_quality_control"
-down_revision: str | None = "0007_phase2_analysis_stabilization"
+down_revision: str | None = "0007_phase2_stabilization"
 branch_labels: str | None = None
 depends_on: str | None = None
 
