@@ -38,6 +38,15 @@ class ProposalComposeOutcome:
     raw: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class PutFieldsOutcome:
+    output_path: str
+    replaced: list[str]
+    missing: list[str]
+    remaining_placeholders: list[str]
+    raw: dict[str, Any]
+
+
 class HwpAgentClient:
     """Thin httpx wrapper around the local milim-hwp-agent FastAPI service.
 
@@ -201,5 +210,29 @@ class HwpAgentClient:
             remaining_placeholders=list(body.get("remaining_placeholders") or []),
             section_count=int(body.get("section_count") or len(sections)),
             table_count=int(body.get("table_count") or len(tables)),
+            raw=body,
+        )
+
+    def put_fields(
+        self,
+        *,
+        template_path: str,
+        output_path: str,
+        values: dict[str, str],
+        visible: bool = False,
+    ) -> PutFieldsOutcome:
+        """Fill HWP fields through the worker's serialized PutFieldText endpoint."""
+        payload = {
+            "template_path": template_path,
+            "output_path": output_path,
+            "values": values,
+            "visible": visible,
+        }
+        body = self._request("POST", "/document/put-fields", json=payload)
+        return PutFieldsOutcome(
+            output_path=str(body.get("output_path") or output_path),
+            replaced=list(body.get("replaced") or []),
+            missing=list(body.get("missing") or []),
+            remaining_placeholders=list(body.get("remaining_placeholders") or []),
             raw=body,
         )

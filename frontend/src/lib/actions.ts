@@ -15,6 +15,9 @@ import type {
   ChecklistUpdateRequest,
   ExportKind,
   HwpComposeRequest,
+  HwpContextRequest,
+  HwpJobReviewRequest,
+  HwpPutFieldsRequest,
   ProposalComposeRequest,
   IngestRequest,
   MailExtractRequest,
@@ -146,6 +149,10 @@ export async function actionGetHwpAgentHealth() {
   return api.getHwpAgentHealth();
 }
 
+export async function actionListHwpTemplates() {
+  return api.listHwpTemplates();
+}
+
 export async function actionImportCommonUpload(noticeNo: string, uploadId: string) {
   const result = await api.importCommonUpload(noticeNo, uploadId);
   revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
@@ -171,6 +178,28 @@ export async function actionComposeHwpDocuments(
   payload: HwpComposeRequest,
 ) {
   const result = await api.composeHwpDocuments(noticeNo, payload);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  revalidatePath("/notices");
+  return result;
+}
+
+export async function actionPreviewHwpContext(noticeNo: string, payload: HwpContextRequest) {
+  return api.previewHwpContext(noticeNo, payload);
+}
+
+export async function actionPutHwpFields(noticeNo: string, payload: HwpPutFieldsRequest) {
+  const result = await api.putHwpFields(noticeNo, payload);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
+  revalidatePath("/notices");
+  return result;
+}
+
+export async function actionReviewHwpJob(
+  noticeNo: string,
+  jobId: number,
+  payload: HwpJobReviewRequest,
+) {
+  const result = await api.reviewHwpJob(noticeNo, jobId, payload);
   revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
   revalidatePath("/notices");
   return result;

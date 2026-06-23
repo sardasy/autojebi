@@ -208,7 +208,7 @@ class DocumentValidationResponse(BaseModel):
 
 # M11 — 서류 자동화 v2: 사용자 업로드 + Excel/HWP 내보내기
 
-ExportKind = Literal["excel", "hwp", "proposal_hwp"]
+ExportKind = Literal["excel", "hwp", "bid_form_hwp", "proposal_hwp"]
 ExportVersion = Literal["compliance_excel_v1", "compliance_excel_v2"]
 ExportValidationStatus = Literal["passed", "warning", "failed"]
 UploadSourceRef = Literal["uploaded", "common_library", "g2b_attachment"]
@@ -344,6 +344,94 @@ class HwpComposeRequest(BaseModel):
     include_technical_compliance: bool = True
 
 
+HwpTemplateKind = Literal["bid_form", "proposal"]
+HwpReviewStatus = Literal["pending", "approved", "rejected"]
+
+
+class HwpTemplateFieldMapping(BaseModel):
+    id: int | None = None
+    hwp_field_name: str
+    context_path: str
+    value_type: str = "string"
+    required: bool = False
+    default_value: str | None = None
+    transform: str = "none"
+    sort_order: int = 0
+    active: bool = True
+
+
+class HwpTemplateRecord(BaseModel):
+    id: int
+    template_key: str
+    kind: HwpTemplateKind
+    name: str
+    template_path: str
+    template_version: str | None = None
+    active: bool = True
+    mappings: list[HwpTemplateFieldMapping] = Field(default_factory=list)
+
+
+class HwpTemplateListResponse(BaseModel):
+    items: list[HwpTemplateRecord]
+
+
+class HwpContextRequest(BaseModel):
+    template_key: str = "bid_form"
+    values_override: dict[str, str] = Field(default_factory=dict)
+
+
+class HwpContextResponse(BaseModel):
+    notice_no: str
+    template: HwpTemplateRecord
+    context: dict[str, Any]
+    input_values: dict[str, str]
+    required_missing: list[str] = Field(default_factory=list)
+
+
+class HwpPutFieldsRequest(BaseModel):
+    template_key: str = "bid_form"
+    output_path: str | None = None
+    values_override: dict[str, str] = Field(default_factory=dict)
+    visible: bool = False
+
+
+class HwpJobRecord(BaseModel):
+    id: int
+    notice_no: str
+    template_id: int | None = None
+    export_id: int | None = None
+    status: str
+    input_values: dict[str, str] = Field(default_factory=dict)
+    replaced: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    remaining_placeholders: list[str] = Field(default_factory=list)
+    error_detail: str | None = None
+    review_status: HwpReviewStatus = "pending"
+    review_note: str | None = None
+    reviewed_by: str | None = None
+
+
+class HwpPutFieldsResponse(BaseModel):
+    notice_no: str
+    status: str
+    export: ExportRecord | None = None
+    job: HwpJobRecord
+    required_missing: list[str] = Field(default_factory=list)
+    remaining_placeholders: list[str] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class HwpJobReviewRequest(BaseModel):
+    review_status: HwpReviewStatus
+    review_note: str | None = None
+    reviewed_by: str | None = None
+
+
+class HwpJobReviewResponse(BaseModel):
+    notice_no: str
+    job: HwpJobRecord
+
+
 class ExportCreateRequest(BaseModel):
     version: ExportVersion = "compliance_excel_v2"
 
@@ -418,6 +506,8 @@ class HwpComposeResponse(BaseModel):
     status: str
     bid_form: HwpComposeBidFormResult | None = None
     technical_compliance: ExportRecord | None = None
+    job: HwpJobRecord | None = None
+    required_missing: list[str] = Field(default_factory=list)
     remaining_placeholders: list[str] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -426,6 +516,8 @@ class ProposalComposeResponse(BaseModel):
     notice_no: str
     export: ExportRecord | None = None
     proposal: dict[str, Any]
+    job: HwpJobRecord | None = None
+    required_missing: list[str] = Field(default_factory=list)
     remaining_placeholders: list[str] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
 

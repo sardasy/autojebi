@@ -39,6 +39,10 @@
 | 규격 항목 수정 | PATCH | `/notices/{notice_no}/spec-items/{item_id}` | proposed_value, status, evidence, note | 갱신된 item | reviewed/matched 수동값은 재추출보다 우선 |
 | 규격대응표 HWP 작성 | POST | `/notices/{notice_no}/documents/hwp-compose` | template/output/values_override | export, remaining_placeholders, errors | `hwp_composed`/`form_filled` 전이, export/error 저장 |
 | 제안서 HWP 작성 | POST | `/notices/{notice_no}/documents/proposal-compose` | template_path, values_override, visible | export, proposal, remaining_placeholders, errors | `hwp_composed` 전이, `proposal_hwp` export 저장 가능 |
+| HWP 템플릿/필드 조회 | GET | `/documents/hwp-templates` | 없음 | active templates + mappings | seed/API 관리용 |
+| HWP context 미리보기 | POST | `/notices/{notice_no}/documents/hwp-context` | template_key, values_override | context, input_values, required_missing | 생성 전 검토 |
+| HWP PutFieldText 생성 | POST | `/notices/{notice_no}/documents/hwp-put-fields` | template_key, output_path, values_override, visible | export, job, required_missing, remaining_placeholders | mapping 기반 HWP 생성 |
+| HWP 생성 검토 | POST | `/notices/{notice_no}/documents/hwp-jobs/{job_id}/review` | review_status, note, reviewer | job | 사람 검토 상태 저장 |
 | HWP agent health | GET | `/documents/hwp-agent/health` | 없음 | ok, base_url, detail | 전역 readiness 확인 |
 | E2E cleanup | POST | `/notices/e2e/cleanup` | prefix/options | 삭제 결과 | dev/test 전용, `E2E-*` 범위만 |
 
@@ -158,7 +162,7 @@ Phase 1 현재 구현은 `notice_errors`를 우선 저장소로 사용하고, �
 | 필드 | 의미 |
 |---|---|
 | `id` | `notice_exports.id`; 없으면 legacy JSON mirror |
-| `kind` | `excel`, `hwp`, `proposal_hwp` 중 하나 |
+| `kind` | `excel`, `hwp`, `bid_form_hwp`, `proposal_hwp` 중 하나 |
 | `draft_id` | `technical_compliance`, `proposal` 등 생성 기준 draft |
 | `output_path` | 서버 로컬 파일 경로 |
 | `mime` | 다운로드 MIME type |

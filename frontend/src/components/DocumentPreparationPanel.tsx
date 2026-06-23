@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import {
   actionAnalyzeDocuments,
   actionFetchG2BAttachments,
+  actionReviewHwpJob,
   actionUpdateDocumentChecklistItem,
   actionValidateDocuments,
 } from "@/lib/actions";
 import type {
   DocumentChecklistItem,
+  HwpJobRecord,
   DocumentItemStatus,
   NoticeRecord,
 } from "@/lib/api";
@@ -55,6 +57,7 @@ export function DocumentPreparationPanel({ notice }: Props) {
   const canAnalyze = notice.status !== "collected";
   const uploads = docs?.uploads || [];
   const exports = docs?.exports || [];
+  const hwpJobs = docs?.hwp_jobs || [];
 
   const analyze = () => {
     startTransition(async () => {
@@ -184,6 +187,7 @@ export function DocumentPreparationPanel({ notice }: Props) {
         <>
           <DocumentErrors errors={docs.errors} />
           <RemainingPlaceholders drafts={docs.drafts} />
+          <HwpJobs noticeNo={notice.notice_no} jobs={hwpJobs} />
           <SpecItemsPanel notice={notice} enabled={Boolean(docs)} />
           <ChecklistTable
             items={docs.checklist}
@@ -220,6 +224,83 @@ export function DocumentPreparationPanel({ notice }: Props) {
         </div>
       )}
     </section>
+  );
+}
+
+const REVIEW_LABEL: Record<string, string> = {
+  pending: "검토 대기",
+  approved: "승인",
+  rejected: "반려",
+};
+
+function HwpJobs({ noticeNo, jobs }: { noticeNo: string; jobs: HwpJobRecord[] }) {
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const toast = useToast();
+  if (jobs.length === 0) return null;
+
+  const review = (job: HwpJobRecord, reviewStatus: "approved" | "rejected") => {
+    startTransition(async () => {
+      try {
+        await actionReviewHwpJob(noticeNo, job.id, { review_status: reviewStatus });
+        toast.push("success", `HWP 검토 상태: ${REVIEW_LABEL[reviewStatus]}`);
+        router.refresh();
+      } catch (e) {
+        toast.push("error", `검토 상태 저장 실패: ${(e as Error).message}`);
+      }
+    });
+  };
+
+  return (
+    <div className="rounded border border-slate-800 bg-slate-900/40 p-3">
+      <div className="mb-2 text-xs font-semibold text-slate-300">HWP 생성/검토</div>
+      <div className="space-y-2">
+        {jobs.slice(0, 5).map((job) => {
+          const requiredMissing = job.missing || [];
+          const remaining = job.remaining_placeholders || [];
+          return (
+            <div key={job.id} className="rounded border border-slate-800 bg-slate-950 p-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-slate-200">
+                  Job #{job.id} · {job.status} · {REVIEW_LABEL[job.review_status] || job.review_status}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => review(job, "approved")}
+                    className="rounded border border-emerald-700 px-2 py-1 text-emerald-100 disabled:opacity-50"
+                  >
+                    승인
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => review(job, "rejected")}
+                    className="rounded border border-red-800 px-2 py-1 text-red-100 disabled:opacity-50"
+                  >
+                    반려
+                  </button>
+                </div>
+              </div>
+              {requiredMissing.length > 0 ? (
+                <div className="mt-2 text-amber-100">
+                  필수 누락 {requiredMissing.length}개: {requiredMissing.join(", ")}
+                </div>
+              ) : null}
+              {remaining.length > 0 ? (
+                <div className="mt-2 text-amber-100">
+                  남은 placeholder {remaining.length}개: {remaining.join(", ")}
+                </div>
+              ) : null}
+              {job.error_detail ? (
+                <div className="mt-2 text-red-100">{job.error_detail}</div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

@@ -46,6 +46,7 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
   const [visible, setVisible] = useState(false);
   const [overrideJson, setOverrideJson] = useState("{}");
   const [remaining, setRemaining] = useState<string[]>([]);
+  const [requiredMissing, setRequiredMissing] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ stage?: string; detail?: string }[]>([]);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const toast = useToast();
@@ -78,6 +79,7 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
     if (!open) return;
     setAgentStatus("checking");
     setRemaining([]);
+    setRequiredMissing([]);
     setErrors([]);
     setExportPath(null);
     actionGetHwpAgentHealth()
@@ -109,6 +111,7 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
       try {
         const result = await actionComposeProposalDocument(notice.notice_no, payload);
         setRemaining(result.remaining_placeholders || []);
+        setRequiredMissing(result.required_missing || []);
         setErrors(result.errors || []);
         setExportPath(result.export?.output_path || null);
         router.refresh();
@@ -227,6 +230,11 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
         {remaining.length > 0 ? (
           <div className="rounded border border-amber-800 bg-amber-950/20 p-3 text-amber-100">
             남은 placeholder {remaining.length}개: {remaining.join(", ")}
+          </div>
+        ) : null}
+        {requiredMissing.length > 0 ? (
+          <div className="rounded border border-amber-800 bg-amber-950/20 p-3 text-amber-100">
+            필수 누락 {requiredMissing.length}개: {requiredMissing.join(", ")}
           </div>
         ) : null}
         {errors.length > 0 ? (
