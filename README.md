@@ -514,6 +514,17 @@ curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/exports/e
 - milim-hwp-agent의 `POST /proposal/compose`에 `{ template_path, output_path, values, sections, tables, visible }`를 위임한다.
 - agent 실패 시 제안서 draft와 `errors[]`는 저장하고, HWP 파일이 생성된 경우에만 `proposal_hwp` export를 기록한다. `remaining_placeholders`가 남으면 export는 저장하되 `validation_status=warning`으로 표시한다.
 
+### HWP 필드 매핑 기반 자동작성 (M14+)
+`python -m api.hwp_fields seed`로 `company_profiles`, `hwp_templates`, `document_field_mappings` 기본값을 upsert한다. HWP 양식에는 `document_field_mappings.hwp_field_name`과 같은 필드명을 미리 삽입한다.
+
+- `GET /documents/hwp-templates` — active 템플릿과 필드 매핑 조회.
+- `POST /notices/{notice_no}/documents/hwp-context` — `template_key` 기준 Context JSON, 실제 입력값, required 누락 미리보기.
+- `POST /notices/{notice_no}/documents/hwp-put-fields` — Windows HWP Worker `/document/put-fields`에 `{ template_path, output_path, values, visible }`를 위임해 `PutFieldText` 입력.
+- `POST /notices/{notice_no}/documents/hwp-jobs/{job_id}/review` — 사람 검토 결과(`pending`/`approved`/`rejected`) 저장.
+- transform은 whitelist(`none`, `date_yyyy_mm_dd`, `number_comma`, `business_number_dash`, `strip`, `truncate_1000`)만 허용한다.
+- 생성 로그는 `hwp_generation_jobs`에 context/input/missing/remaining/review_status로 저장되고, UI는 required 누락·remaining placeholder·검토 상태를 표시한다.
+- Windows HWP Worker는 HWP COM 제약 때문에 단일 Lock/Queue로 `/document/put-fields` 작업을 순차 실행해야 한다.
+
 ### `GET /notices/{notice_no}/documents/exports/by-id/{export_id}/download` — 생성 결과 다운로드
 `ExportRecord.id`가 있는 경우 이 경로를 우선 사용한다. active export row가 없으면 404, metadata는 있으나 파일이 없으면 410.
 

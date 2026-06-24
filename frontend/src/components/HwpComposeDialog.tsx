@@ -67,6 +67,8 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
     "checking",
   );
   const [lastErrors, setLastErrors] = useState<{ stage?: string; detail?: string }[]>([]);
+  const [requiredMissing, setRequiredMissing] = useState<string[]>([]);
+  const [remainingFields, setRemainingFields] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
   const router = useRouter();
@@ -130,6 +132,8 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
         const errors = result.errors.length;
         const remaining = result.remaining_placeholders.length;
         setLastErrors(result.errors);
+        setRequiredMissing(result.required_missing || []);
+        setRemainingFields(result.remaining_placeholders || []);
         router.refresh();
         if (errors > 0) {
           toast.push("info", `HWP 작성 일부 완료: 오류 ${errors}건`);
@@ -223,6 +227,18 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
 
         {validation.errors.length > 0 ? (
           <div className="text-xs text-red-300">{validation.errors.join(", ")}</div>
+        ) : null}
+
+        {requiredMissing.length > 0 ? (
+          <div className="rounded border border-amber-800 bg-amber-950/20 p-3 text-xs text-amber-100">
+            필수 누락 {requiredMissing.length}개: {requiredMissing.join(", ")}
+          </div>
+        ) : null}
+
+        {remainingFields.length > 0 ? (
+          <div className="rounded border border-amber-800 bg-amber-950/20 p-3 text-xs text-amber-100">
+            남은 placeholder {remainingFields.length}개: {remainingFields.join(", ")}
+          </div>
         ) : null}
 
         {lastErrors.length > 0 ? (

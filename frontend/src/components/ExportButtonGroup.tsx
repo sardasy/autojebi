@@ -15,6 +15,7 @@ type Props = {
 const KIND_LABELS: Record<ExportKind, string> = {
   excel: "Excel",
   hwp: "HWP",
+  bid_form_hwp: "입찰양식 HWP",
   proposal_hwp: "제안서 HWP",
 };
 
@@ -47,7 +48,12 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
 
   const byKind = new Map<ExportKind, ExportRecord>();
   for (const rec of exports) {
-    if (rec.kind === "excel" || rec.kind === "hwp" || rec.kind === "proposal_hwp") {
+    if (
+      rec.kind === "excel" ||
+      rec.kind === "hwp" ||
+      rec.kind === "bid_form_hwp" ||
+      rec.kind === "proposal_hwp"
+    ) {
       byKind.set(rec.kind, rec);
     }
   }
@@ -121,6 +127,22 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
             {exportSummary(byKind.get("proposal_hwp") as ExportRecord) ? (
               <span className="text-xs text-slate-400">
                 {exportSummary(byKind.get("proposal_hwp") as ExportRecord)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {byKind.get("bid_form_hwp") ? (
+          <div className="flex items-center gap-2">
+            <a
+              href={downloadHref(noticeNo, byKind.get("bid_form_hwp") as ExportRecord)}
+              className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+              download={`${noticeNo}-bid-form.hwp`}
+            >
+              입찰양식 HWP 다운로드
+            </a>
+            {exportSummary(byKind.get("bid_form_hwp") as ExportRecord) ? (
+              <span className="text-xs text-slate-400">
+                {exportSummary(byKind.get("bid_form_hwp") as ExportRecord)}
               </span>
             ) : null}
           </div>

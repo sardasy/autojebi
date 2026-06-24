@@ -9,6 +9,7 @@ from api.services.hwp_agent_client import (
     AutofillOutcome,
     HwpAgentClient,
     HwpAgentError,
+    PutFieldsOutcome,
 )
 
 
@@ -99,6 +100,42 @@ def test_autofill_raises_on_4xx_missing_values():
             values={},
         )
     assert "422" in str(exc_info.value)
+
+
+def test_put_fields_calls_serialized_worker_endpoint():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "output_path": "output/result.hwp",
+                "replaced": ["notice_no"],
+                "missing": ["ceo_name"],
+                "remaining_placeholders": ["address"],
+            },
+        )
+
+    client = _make_client(handler)
+    outcome = client.put_fields(
+        template_path="templates/form.hwp",
+        output_path="output/result.hwp",
+        values={"notice_no": "SPEC-1"},
+        visible=True,
+    )
+
+    assert isinstance(outcome, PutFieldsOutcome)
+    assert captured["path"] == "/document/put-fields"
+    assert captured["body"] == {
+        "template_path": "templates/form.hwp",
+        "output_path": "output/result.hwp",
+        "values": {"notice_no": "SPEC-1"},
+        "visible": True,
+    }
+    assert outcome.missing == ["ceo_name"]
+    assert outcome.remaining_placeholders == ["address"]
 
 
 def test_request_retries_transport_error_then_succeeds():
