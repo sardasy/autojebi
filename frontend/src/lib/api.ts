@@ -625,6 +625,48 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return r.json();
 }
 
+// compose 계열은 409(사전검증 실패: 필수 서류 누락 등)를 "정상적인 결과"로 취급한다.
+// throw하면 서버액션 경계에서 Next가 프로덕션 메시지를 마스킹해(digest만 전달) 진짜 사유가
+// 사라지므로, 검증 오류를 errors 배열에 담아 반환해 다이얼로그가 그대로 노출하게 한다.
+async function postComposeAllowingValidation<T>(
+  path: string,
+  body: unknown,
+  build409: (errors: { stage?: string; detail?: string }[]) => T,
+): Promise<T> {
+  const r = await fetch(`${INTERNAL_API_BASE}${path}`, {
+    method: "POST",
+    headers: defaultHeaders(true),
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (r.status === 409) {
+    let parsed: unknown;
+    try {
+      parsed = await r.json();
+    } catch {
+      parsed = null;
+    }
+    const d = (parsed as { detail?: unknown })?.detail ?? parsed;
+    const detail = d as { errors?: { stage?: string; detail?: string }[]; message?: string };
+    const errors =
+      Array.isArray(detail?.errors) && detail.errors.length > 0
+        ? detail.errors
+        : [{ stage: "pre_compose", detail: detail?.message || "사전검증에 실패했습니다" }];
+    return build409(errors);
+  }
+  if (!r.ok) {
+    let detail: string;
+    try {
+      const j = await r.json();
+      detail = j?.detail ? JSON.stringify(j.detail) : r.statusText;
+    } catch {
+      detail = r.statusText;
+    }
+    throw new Error(`POST ${path} failed: ${r.status} ${detail}`);
+  }
+  return r.json();
+}
+
 export async function upsertNotice(payload: NoticeUpsertRequest): Promise<NoticeRecord> {
   return postJson<NoticeRecord>("/notices/upsert", payload);
 }
@@ -881,9 +923,19 @@ export async function composeHwpDocuments(
   noticeNo: string,
   payload: HwpComposeRequest,
 ): Promise<HwpComposeResponse> {
-  return postJson<HwpComposeResponse>(
+  return postComposeAllowingValidation<HwpComposeResponse>(
     `/notices/${encodeURIComponent(noticeNo)}/documents/hwp-compose`,
     payload,
+    (errors) => ({
+      notice_no: noticeNo,
+      status: "precompose_failed",
+      bid_form: null,
+      technical_compliance: null,
+      job: null,
+      required_missing: [],
+      remaining_placeholders: [],
+      errors,
+    }),
   );
 }
 
@@ -922,9 +974,18 @@ export async function composeProposalDocument(
   noticeNo: string,
   payload: ProposalComposeRequest,
 ): Promise<ProposalComposeResponse> {
-  return postJson<ProposalComposeResponse>(
+  return postComposeAllowingValidation<ProposalComposeResponse>(
     `/notices/${encodeURIComponent(noticeNo)}/documents/proposal-compose`,
     payload,
+    (errors) => ({
+      notice_no: noticeNo,
+      export: null,
+      proposal: {},
+      job: null,
+      required_missing: [],
+      remaining_placeholders: [],
+      errors,
+    }),
   );
 }
 
