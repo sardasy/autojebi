@@ -45,6 +45,7 @@ cd '$repo'
 `$env:EXPORT_DIR='$exportDir'
 `$env:FRONTEND_ORIGIN='http://localhost:3001'
 `$env:SCHEDULER_ENABLED='true'
+`$env:E2E_CLEANUP_ENABLED='true'
 Write-Host 'autojebi API :8001'
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8001
 "@

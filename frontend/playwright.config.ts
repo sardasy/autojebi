@@ -25,7 +25,7 @@ export default defineConfig({
     },
     {
       name: "chromium-workflow",
-      testMatch: /.*(?:program-search-save|program-bid-workflow|program-spec-hwp|program-admin|real-notice-document-flow)\.spec\.ts/,
+      testMatch: /.*(?:program-search-save|program-bid-workflow|program-spec-hwp|program-hwp-field-mapping|program-admin|real-notice-document-flow)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {

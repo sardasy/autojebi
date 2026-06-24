@@ -35,8 +35,8 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
     script = ScriptDirectory.from_config(alembic_cfg)
     heads = list(script.get_heads())
     assert len(heads) == 1, f"unexpected branching: {heads}"
-    assert heads[0] == "0009_hwp_field_mapping", (
-        f"expected 0009 as head, got {heads}"
+    assert heads[0] == "0010b_noop_placeholder", (
+        f"expected 0010b as head, got {heads}"
     )
     chain = [r.revision for r in script.walk_revisions()]
     for rev in (
@@ -49,6 +49,8 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
         "0007_phase2_stabilization",
         "0008_export_quality_control",
         "0009_hwp_field_mapping",
+        "0010_export_kind_bid_form_hwp",
+        "0010b_noop_placeholder",
     ):
         assert rev in chain, f"{rev} missing from chain: {chain}"
 
