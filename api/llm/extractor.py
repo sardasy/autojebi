@@ -51,6 +51,35 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
     return "\n".join(text_parts)
 
 
+def extract_pdf_pages(pdf_bytes: bytes) -> list[dict[str, Any]]:
+    """PDF 바이트 → 페이지 단위 텍스트 [{"page_no": int, "text": str}].
+
+    본문 텍스트(extract_text)에 더해 표(extract_tables) 셀 텍스트를 이어붙여,
+    제출서류가 표 안에 들어간 경우도 키워드/근거 탐색에 잡히도록 한다.
+    page_no는 1-base.
+    """
+    pages: list[dict[str, Any]] = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            parts: list[str] = []
+            body = page.extract_text()
+            if body:
+                parts.append(body)
+            try:
+                for table in page.extract_tables() or []:
+                    for tr in table:
+                        cells = [str(c).strip() for c in tr if c and str(c).strip()]
+                        if cells:
+                            parts.append(" | ".join(cells))
+            except Exception:
+                # 표 추출은 best-effort — 실패해도 본문은 유지
+                pass
+            text = "\n".join(parts).strip()
+            if text:
+                pages.append({"page_no": page.page_number, "text": text})
+    return pages
+
+
 def extract_specs(
     bid_title: str,
     attachment_text: str | None = None,

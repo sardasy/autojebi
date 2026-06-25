@@ -64,7 +64,11 @@ export function ComposeStep({
         });
         const proposal = await actionComposeProposalDocument(noticeNo, {});
         const allErrors: ComposeError[] = [...(bid.errors || []), ...(proposal.errors || [])];
-        const missing = allErrors.filter((e) => (e.stage || "").startsWith("pre_compose"));
+        // 실제 "필수 서류 누락" 차단 사유만 배너로 노출한다. pre_compose.spec_review(규격 검토 권장),
+        // hwp.remaining_placeholders 등은 경고일 뿐 차단이 아니므로 누락 배너에서 제외.
+        const missing = allErrors.filter((e) =>
+          (e.stage || "").startsWith("pre_compose.required"),
+        );
         const produced =
           Boolean(bid.bid_form || bid.technical_compliance || bid.job) ||
           Boolean(proposal.export || proposal.job);

@@ -320,6 +320,53 @@ class SpecItemExtractResponse(BaseModel):
     upserted: int
 
 
+RequirementType = Literal[
+    "required", "conditional", "winner_only", "contract_stage", "reference"
+]
+SubmitStage = Literal[
+    "bid", "proposal", "price", "post_award", "contract", "delivery", "conditional"
+]
+
+
+class NoticeRequiredDocument(BaseModel):
+    id: int
+    notice_no: str
+    doc_name: str
+    requirement_type: RequirementType = "required"
+    submit_stage: SubmitStage = "bid"
+    source_file: str | None = None
+    evidence_text: str | None = None
+    page_no: int | None = None
+    deadline: str | None = None
+    condition: str | None = None
+    confidence: float = 0.0
+    checked: bool = False
+    owner: str | None = None
+    note: str | None = None
+    created_at: Any | None = None
+    updated_at: Any | None = None
+
+
+class RequiredDocumentListResponse(BaseModel):
+    notice_no: str
+    items: list[NoticeRequiredDocument]
+
+
+class RequiredDocumentAnalyzeResponse(BaseModel):
+    notice_no: str
+    items: list[NoticeRequiredDocument]
+    upserted: int
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RequiredDocumentUpdateRequest(BaseModel):
+    checked: bool | None = None
+    owner: str | None = None
+    note: str | None = None
+    requirement_type: RequirementType | None = None
+    submit_stage: SubmitStage | None = None
+
+
 class SpecItemUpdateRequest(BaseModel):
     required_value: str | None = None
     proposed_value: str | None = None

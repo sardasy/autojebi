@@ -1,9 +1,15 @@
 import Link from "next/link";
 
 import { AnalyzeRunner } from "@/components/AnalyzeRunner";
+import { RequiredDocsByStage } from "@/components/RequiredDocsByStage";
 import { RequiredDocsChecklist } from "@/components/RequiredDocsChecklist";
 import { StepNav } from "@/components/StepNav";
-import { getNotice, type NoticeRecord } from "@/lib/api";
+import {
+  getNotice,
+  listRequiredDocuments,
+  type NoticeRecord,
+  type NoticeRequiredDocument,
+} from "@/lib/api";
 import { readDocumentAutomation } from "@/lib/documentAutomation";
 
 export const dynamic = "force-dynamic";
@@ -37,11 +43,20 @@ export default async function AnalyzeStepPage({
 
   const docs = readDocumentAutomation(notice);
   const needDocs = docs === null;
+
+  let requiredDocs: NoticeRequiredDocument[];
+  try {
+    requiredDocs = (await listRequiredDocuments(noticeNo)).items;
+  } catch {
+    requiredDocs = [];
+  }
+
   const flags = {
     needAnalyze: notice.status === "collected",
     needAttachments: needDocs,
     needDocs,
     needSpec: needDocs,
+    needRequiredDocs: requiredDocs.length === 0,
   };
 
   const requiredItems = (docs?.checklist || []).filter((i) => i.required);
@@ -58,11 +73,21 @@ export default async function AnalyzeStepPage({
 
       <AnalyzeRunner noticeNo={noticeNo} {...flags} />
 
+      <section className="mb-6 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-300">
+          제출서류 자동확인{" "}
+          <span className="text-xs font-normal text-slate-500">
+            (첨부문서에서 추출 · 제출시점별 · 사람 확인)
+          </span>
+        </h2>
+        <RequiredDocsByStage noticeNo={noticeNo} items={requiredDocs} />
+      </section>
+
       {docs ? (
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-300">
-              필수 서류 {readyCount}/{requiredItems.length} 준비
+              회사 준비서류 {readyCount}/{requiredItems.length} 준비
             </h2>
             <Link
               href={`/notices/${encodeURIComponent(noticeNo)}/compose`}

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   actionAnalyze,
   actionAnalyzeDocuments,
+  actionAnalyzeRequiredDocuments,
   actionExtractSpecItems,
   actionFetchG2BAttachments,
 } from "@/lib/actions";
@@ -16,6 +17,7 @@ type Props = {
   needAttachments: boolean;
   needDocs: boolean;
   needSpec: boolean;
+  needRequiredDocs: boolean;
 };
 
 // 필요서류분석 자동 실행기. 마운트 시 1회, 누락된 단계만 순차 실행하고 끝나면 페이지를
@@ -26,13 +28,15 @@ export function AnalyzeRunner({
   needAttachments,
   needDocs,
   needSpec,
+  needRequiredDocs,
 }: Props) {
   const router = useRouter();
   const started = useRef(false);
   const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const anyNeeded = needAnalyze || needAttachments || needDocs || needSpec;
+  const anyNeeded =
+    needAnalyze || needAttachments || needDocs || needSpec || needRequiredDocs;
 
   useEffect(() => {
     if (!anyNeeded || started.current) return;
@@ -55,6 +59,10 @@ export function AnalyzeRunner({
           setStep("규격 항목 추출 중…");
           await actionExtractSpecItems(noticeNo);
         }
+        if (needRequiredDocs || needDocs || needAttachments) {
+          setStep("제출서류 자동확인 중…");
+          await actionAnalyzeRequiredDocuments(noticeNo);
+        }
         setStep(null);
         router.refresh();
       } catch (e) {
@@ -62,7 +70,7 @@ export function AnalyzeRunner({
         setStep(null);
       }
     })();
-  }, [anyNeeded, needAnalyze, needAttachments, needDocs, needSpec, noticeNo, router]);
+  }, [anyNeeded, needAnalyze, needAttachments, needDocs, needSpec, needRequiredDocs, noticeNo, router]);
 
   if (error) {
     return (
