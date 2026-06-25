@@ -16,12 +16,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ToastProvider>
           <header className="border-b border-slate-800 bg-slate-950">
             <div className="mx-auto max-w-7xl px-6 py-3 flex items-center gap-6">
-              <Link href="/notices" className="text-lg font-semibold text-brand-500">
+              <Link href="/search" className="text-lg font-semibold text-brand-500">
                 autojebi
               </Link>
               <nav className="text-sm text-slate-300 flex gap-4">
+                <Link href="/search" className="hover:text-white">
+                  공고 검색
+                </Link>
                 <Link href="/notices" className="hover:text-white">
-                  공고
+                  고급
                 </Link>
                 <Link href="/admin" className="hover:text-white">
                   어드민

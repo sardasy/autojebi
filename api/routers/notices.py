@@ -4,6 +4,7 @@ import math
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -73,6 +74,7 @@ from api.models.notices import (
     NoticeSearchRequest,
     NoticeSearchResponse,
     NoticeSpecItem,
+    NoticeRequiredDocument,
     NoticeSummary,
     NoticeUpsertRequest,
     NotifyRequest,
@@ -80,6 +82,9 @@ from api.models.notices import (
     ProposalComposeRequest,
     ProposalComposeResponse,
     ProposalComposeResult,
+    RequiredDocumentAnalyzeResponse,
+    RequiredDocumentListResponse,
+    RequiredDocumentUpdateRequest,
     SpecItemExtractResponse,
     SpecItemListResponse,
     SpecItemUpdateRequest,
@@ -87,7 +92,12 @@ from api.models.notices import (
     UploadListResponse,
     UploadResponse,
 )
+from api.llm.extractor import extract_pdf_pages
 from api.services.claude_analyzer import ClaudeAnalyzer
+from api.services.required_documents import (
+    classify_required_documents,
+    find_candidate_segments,
+)
 from api.services.document_automation import (
     analyze_document_requirements,
     attach_bid_form_result,
@@ -347,6 +357,36 @@ notice_errors = Table(
     CheckConstraint("severity IN ('info','warning','error')"),
     Index("notice_errors_notice_idx", "notice_no"),
     Index("notice_errors_unresolved_idx", "notice_no", "resolved_at"),
+)
+
+notice_required_documents = Table(
+    "notice_required_documents",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
+    Column("doc_name", Text, nullable=False),
+    Column("requirement_type", String, nullable=False, default="required"),
+    Column("submit_stage", String, nullable=False, default="bid"),
+    Column("source_file", Text),
+    Column("evidence_text", Text),
+    Column("page_no", Integer),
+    Column("deadline", String),
+    Column("condition", Text),
+    Column("confidence", Numeric(4, 3), nullable=False, default=0),
+    Column("checked", Boolean, nullable=False, default=False),
+    Column("owner", String),
+    Column("note", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("notice_no", "doc_name", "submit_stage", name="notice_required_documents_unique"),
+    CheckConstraint(
+        "requirement_type IN ('required','conditional','winner_only','contract_stage','reference')"
+    ),
+    CheckConstraint(
+        "submit_stage IN ('bid','proposal','price','post_award','contract','delivery','conditional')"
+    ),
+    Index("notice_required_documents_notice_idx", "notice_no"),
+    Index("notice_required_documents_stage_idx", "notice_no", "submit_stage"),
 )
 
 attachment_fetch_jobs = Table(
@@ -1080,6 +1120,217 @@ def patch_spec_item(
                 .values(analysis=analysis)
             )
         return _spec_item_to_model(dict(updated))
+
+
+# ── 필요서류 자동확인 (notice_required_documents) ──────────────────────────
+
+def _required_doc_to_model(row: dict[str, Any]) -> NoticeRequiredDocument:
+    return NoticeRequiredDocument(
+        id=int(row["id"]),
+        notice_no=str(row["notice_no"]),
+        doc_name=str(row["doc_name"]),
+        requirement_type=str(row.get("requirement_type") or "required"),
+        submit_stage=str(row.get("submit_stage") or "bid"),
+        source_file=row.get("source_file"),
+        evidence_text=row.get("evidence_text"),
+        page_no=row.get("page_no"),
+        deadline=row.get("deadline"),
+        condition=row.get("condition"),
+        confidence=float(row.get("confidence") or 0.0),
+        checked=bool(row.get("checked")),
+        owner=row.get("owner"),
+        note=row.get("note"),
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
+_STAGE_ORDER = {
+    "bid": 0, "proposal": 1, "price": 2, "conditional": 3,
+    "post_award": 4, "contract": 5, "delivery": 6,
+}
+
+
+def _list_required_document_rows(conn, notice_no: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        select(notice_required_documents).where(
+            notice_required_documents.c.notice_no == notice_no
+        )
+    ).mappings().all()
+    return sorted(
+        (dict(r) for r in rows),
+        key=lambda r: (_STAGE_ORDER.get(r.get("submit_stage"), 9), -float(r.get("confidence") or 0)),
+    )
+
+
+def _extract_file_pages(uploads: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """업로드(첨부)들의 storage_path에서 페이지단위 텍스트를 온디맨드 추출."""
+    file_pages: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    hwp_client = _make_hwp_agent_client()
+    hwp_ok: bool | None = None
+    for up in uploads:
+        if not isinstance(up, dict):
+            continue
+        name = str(up.get("name") or "첨부")
+        storage_path = up.get("storage_path")
+        mime = str(up.get("mime") or "").lower()
+        lower = name.lower()
+        try:
+            if storage_path and Path(storage_path).exists() and (lower.endswith(".pdf") or "pdf" in mime):
+                for pg in extract_pdf_pages(Path(storage_path).read_bytes()):
+                    file_pages.append(
+                        {"source_file": name, "page_no": pg["page_no"], "text": pg["text"]}
+                    )
+            elif storage_path and Path(storage_path).exists() and (lower.endswith((".hwp", ".hwpx")) or "hwp" in mime):
+                if hwp_ok is None:
+                    hwp_ok = hwp_client.health()
+                if hwp_ok:
+                    body = hwp_client.analyze_document(str(storage_path))
+                    text = str(body.get("text") or body.get("text_preview") or "")
+                    if text:
+                        file_pages.append({"source_file": name, "page_no": None, "text": text})
+                else:
+                    excerpt = up.get("text_excerpt")
+                    if excerpt:
+                        file_pages.append({"source_file": name, "page_no": None, "text": str(excerpt)})
+            else:
+                excerpt = up.get("text_excerpt")
+                if excerpt:
+                    file_pages.append({"source_file": name, "page_no": None, "text": str(excerpt)})
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"stage": "extract", "file_name": name, "detail": str(exc)})
+    return file_pages, errors
+
+
+@router.post(
+    "/{notice_no}/required-documents/analyze",
+    response_model=RequiredDocumentAnalyzeResponse,
+)
+def analyze_required_documents(notice_no: str) -> RequiredDocumentAnalyzeResponse:
+    engine = require_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
+        ).mappings().one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="notice not found")
+        analysis = dict(row["analysis"] or {})
+        docs = analysis.get("document_automation")
+        uploads = list(docs.get("uploads") or []) if isinstance(docs, dict) else []
+
+        file_pages, errors = _extract_file_pages(uploads)
+        candidates = find_candidate_segments(file_pages)
+        classified = classify_required_documents(candidates)
+
+        upserted = 0
+        now = datetime.now(tz=UTC)
+        for item in classified:
+            existing = conn.execute(
+                select(notice_required_documents.c.id).where(
+                    notice_required_documents.c.notice_no == notice_no,
+                    notice_required_documents.c.doc_name == item["doc_name"],
+                    notice_required_documents.c.submit_stage == item["submit_stage"],
+                )
+            ).scalar_one_or_none()
+            if existing:
+                # 추출 필드만 갱신 — 사람이 만진 checked/owner/note는 보존
+                conn.execute(
+                    update(notice_required_documents)
+                    .where(notice_required_documents.c.id == existing)
+                    .values(
+                        requirement_type=item["requirement_type"],
+                        source_file=item.get("source_file"),
+                        evidence_text=item.get("evidence_text"),
+                        page_no=item.get("page_no"),
+                        deadline=item.get("deadline"),
+                        condition=item.get("condition"),
+                        confidence=item["confidence"],
+                        updated_at=now,
+                    )
+                )
+            else:
+                conn.execute(
+                    notice_required_documents.insert().values(
+                        notice_no=notice_no,
+                        doc_name=item["doc_name"],
+                        requirement_type=item["requirement_type"],
+                        submit_stage=item["submit_stage"],
+                        source_file=item.get("source_file"),
+                        evidence_text=item.get("evidence_text"),
+                        page_no=item.get("page_no"),
+                        deadline=item.get("deadline"),
+                        condition=item.get("condition"),
+                        confidence=item["confidence"],
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                upserted += 1
+
+        rows = _list_required_document_rows(conn, notice_no)
+        return RequiredDocumentAnalyzeResponse(
+            notice_no=notice_no,
+            items=[_required_doc_to_model(r) for r in rows],
+            upserted=upserted,
+            errors=errors,
+        )
+
+
+@router.get(
+    "/{notice_no}/required-documents",
+    response_model=RequiredDocumentListResponse,
+)
+def list_required_documents(notice_no: str) -> RequiredDocumentListResponse:
+    engine = require_engine()
+    with engine.begin() as conn:
+        exists = conn.execute(
+            select(bid_pipeline.c.notice_no).where(bid_pipeline.c.notice_no == notice_no)
+        ).scalar_one_or_none()
+        if not exists:
+            raise HTTPException(status_code=404, detail="notice not found")
+        rows = _list_required_document_rows(conn, notice_no)
+        return RequiredDocumentListResponse(
+            notice_no=notice_no,
+            items=[_required_doc_to_model(r) for r in rows],
+        )
+
+
+@router.patch(
+    "/{notice_no}/required-documents/{doc_id}",
+    response_model=NoticeRequiredDocument,
+)
+def patch_required_document(
+    notice_no: str,
+    doc_id: int,
+    body: RequiredDocumentUpdateRequest,
+) -> NoticeRequiredDocument:
+    engine = require_engine()
+    with engine.begin() as conn:
+        current = conn.execute(
+            select(notice_required_documents).where(
+                notice_required_documents.c.notice_no == notice_no,
+                notice_required_documents.c.id == doc_id,
+            )
+        ).mappings().one_or_none()
+        if not current:
+            raise HTTPException(status_code=404, detail="required document not found")
+        values = {
+            key: value
+            for key, value in body.model_dump(exclude_unset=True).items()
+            if value is not None
+        }
+        if values:
+            values["updated_at"] = datetime.now(tz=UTC)
+            conn.execute(
+                update(notice_required_documents)
+                .where(notice_required_documents.c.id == doc_id)
+                .values(**values)
+            )
+        updated = conn.execute(
+            select(notice_required_documents).where(notice_required_documents.c.id == doc_id)
+        ).mappings().one()
+        return _required_doc_to_model(dict(updated))
 
 
 @router.patch(
@@ -1900,6 +2151,21 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
         fetched: list[UploadedDocument] = []
         errors: list[dict[str, Any]] = []
 
+        # 재실행은 진짜 "재시도"여야 한다 → 이전 첨부 오류를 먼저 해소(resolved)하고,
+        # 이번 실행에서 여전히 실패하는 것만 다시 기록한다. 이렇게 해야 에이전트 복구 후
+        # 재분석 시 "서류 처리 오류 N건" 카운트가 실제로 줄어든다.
+        conn.execute(
+            update(notice_errors)
+            .where(
+                notice_errors.c.notice_no == notice_no,
+                notice_errors.c.resolved_at.is_(None),
+                notice_errors.c.stage.in_(
+                    ("g2b_attachment_fetch", "g2b_attachment_analysis")
+                ),
+            )
+            .values(resolved_at=datetime.now(tz=UTC))
+        )
+
         existing_uploads = [
             item
             for item in (document_automation.get("uploads") or [])
@@ -1911,6 +2177,43 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
             if item.get("source_ref") == "g2b_attachment"
         }
 
+        def _is_hwp(name: str) -> bool:
+            return (
+                "." in name
+                and name.rsplit(".", 1)[-1].strip().lower() in {"hwp", "hwpx"}
+            )
+
+        def _existing_healthy(name: str) -> bool:
+            """이미 받은 g2b 첨부가 '정상'인지(=재처리 불필요) 판정.
+
+            정상 = 텍스트 추출 오류가 없고 파일이 디스크에 존재. 이전 실패(에이전트
+            미연결 등)나 경로 이전(컨테이너→호스트)으로 파일이 없으면 재다운로드/재분석한다.
+            또한 텍스트 추출 대상(pdf/hwp)인데 text_excerpt가 없으면(구버전 업로드) 본문 기반
+            서류 판정을 위해 재처리한다.
+            """
+            item = existing_by_name.get(name)
+            if not item:
+                return False
+            up = UploadedDocument.model_validate(item)
+            on_disk = bool(up.storage_path) and Path(up.storage_path).exists()
+            if up.text_extract_error or not on_disk:
+                return False
+            ext = name.rsplit(".", 1)[-1].strip().lower() if "." in name else ""
+            if ext in {"pdf", "hwp", "hwpx"} and not up.text_excerpt:
+                return False
+            return True
+
+        # HWP 에이전트 health를 한 번만 확인 → 미연결 시 파일마다 connect 재시도로
+        # 시간 낭비하지 않고, 모호한 경고 N건을 명확한 1건으로 축약한다.
+        # 새로 받을 .hwp뿐 아니라 '재처리 대상'(이전 실패/파일 유실)도 포함해 판단한다.
+        hwp_client = _make_hwp_agent_client()
+        needs_hwp = any(
+            _is_hwp(a.filename) and not _existing_healthy(a.filename)
+            for a in attachments
+        )
+        hwp_ok: bool | None = hwp_client.health() if needs_hwp else None
+        hwp_unreachable = 0
+
         updated_docs = document_automation
         for attachment in attachments:
             file_id = _create_attachment_file_result(
@@ -1921,7 +2224,7 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                 url=attachment.url,
             )
             existing = existing_by_name.get(attachment.filename)
-            if existing:
+            if existing and _existing_healthy(attachment.filename):
                 existing_upload = UploadedDocument.model_validate(existing)
                 fetched.append(existing_upload)
                 _update_attachment_file_result(
@@ -1931,6 +2234,11 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                     upload_id=existing_upload.id,
                 )
                 continue
+            if existing:
+                # 이전 실패/유실 → 오래된 업로드 항목을 제거하고 아래에서 새로 받는다.
+                updated_docs, _ = remove_from_document_automation(
+                    updated_docs, UploadedDocument.model_validate(existing).id
+                )
 
             try:
                 downloaded = download_g2b_attachment(attachment)
@@ -1944,7 +2252,8 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                     original_name=attachment.filename,
                     checklist=list(updated_docs.get("checklist") or []),
                     explicit_item_id=None,
-                    hwp_client=_make_hwp_agent_client(),
+                    hwp_client=hwp_client,
+                    hwp_available=hwp_ok,
                 )
                 resolved_item_id = str(analysis_meta.pop("item_id") or "") or None
                 uploaded = build_metadata(
@@ -1965,16 +2274,23 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                     error=uploaded.text_extract_error,
                 )
                 if uploaded.text_extract_error:
-                    errors.append(
-                        {
-                            "stage": "g2b_attachment_analysis",
-                            "severity": "warning",
-                            "source": "upload_analysis",
-                            "file_name": attachment.filename,
-                            "url": attachment.url,
-                            "detail": uploaded.text_extract_error,
-                        }
-                    )
+                    if (
+                        hwp_ok is False
+                        and uploaded.text_extract_error == "HWP 에이전트 미연결"
+                    ):
+                        # 미연결은 루프 후 단일 요약 경고로 합친다 (파일별 중복 방지).
+                        hwp_unreachable += 1
+                    else:
+                        errors.append(
+                            {
+                                "stage": "g2b_attachment_analysis",
+                                "severity": "warning",
+                                "source": "upload_analysis",
+                                "file_name": attachment.filename,
+                                "url": attachment.url,
+                                "detail": uploaded.text_extract_error,
+                            }
+                        )
             except Exception as exc:  # noqa: BLE001
                 detail = str(exc)
                 errors.append(
@@ -1993,6 +2309,20 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                     error=detail,
                 )
 
+        if hwp_unreachable:
+            errors.append(
+                {
+                    "stage": "g2b_attachment_analysis",
+                    "severity": "warning",
+                    "source": "upload_analysis",
+                    "detail": (
+                        f"HWP 에이전트 미연결 ({hwp_client.base_url}) — "
+                        "데스크톱 에이전트를 실행한 뒤 첨부 재분석을 다시 실행하세요. "
+                        f"영향 .hwp {hwp_unreachable}건"
+                    ),
+                }
+            )
+
         if not attachments:
             errors.append(
                 {
@@ -2002,12 +2332,34 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                 }
             )
 
+        # document_automation["errors"]는 UI가 읽는 저장소다. append만 하면 과거 실패가
+        # 영원히 누적되므로, 이 엔드포인트가 만드는 단계(fetch/analysis)의 묵은 오류는
+        # 버리고 이번 실행 결과로 교체한다. 다른 단계(autofill 등) 오류는 보존.
+        _owned_stages = {"g2b_attachment_fetch", "g2b_attachment_analysis"}
+        preserved_errors = [
+            e
+            for e in (updated_docs.get("errors") or [])
+            if isinstance(e, dict) and e.get("stage") not in _owned_stages
+        ]
+        updated_docs = dict(updated_docs)
+        updated_docs["errors"] = preserved_errors + errors
         if errors:
-            current_errors = list(updated_docs.get("errors") or [])
-            current_errors.extend(errors)
-            updated_docs = dict(updated_docs)
-            updated_docs["errors"] = current_errors
             _record_errors(conn, notice_no, errors)
+
+        # 첨부 본문 반영: 방금 받은 첨부의 text_excerpt를 근거로 체크리스트(필수/필요)를 재판정.
+        # analyze_document_requirements는 uploads/exports/수동변경을 보존하되 errors는 자체
+        # 생성하므로, 위에서 관리한 errors를 합쳐 보존한다.
+        managed_errors = list(updated_docs.get("errors") or [])
+        refreshed_row = dict(row)
+        refreshed_analysis = dict(analysis)
+        refreshed_analysis["document_automation"] = updated_docs
+        refreshed_row["analysis"] = refreshed_analysis
+        reevaluated = analyze_document_requirements(refreshed_row)
+        reeval_errors = [
+            e for e in (reevaluated.get("errors") or []) if isinstance(e, dict)
+        ]
+        reevaluated["errors"] = managed_errors + reeval_errors
+        updated_docs = reevaluated
 
         _persist_document_automation(conn, notice_no, analysis, updated_docs)
         job_status = "completed_with_errors" if errors else "completed"

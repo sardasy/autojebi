@@ -126,3 +126,37 @@ def test_remove_from_document_automation_unknown_id_returns_none():
 def test_delete_file_handles_missing_path():
     # 존재하지 않는 파일도 True (idempotent unlink missing_ok=True)
     assert delete_file("/nonexistent/path/to/file.pdf") is True
+
+
+def test_analyze_upload_persists_capped_text_excerpt(monkeypatch):
+    """추출 본문이 text_excerpt로 보존되고 설정 길이로 잘린다(서류 판정 재사용용)."""
+    from api.services.uploads import analyze_upload
+
+    monkeypatch.setattr(settings, "upload_text_excerpt_chars", 40)
+    monkeypatch.setattr(
+        "api.services.uploads.extract_pdf_text", lambda _b: "입찰보증금 " * 100
+    )
+    saved = save_stream(io.BytesIO(b"%PDF-1.4"), notice_no="DOC-1", original_name="x.pdf")
+    meta = analyze_upload(saved=saved, original_name="x.pdf")
+    excerpt = meta["text_excerpt"]
+    assert excerpt is not None
+    assert len(excerpt) <= 40
+    assert "입찰보증금" in excerpt
+
+
+def test_analyze_upload_skips_hwp_when_agent_unavailable():
+    """hwp_available=False면 에이전트를 호출하지 않고 간결한 미연결 오류만 남긴다."""
+    from api.services.uploads import analyze_upload
+
+    class _BoomClient:
+        def analyze_document(self, path):  # pragma: no cover - 호출되면 실패
+            raise AssertionError("hwp agent should not be called when unavailable")
+
+    saved = save_stream(io.BytesIO(b"hwp-bytes"), notice_no="DOC-1", original_name="spec.hwp")
+    meta = analyze_upload(
+        saved=saved,
+        original_name="spec.hwp",
+        hwp_client=_BoomClient(),
+        hwp_available=False,
+    )
+    assert meta["text_extract_error"] == "HWP 에이전트 미연결"

@@ -114,6 +114,8 @@ cd frontend && npm install && npm run dev   # :3000
 
 # 테스트
 python -m pytest -v        # 백엔드 262 tests (인증 8개 포함)
+# (호스트에 typhoon HIL 등 외부 pytest 플러그인이 깔려 있어 collection이 막히면:
+#  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -v)
 cd frontend && npm test    # Vitest 단위
 # Playwright e2e — docker 풀스택 선행 + override 표준 포트(:3001)
 cd frontend && E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:8001 \
@@ -123,6 +125,18 @@ cd frontend && E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:
 cd frontend && E2E_OPS_LIVE=1 E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:8001 \
   E2E_API_KEY="${API_KEY:-}" npm run e2e -- --project=chromium-ops-live
 ```
+
+> **HWP 서류 처리(에이전트 연동) 권장 구성**: HWP 에이전트는 Windows 데스크톱 로컬 프로세스라
+> 컨테이너에서 파일 경로가 어긋난다. 따라서 **API는 호스트에서 실행**(`uvicorn api.main:app --host 0.0.0.0 --port 8001`),
+> Postgres/Qdrant만 Docker로 둔다(`HWP_AGENT_BASE_URL=http://127.0.0.1:8000`).
+> 이때 `UPLOAD_DIR`/`EXPORT_DIR`는 **Docker 바인드마운트가 아닌 별도 호스트 폴더**(예
+> `C:\Users\<you>\autojebi-data\uploads`)로 지정한다. 리포의 `data\uploads`는 compose의
+> 바인드마운트 대상이라 Docker Desktop이 디렉터리를 점유해 **호스트 프로세스의 새 파일 쓰기가
+> `[Errno 2] No such file or directory`로 실패**할 수 있다(읽기/목록은 됨). 별도 폴더면 호스트 API가
+> 자유롭게 쓰고, 같은 호스트의 에이전트가 그 경로를 그대로 열 수 있다.
+> 프론트엔드를 **Docker로 유지**한 채 호스트 API를 쓰려면 `frontend` 서비스에
+> `INTERNAL_API_BASE=http://host.docker.internal:8001` + `extra_hosts: host.docker.internal:host-gateway`를
+> 설정한다(이미 `infra/docker-compose.override.yml`에 반영됨).
 
 ---
 
@@ -943,8 +957,34 @@ curl -X POST http://localhost:8001/notices/search \
 - 증상: 컨테이너 부팅 시 `permission denied for schema`
 - 해결: 도커 컴포즈는 `autojebi/autojebi/autojebi`로 자동 셋업이지만, 외부 DB 사용 시 해당 유저에게 CREATE 권한 부여
 
-### "G2B 검색 0건"
-- 확인: 검색어가 너무 좁지 않은지, `DATA_GO_KR_API_KEY` 유효한지, 검색 기간(`start_date`/`end_date`)이 휴일에 걸리지 않는지
+### "G2B 검색 0건" / "G2B 검색 502"
+- 0건: 검색어가 너무 좁지 않은지, 검색 기간(`start_date`/`end_date`)이 휴일에 걸리지 않는지 확인
+- 502 + 로그에 `serviceKey=`가 비어있고 `401 Unauthorized`: `DATA_GO_KR_API_KEY` 미주입. data.go.kr **"일반 인증키(Decoding)"** 값을 쓸 것(Encoding 키는 이중 인코딩으로 401). 도커는 `--env-file .env`로 주입.
+
+### "도커 실행 시 HWP 에이전트 미연결" (`/documents/hwp-agent/health` → ok:false)
+- 원인: 컨테이너 안의 `127.0.0.1`은 컨테이너 자신을 가리켜 호스트의 에이전트에 닿지 못함.
+- 해결:
+  1. `.env`에 `HWP_AGENT_BASE_URL=http://host.docker.internal:8000` (override가 api에 `extra_hosts: host.docker.internal:host-gateway`를 이미 추가).
+  2. 에이전트를 **0.0.0.0 바인딩**으로 기동: `python -c "import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=8000)"` (기본 `run_api_server.py`는 127.0.0.1이라 컨테이너에서 접근 불가).
+  3. 토큰 인증을 켰다면 `.env`의 `HWP_AGENT_TOKEN`을 에이전트 토큰과 일치(client가 `X-Agent-Token` 헤더로 전송).
+
+### "키를 .env에 넣었는데 반영 안 됨"
+- compose는 `--env-file`로 명시한 파일에서만 `${VAR}`를 치환한다. 레포 루트에 `.env`를 두고:
+  ```bash
+  docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.override.yml up -d api frontend
+  ```
+- 컨테이너 env 확인(값 비노출): `docker exec autojebi-api sh -lc '[ -n "$ANTHROPIC_API_KEY" ] && echo set || echo EMPTY'`
+- 주의: `DATABASE_URL`은 compose에 하드코딩되어 `.env` 값이 무시된다(의도된 동작).
+
+### "Windows: git/python/node가 파일을 못 만듦 (No such file or directory)" — 제어된 폴더 액세스(CFA)
+- 증상: OneDrive 경로(예: `C:\Users\<user>\Documents\...`)에서 `git add`/`alembic`/`npm`이 `index.lock`/파일 생성 실패(ENOENT/Access denied). 디스크·권한은 정상.
+- 원인: Windows 보안의 **랜섬웨어 보호(제어된 폴더 액세스)** 가 Documents 등 보호 폴더에 대한 비신뢰 앱의 쓰기를 차단.
+- 해결(관리자 PowerShell): 해당 실행 파일을 허용목록에 추가
+  ```powershell
+  Add-MpPreference -ControlledFolderAccessAllowedApplications "C:\Program Files\Git\mingw64\bin\git.exe"
+  # 필요 시 python.exe / node.exe 도 동일하게 추가
+  ```
+  또는 작업 동안 CFA 일시 해제, 혹은 레포를 보호 폴더 밖으로 이동.
 
 ---
 

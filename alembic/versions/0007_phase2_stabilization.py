@@ -1,6 +1,6 @@
 """Add Phase 2 attachment jobs and evidence fields.
 
-Revision ID: 0007_phase2_analysis_stabilization
+Revision ID: 0007_phase2_stabilization
 Revises: 0006_phase1_tracking
 Create Date: 2026-06-21
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0007_phase2_analysis_stabilization"
+revision: str = "0007_phase2_stabilization"
 down_revision: str | None = "0006_phase1_tracking"
 branch_labels: str | None = None
 depends_on: str | None = None

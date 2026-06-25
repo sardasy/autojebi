@@ -25,6 +25,19 @@ const VALIDATION_LABELS: Record<string, string> = {
   failed: "검증 실패",
 };
 
+// 다운로드는 항상 허용하되, 검증 결과가 warning/failed면 시각적으로 강조한다.
+const DOWNLOAD_LINK_CLASS: Record<string, string> = {
+  warning: "border-amber-500/70 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20",
+  failed: "border-rose-500/70 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
+  default: "border-slate-700 text-slate-200 hover:bg-slate-800",
+};
+
+const VALIDATION_BADGE_CLASS: Record<string, string> = {
+  warning: "border-amber-500/60 bg-amber-500/15 text-amber-200",
+  failed: "border-rose-500/60 bg-rose-500/15 text-rose-200",
+  passed: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200",
+};
+
 function downloadHref(noticeNo: string, rec: ExportRecord): string {
   if (rec.id) {
     return `/api/notices/${encodeURIComponent(noticeNo)}/documents/exports/by-id/${rec.id}/download`;
@@ -35,10 +48,58 @@ function downloadHref(noticeNo: string, rec: ExportRecord): string {
 function exportSummary(rec: ExportRecord): string {
   const parts = [
     rec.version || rec.template_version,
-    rec.validation_status ? VALIDATION_LABELS[rec.validation_status] || rec.validation_status : null,
     rec.file_size ? `${Math.ceil(rec.file_size / 1024)}KB` : null,
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+function ValidationBadge({ status }: { status?: string | null }) {
+  if (!status) return null;
+  const cls = VALIDATION_BADGE_CLASS[status] || VALIDATION_BADGE_CLASS.passed;
+  return (
+    <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${cls}`}>
+      {VALIDATION_LABELS[status] || status}
+    </span>
+  );
+}
+
+function DownloadLink({
+  noticeNo,
+  rec,
+  downloadName,
+  label,
+}: {
+  noticeNo: string;
+  rec: ExportRecord;
+  downloadName: string;
+  label: string;
+}) {
+  const status = rec.validation_status;
+  const linkCls =
+    status === "warning" || status === "failed"
+      ? DOWNLOAD_LINK_CLASS[status]
+      : DOWNLOAD_LINK_CLASS.default;
+  const summary = exportSummary(rec);
+  return (
+    <div className="flex items-center gap-2">
+      <a
+        href={downloadHref(noticeNo, rec)}
+        className={`rounded border px-3 py-1.5 text-sm ${linkCls}`}
+        download={downloadName}
+        title={
+          status === "warning"
+            ? "검토 경고가 있는 파일입니다"
+            : status === "failed"
+              ? "검증에 실패한 파일입니다"
+              : undefined
+        }
+      >
+        {label}
+      </a>
+      <ValidationBadge status={status} />
+      {summary ? <span className="text-xs text-slate-400">{summary}</span> : null}
+    </div>
+  );
 }
 
 export function ExportButtonGroup({ noticeNo, exports }: Props) {
@@ -92,66 +153,38 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
                 {pending ? "생성 중…" : `${KIND_LABELS[kind]} 생성`}
               </button>
               {existing ? (
-                <div className="flex items-center gap-2">
-                  <a
-                    href={downloadHref(noticeNo, existing)}
-                    className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
-                    download={`${noticeNo}-compliance.${kind === "excel" ? "xlsx" : "hwp"}`}
-                    title={
-                      existing.validation_status === "warning"
-                        ? "검토 경고가 있는 파일입니다"
-                        : undefined
-                    }
-                  >
-                    다운로드
-                  </a>
-                  {exportSummary(existing) ? (
-                    <span className="text-xs text-slate-400">
-                      {exportSummary(existing)}
-                    </span>
-                  ) : null}
-                </div>
+                <DownloadLink
+                  noticeNo={noticeNo}
+                  rec={existing}
+                  downloadName={`${noticeNo}-compliance.${kind === "excel" ? "xlsx" : "hwp"}`}
+                  label="다운로드"
+                />
               ) : null}
             </div>
           );
         })}
         {byKind.get("proposal_hwp") ? (
-          <div className="flex items-center gap-2">
-            <a
-              href={downloadHref(noticeNo, byKind.get("proposal_hwp") as ExportRecord)}
-              className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
-              download={`${noticeNo}-proposal.hwp`}
-            >
-              제안서 HWP 다운로드
-            </a>
-            {exportSummary(byKind.get("proposal_hwp") as ExportRecord) ? (
-              <span className="text-xs text-slate-400">
-                {exportSummary(byKind.get("proposal_hwp") as ExportRecord)}
-              </span>
-            ) : null}
-          </div>
+          <DownloadLink
+            noticeNo={noticeNo}
+            rec={byKind.get("proposal_hwp") as ExportRecord}
+            downloadName={`${noticeNo}-proposal.hwp`}
+            label="제안서 HWP 다운로드"
+          />
         ) : null}
         {byKind.get("bid_form_hwp") ? (
-          <div className="flex items-center gap-2">
-            <a
-              href={downloadHref(noticeNo, byKind.get("bid_form_hwp") as ExportRecord)}
-              className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
-              download={`${noticeNo}-bid-form.hwp`}
-            >
-              입찰양식 HWP 다운로드
-            </a>
-            {exportSummary(byKind.get("bid_form_hwp") as ExportRecord) ? (
-              <span className="text-xs text-slate-400">
-                {exportSummary(byKind.get("bid_form_hwp") as ExportRecord)}
-              </span>
-            ) : null}
-          </div>
+          <DownloadLink
+            noticeNo={noticeNo}
+            rec={byKind.get("bid_form_hwp") as ExportRecord}
+            downloadName={`${noticeNo}-bid-form.hwp`}
+            label="입찰양식 HWP 다운로드"
+          />
         ) : null}
       </div>
       <p className="mt-2 text-xs text-slate-500">
         HWP 출력은 Windows 데스크톱의 milim-hwp-agent가 가동돼 있어야 합니다 (
-        <code>POST /document/insert-table</code> 위임). 에이전트 미가동 시 502가 반환되며,
-        Excel은 에이전트 없이도 항상 정상 동작합니다.
+        <code>insert-table</code>·<code>put-fields</code> 위임). 에이전트 미가동 시 502가
+        반환되며, Excel은 에이전트 없이도 항상 정상 동작합니다. 검토 필요/검증 실패 파일도
+        다운로드는 가능하나 배지로 표시됩니다.
       </p>
     </div>
   );

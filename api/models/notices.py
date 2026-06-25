@@ -229,6 +229,10 @@ class UploadedDocument(BaseModel):
     detected_item_id: str | None = None
     detect_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     analysis_summary: str | None = None
+    text_excerpt: str | None = Field(
+        default=None,
+        description="추출 본문 일부(서류 필요/해당없음 판정 재사용용). UI 표시는 analysis_summary 사용.",
+    )
     text_extract_error: str | None = None
     source_ref: UploadSourceRef | None = "uploaded"
 
@@ -314,6 +318,53 @@ class SpecItemExtractResponse(BaseModel):
     notice_no: str
     items: list[NoticeSpecItem]
     upserted: int
+
+
+RequirementType = Literal[
+    "required", "conditional", "winner_only", "contract_stage", "reference"
+]
+SubmitStage = Literal[
+    "bid", "proposal", "price", "post_award", "contract", "delivery", "conditional"
+]
+
+
+class NoticeRequiredDocument(BaseModel):
+    id: int
+    notice_no: str
+    doc_name: str
+    requirement_type: RequirementType = "required"
+    submit_stage: SubmitStage = "bid"
+    source_file: str | None = None
+    evidence_text: str | None = None
+    page_no: int | None = None
+    deadline: str | None = None
+    condition: str | None = None
+    confidence: float = 0.0
+    checked: bool = False
+    owner: str | None = None
+    note: str | None = None
+    created_at: Any | None = None
+    updated_at: Any | None = None
+
+
+class RequiredDocumentListResponse(BaseModel):
+    notice_no: str
+    items: list[NoticeRequiredDocument]
+
+
+class RequiredDocumentAnalyzeResponse(BaseModel):
+    notice_no: str
+    items: list[NoticeRequiredDocument]
+    upserted: int
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RequiredDocumentUpdateRequest(BaseModel):
+    checked: bool | None = None
+    owner: str | None = None
+    note: str | None = None
+    requirement_type: RequirementType | None = None
+    submit_stage: SubmitStage | None = None
 
 
 class SpecItemUpdateRequest(BaseModel):

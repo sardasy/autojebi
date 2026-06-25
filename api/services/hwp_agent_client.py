@@ -94,12 +94,16 @@ class HwpAgentClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         last_exc: Exception | None = None
+        connect_failed = False
         with self._client() as client:
             for _ in range(self._retries):
                 try:
                     resp = client.request(method, path, **kwargs)
                 except httpx.HTTPError as exc:
                     last_exc = exc
+                    # 연결 자체가 안 되는 경우(에이전트 미실행 등)는 별도 분류 →
+                    # 호출자에게 "[Errno 101] Network is unreachable" 대신 actionable 메시지 제공.
+                    connect_failed = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
                     continue
                 if 200 <= resp.status_code < 300:
                     try:
@@ -115,6 +119,11 @@ class HwpAgentClient:
                         f"{method} {path} -> {resp.status_code}: {resp.text[:500]}"
                     )
                 last_exc = RuntimeError(f"{method} {path} -> {resp.status_code}")
+        if connect_failed:
+            raise HwpAgentError(
+                f"HWP 에이전트에 연결할 수 없습니다 ({self._base_url}). "
+                f"데스크톱 에이전트 실행 여부를 확인하세요. (원인: {last_exc})"
+            )
         raise HwpAgentError(f"{method} {path} failed after retries: {last_exc}")
 
     def health(self) -> bool:

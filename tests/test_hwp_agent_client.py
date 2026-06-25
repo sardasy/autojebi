@@ -165,6 +165,19 @@ def test_request_raises_after_exhausting_retries():
         client.analyze_document("templates/foo.hwp")
 
 
+def test_connect_failure_gives_actionable_message():
+    """연결 자체가 안 되면 '[Errno 101]...' 대신 actionable 메시지로 치환한다."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("[Errno 101] Network is unreachable")
+
+    client = _make_client(handler)
+    with pytest.raises(HwpAgentError) as exc_info:
+        client.analyze_document("templates/foo.hwp")
+    msg = str(exc_info.value)
+    assert "연결할 수 없습니다" in msg
+    assert "http://hwp-agent.test" in msg
+
+
 def test_rag_search_filters_non_dict_results():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

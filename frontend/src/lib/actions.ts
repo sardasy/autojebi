@@ -23,6 +23,7 @@ import type {
   MailExtractRequest,
   NoticeSearchItem,
   NoticeSearchRequest,
+  RequiredDocumentUpdateRequest,
   SpecItemUpdateRequest,
   NoticeUpsertRequest,
 } from "./api";
@@ -104,6 +105,22 @@ export async function actionExtractSpecItems(noticeNo: string) {
 
 export async function actionListSpecItems(noticeNo: string) {
   return api.listSpecItems(noticeNo);
+}
+
+export async function actionAnalyzeRequiredDocuments(noticeNo: string) {
+  const result = await api.analyzeRequiredDocuments(noticeNo);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}/analyze`);
+  return result;
+}
+
+export async function actionCheckRequiredDocument(
+  noticeNo: string,
+  docId: number,
+  payload: RequiredDocumentUpdateRequest,
+) {
+  const result = await api.checkRequiredDocument(noticeNo, docId, payload);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}/analyze`);
+  return result;
 }
 
 export async function actionUpdateSpecItem(

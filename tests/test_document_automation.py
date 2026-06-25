@@ -81,6 +81,68 @@ def test_rule_based_document_analysis_builds_checklist(sqlite_engine):
     assert result["source"] == "rule"
 
 
+def test_keyword_fallback_uses_attachment_text(sqlite_engine):
+    """LLM 키 없을 때(폴백): 첨부 본문(text_excerpt)에 보증 키워드가 있으면 bid_bond가 필요로."""
+    analysis = {
+        "document_automation": {
+            "uploads": [
+                {"name": "공고서.hwp", "text_excerpt": "입찰보증금은 입찰금액의 5%를 납부"}
+            ]
+        }
+    }
+    _seed(sqlite_engine, analysis=analysis)
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(
+            select(bid_pipeline.c).where(bid_pipeline.c.notice_no == "DOC-1")
+        ).mappings().one()
+
+    result = analyze_document_requirements(row)
+    by_id = {i["id"]: i for i in result["checklist"]}
+    assert by_id["bid_bond"]["required"] is True
+    assert by_id["bid_bond"]["status"] == "needed"
+    # 본문에 실적/면허 근거가 없으므로 해당없음 유지
+    assert by_id["performance_record"]["status"] == "not_applicable"
+
+
+def test_llm_judgment_uses_attachment_text_and_syncs_status(sqlite_engine, monkeypatch):
+    """LLM 경로: 첨부 본문이 _llm_suggestions로 전달되고, required 판정이 status까지 동기화."""
+    captured: dict = {}
+
+    def fake_llm(row, attachments_text=""):
+        captured["text"] = attachments_text
+        return (
+            {
+                "checklist": [
+                    {"id": "performance_record", "required": True, "reason": "본문에 납품실적 제한"},
+                    {"id": "bid_bond", "required": False, "reason": "보증 요구 없음"},
+                ]
+            },
+            None,
+        )
+
+    monkeypatch.setattr(
+        "api.services.document_automation._llm_suggestions", fake_llm
+    )
+    analysis = {
+        "document_automation": {
+            "uploads": [{"name": "규격서.hwp", "text_excerpt": "납품실적 3년 ATTACHMARK"}]
+        }
+    }
+    _seed(sqlite_engine, analysis=analysis)
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(
+            select(bid_pipeline.c).where(bid_pipeline.c.notice_no == "DOC-1")
+        ).mappings().one()
+
+    result = analyze_document_requirements(row)
+    assert "ATTACHMARK" in captured["text"]
+    by_id = {i["id"]: i for i in result["checklist"]}
+    assert by_id["performance_record"]["required"] is True
+    assert by_id["performance_record"]["status"] == "needed"
+    assert by_id["bid_bond"]["required"] is False
+    assert by_id["bid_bond"]["status"] == "not_applicable"
+
+
 def test_documents_analyze_endpoint_rejects_collected(client, sqlite_engine):
     _seed(sqlite_engine, status="collected")
     r = client.post("/notices/DOC-1/documents/analyze")

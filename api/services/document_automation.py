@@ -27,13 +27,16 @@ def analyze_document_requirements(row: Any) -> dict[str, Any]:
     raw = dict(row["raw"] or {})
     assignee = str(row["assignee"] or "")
 
-    llm_payload, llm_error = _llm_suggestions(row)
+    existing = analysis.get("document_automation") or {}
+    # 첨부(공고서·규격서) 본문을 판정 근거로 사용 — 메타데이터만으로 정해지던 한계 해소.
+    attachments_text = _attachments_text(existing.get("uploads") or [])
+
+    llm_payload, llm_error = _llm_suggestions(row, attachments_text)
     checklist = _merge_checklist(
-        _rule_checklist(row),
+        _rule_checklist(row, attachments_text),
         llm_payload.get("checklist", []) if isinstance(llm_payload, dict) else [],
         assignee,
     )
-    existing = analysis.get("document_automation") or {}
     checklist = _preserve_manual_updates(
         checklist,
         (existing.get("checklist") or []),
@@ -254,12 +257,46 @@ def validate_checklist(items: list[DocumentChecklistItem]) -> list[DocumentCheck
     return [item for item in items if item.required and item.status not in READY_STATUSES]
 
 
-def _rule_checklist(row: Any) -> list[DocumentChecklistItem]:
+ATTACHMENTS_TEXT_CAP = 12000
+
+
+def _attachments_text(uploads: list[Any]) -> str:
+    """업로드/첨부의 보존 본문(text_excerpt)을 파일명과 함께 모아 판정 코퍼스로 만든다.
+
+    text_excerpt가 없으면 analysis_summary로 폴백. 총량은 ATTACHMENTS_TEXT_CAP로 제한.
+    """
+    parts: list[str] = []
+    total = 0
+    for u in uploads:
+        if not isinstance(u, dict):
+            continue
+        excerpt = str(u.get("text_excerpt") or u.get("analysis_summary") or "").strip()
+        if not excerpt:
+            continue
+        chunk = f"[{u.get('name') or '첨부'}]\n{excerpt}"
+        if total + len(chunk) > ATTACHMENTS_TEXT_CAP:
+            chunk = chunk[: max(0, ATTACHMENTS_TEXT_CAP - total)]
+        if not chunk:
+            break
+        parts.append(chunk)
+        total += len(chunk)
+        if total >= ATTACHMENTS_TEXT_CAP:
+            break
+    return "\n\n".join(parts)
+
+
+def _rule_checklist(row: Any, attachments_text: str = "") -> list[DocumentChecklistItem]:
     assignee = str(row["assignee"] or "")
     raw = dict(row["raw"] or {})
     analysis = dict(row["analysis"] or {})
     title = str(row["title"] or row["notice_no"] or "")
-    joined = " ".join(str(v) for v in raw.values() if v).lower() + " " + title.lower()
+    joined = (
+        " ".join(str(v) for v in raw.values() if v).lower()
+        + " "
+        + title.lower()
+        + " "
+        + attachments_text.lower()
+    )
 
     items = [
         _item("bid_form", "입찰참가신청서", "bid_form", assignee, "HWP autofill 대상 기본 양식입니다."),
@@ -324,9 +361,17 @@ def _merge_checklist(
             continue
         item_id = _slug(str(raw_item.get("id") or name))
         if item_id in by_id:
-            by_id[item_id].required = bool(raw_item.get("required", by_id[item_id].required))
-            by_id[item_id].reason = str(raw_item.get("reason") or by_id[item_id].reason or "")
-            by_id[item_id].source = _append_source(by_id[item_id].source, "llm")
+            target = by_id[item_id]
+            if "required" in raw_item:
+                new_required = bool(raw_item.get("required"))
+                target.required = new_required
+                # status를 required 판정에 맞춰 동기화 (수동 변경은 이후 _preserve_manual_updates에서 보존)
+                if new_required and target.status == "not_applicable":
+                    target.status = "needed"
+                elif not new_required and target.status in {"needed", "blocked"}:
+                    target.status = "not_applicable"
+            target.reason = str(raw_item.get("reason") or target.reason or "")
+            target.source = _append_source(target.source, "llm")
             continue
         item_type = str(raw_item.get("type") or "other")
         if item_type not in {
@@ -339,12 +384,13 @@ def _merge_checklist(
             "other",
         }:
             item_type = "other"
+        new_required = bool(raw_item.get("required", True))
         by_id[item_id] = DocumentChecklistItem(
             id=item_id,
             name=name,
             type=item_type,  # type: ignore[arg-type]
-            required=bool(raw_item.get("required", True)),
-            status="needed",
+            required=new_required,
+            status="needed" if new_required else "not_applicable",
             owner=str(raw_item.get("owner") or default_owner or "") or None,
             reason=str(raw_item.get("reason") or "LLM이 공고문에서 추출한 제출서류입니다."),
             source="llm",
@@ -362,14 +408,18 @@ def _preserve_manual_updates(
         prev = prev_by_id.get(item.id)
         if not isinstance(prev, dict):
             continue
+        # 사용자가 수동으로 바꾼 항목만 status/owner/note를 보존한다. 규칙/LLM이 파생한
+        # status는 재평가가 갱신하도록 둔다(그렇지 않으면 한 번 정해진 필요/해당없음이 고정됨).
+        # 업로드로 ready가 된 항목은 이후 _apply_uploads_to_checklist가 다시 승격한다.
+        if "manual" not in str(prev.get("source") or ""):
+            continue
         if "status" in prev:
             item.status = prev["status"]
         if "owner" in prev:
             item.owner = prev["owner"]
         if "note" in prev:
             item.note = prev["note"]
-        if "source" in prev and "manual" in str(prev.get("source")):
-            item.source = _append_source(item.source, "manual")
+        item.source = _append_source(item.source, "manual")
     return fresh
 
 
@@ -485,28 +535,45 @@ def _rule_risks(raw: dict[str, Any], analysis: dict[str, Any]) -> list[str]:
     return risks
 
 
-def _llm_suggestions(row: Any) -> tuple[dict[str, Any], str | None]:
+def _llm_suggestions(row: Any, attachments_text: str = "") -> tuple[dict[str, Any], str | None]:
     if not settings.anthropic_api_key.strip():
         return {}, None
     try:
         raw = dict(row["raw"] or {})
         analysis = dict(row["analysis"] or {})
         prompt = (
-            "한국 공공조달 입찰 공고의 제출서류를 JSON으로 추출하세요. "
-            "반드시 checklist, risks, drafts 키만 사용하세요. "
-            "checklist 항목은 id,name,type,required,reason,due_hint를 포함하세요.\n\n"
+            "한국 공공조달 입찰 공고의 제출서류 필요 여부를 판정하세요. "
+            "특히 아래 '첨부 본문'(공고서·규격서)을 1차 근거로, 각 서류가 이 공고에서 "
+            "실제로 필요한지(required true/false)를 결정하세요.\n"
+            "출력은 JSON 객체 하나만 — 설명/마크다운/코드펜스 없이. "
+            "JSON은 checklist, risks, drafts 키만 사용하세요. "
+            "checklist 각 항목은 id,name,type,required(true/false),reason를 포함하세요.\n"
+            "다음 표준 id를 가능한 한 모두 평가하세요: bid_form, business_registration, "
+            "corporate_seal, manufacturer_letter, catalog, technical_compliance, "
+            "performance_record, bid_bond, license_certificate.\n"
+            "본문에 납품실적 제한이 있으면 performance_record=true, 입찰보증/보증보험 요구가 "
+            "있으면 bid_bond=true, 면허·자격·참가지역 제한이 있으면 license_certificate=true, "
+            "근거가 없으면 false로 하고 reason에 본문 근거(또는 '근거 없음')를 적으세요. "
+            "첨부에서 추가로 요구하는 서류가 있으면 새 id로 추가하세요.\n\n"
             f"공고명: {row['title'] or row['notice_no']}\n"
-            f"raw: {json.dumps(raw, ensure_ascii=False)[:4000]}\n"
-            f"analysis: {json.dumps(analysis, ensure_ascii=False)[:3000]}"
+            f"raw: {json.dumps(raw, ensure_ascii=False)[:3000]}\n"
+            f"analysis: {json.dumps(analysis, ensure_ascii=False)[:2000]}\n"
+            f"첨부 본문:\n{attachments_text[:ATTACHMENTS_TEXT_CAP] if attachments_text else '(첨부 없음)'}"
         )
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         msg = client.messages.create(
             model=settings.anthropic_model,
-            max_tokens=1200,
-            messages=[{"role": "user", "content": prompt}],
+            max_tokens=3000,  # 전체 체크리스트+한국어 reason JSON이 잘리지 않도록
+            messages=[
+                {"role": "user", "content": prompt},
+                # assistant prefill "{" — Haiku가 산문 대신 JSON으로 응답하도록 강제.
+                {"role": "assistant", "content": "{"},
+            ],
         )
-        text = "\n".join(block.text for block in msg.content if getattr(block, "type", "") == "text")
-        return _safe_json_object(text), None
+        body_text = "\n".join(
+            block.text for block in msg.content if getattr(block, "type", "") == "text"
+        )
+        return _safe_json_object("{" + body_text), None
     except Exception as exc:  # noqa: BLE001
         log.warning("[document_automation] LLM suggestion failed: %s", exc)
         return {}, str(exc)

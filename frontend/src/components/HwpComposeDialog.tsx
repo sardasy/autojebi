@@ -131,11 +131,20 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
         const result = await actionComposeHwpDocuments(notice.notice_no, payload);
         const errors = result.errors.length;
         const remaining = result.remaining_placeholders.length;
+        const produced = Boolean(result.bid_form || result.technical_compliance || result.job);
         setLastErrors(result.errors);
         setRequiredMissing(result.required_missing || []);
         setRemainingFields(result.remaining_placeholders || []);
         router.refresh();
-        if (errors > 0) {
+        if (errors > 0 && !produced) {
+          // 사전검증 실패 등 — 아무것도 생성되지 않음. 실제 사유(누락 서류 등)를 노출.
+          const reason =
+            result.errors
+              .map((e) => e.detail)
+              .filter(Boolean)
+              .join("; ") || `오류 ${errors}건`;
+          toast.push("error", `HWP 작성 불가: ${reason}`);
+        } else if (errors > 0) {
           toast.push("info", `HWP 작성 일부 완료: 오류 ${errors}건`);
         } else if (remaining > 0) {
           toast.push("info", `HWP 작성 완료: 남은 입력값 ${remaining}개`);

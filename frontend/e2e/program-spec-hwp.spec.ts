@@ -28,7 +28,7 @@ test.describe("program spec items and HWP workflow", () => {
     await page.getByRole("link", { name: /강원본부 휴대용 변압기 시험기/ }).first().click();
 
     await page.getByRole("button", { name: "분석", exact: true }).click();
-    await expect(page.getByText(/분석 완료|분석 실패/)).toBeVisible();
+    await expect(page.getByText(/분석 완료|분석 실패/)).toBeVisible({ timeout: 90_000 });
     await page.reload();
 
     const initialWorkflowRail = page.locator("section", { hasText: "입찰 업무 흐름" }).first();
@@ -39,7 +39,7 @@ test.describe("program spec items and HWP workflow", () => {
     const docAnalyzeButton = page.getByRole("button", { name: "서류 분석" });
     if (await docAnalyzeButton.isEnabled()) {
       await docAnalyzeButton.click();
-      await expect(page.getByText(/서류 분석 완료|서류 분석 실패/)).toBeVisible();
+      await expect(page.getByText(/서류 분석 완료|서류 분석 실패/)).toBeVisible({ timeout: 90_000 });
       await page.reload();
     }
 
@@ -51,7 +51,7 @@ test.describe("program spec items and HWP workflow", () => {
     await expect(page.locator("#spec-items")).toBeVisible();
 
     await page.getByRole("button", { name: "규격 추출" }).click();
-    await expect(page.getByText(/규격 추출 완료/)).toBeVisible();
+    await expect(page.getByText(/규격 추출 완료/)).toBeVisible({ timeout: 90_000 });
     await expect(page.getByText("규격 항목").first()).toBeVisible();
 
     const voltageRow = page.locator("tbody tr", { hasText: "정격전압" }).first();

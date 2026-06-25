@@ -14,7 +14,12 @@ export async function GET(
   ctx: { params: Promise<{ noticeNo: string; kind: string }> },
 ) {
   const { noticeNo, kind } = await ctx.params;
-  if (kind !== "excel" && kind !== "hwp" && kind !== "proposal_hwp") {
+  if (
+    kind !== "excel" &&
+    kind !== "hwp" &&
+    kind !== "bid_form_hwp" &&
+    kind !== "proposal_hwp"
+  ) {
     return NextResponse.json({ error: "invalid kind" }, { status: 400 });
   }
   const path = `/notices/${encodeURIComponent(noticeNo)}/documents/exports/${kind}/download`;

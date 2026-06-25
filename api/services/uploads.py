@@ -143,6 +143,7 @@ def build_metadata(
     detected_item_id: str | None = None,
     detect_confidence: float | None = None,
     analysis_summary: str | None = None,
+    text_excerpt: str | None = None,
     text_extract_error: str | None = None,
     source_ref: str | None = "uploaded",
 ) -> UploadedDocument:
@@ -158,6 +159,7 @@ def build_metadata(
         detected_item_id=detected_item_id,
         detect_confidence=detect_confidence,
         analysis_summary=analysis_summary,
+        text_excerpt=text_excerpt,
         text_extract_error=text_extract_error,
         source_ref=source_ref,  # type: ignore[arg-type]
     )
@@ -170,11 +172,16 @@ def analyze_upload(
     checklist: list[dict] | None = None,
     explicit_item_id: str | None = None,
     hwp_client: HwpAgentClient | None = None,
+    hwp_available: bool | None = None,
 ) -> dict[str, object]:
     """Extract a lightweight summary and recommend a checklist item.
 
     This is intentionally best-effort: bad PDFs, missing HWP agent, or unknown
     formats produce metadata instead of blocking the upload.
+
+    ``hwp_available``: 호출자가 사전에 에이전트 health를 1회 확인한 결과. False면
+    hwp/hwpx 파일에 대해 네트워크 호출을 건너뛰고 간결한 오류만 남긴다(파일마다
+    connect 타임아웃 재시도로 시간 낭비하지 않도록). None이면 평소대로 시도한다.
     """
     ext = original_name.rsplit(".", 1)[-1].strip().lower() if "." in original_name else ""
     text = ""
@@ -186,18 +193,25 @@ def analyze_upload(
         except Exception as exc:  # noqa: BLE001
             error = f"pdf text extraction failed: {exc}"
     elif ext in {"hwp", "hwpx"}:
-        try:
-            client = hwp_client or HwpAgentClient()
-            body = client.analyze_document(saved.storage_path)
-            text = str(body.get("text") or body.get("body") or "")
-            if not text:
-                placeholders = body.get("placeholders")
-                if placeholders:
-                    text = "placeholders: " + ", ".join(str(p) for p in placeholders)
-        except HwpAgentError as exc:
-            error = f"hwp agent failed: {exc}"
-        except Exception as exc:  # noqa: BLE001
-            error = f"hwp analysis failed: {exc}"
+        if hwp_available is False:
+            error = "HWP 에이전트 미연결"
+        else:
+            try:
+                client = hwp_client or HwpAgentClient()
+                body = client.analyze_document(saved.storage_path)
+                # milim-hwp-agent analyze-file은 본문을 text_preview(상위 N자)로 반환한다.
+                # (text/body 키는 없음 → 과거엔 HWP 본문이 항상 빈값이었음)
+                text = str(
+                    body.get("text") or body.get("body") or body.get("text_preview") or ""
+                )
+                if not text:
+                    placeholders = body.get("placeholders")
+                    if placeholders:
+                        text = "placeholders: " + ", ".join(str(p) for p in placeholders)
+            except HwpAgentError as exc:
+                error = f"hwp agent failed: {exc}"
+            except Exception as exc:  # noqa: BLE001
+                error = f"hwp analysis failed: {exc}"
 
     evidence = f"{original_name}\n{text}"
     detected_item_id, confidence = _detect_item(evidence, checklist or [])
@@ -213,8 +227,18 @@ def analyze_upload(
         "detected_item_id": detected_item_id,
         "detect_confidence": confidence if detected_item_id else None,
         "analysis_summary": _summarize_upload(original_name, text, detected_item_id, confidence),
+        "text_excerpt": _text_excerpt(text),
         "text_extract_error": error,
     }
+
+
+def _text_excerpt(text: str) -> str | None:
+    """추출 본문을 공백 정규화 후 설정 길이로 자른다. 서류 필요/해당없음 판정에 재사용."""
+    compact = " ".join(str(text or "").split())
+    if not compact:
+        return None
+    limit = settings.upload_text_excerpt_chars
+    return compact if len(compact) <= limit else compact[: limit - 1] + "…"
 
 
 def _detect_item(evidence: str, checklist: list[dict]) -> tuple[str | None, float]:

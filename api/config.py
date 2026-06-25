@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     export_dir: str = ""  # 빈값 → tempfile.gettempdir()/autojebi/exports
     upload_max_bytes: int = 30_000_000  # 30MB
     upload_allowed_exts: str = "pdf,hwp,hwpx,jpg,jpeg,png,xlsx,docx"
+    # 첨부 본문 기반 서류 판정용 — 파일당 보존할 추출 텍스트 길이(LLM/키워드 판정에 재사용)
+    upload_text_excerpt_chars: int = 6000
 
     # E2E test helper endpoints. Keep disabled by default, especially in production.
     e2e_cleanup_enabled: bool = False

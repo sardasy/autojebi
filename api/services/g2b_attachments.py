@@ -55,7 +55,7 @@ def download_g2b_attachment(attachment: G2BAttachment) -> DownloadedAttachment:
     the same persistence and analysis path as real G2B URLs.
     """
     if attachment.url.startswith("data:"):
-        content, mime = _read_data_url(attachment.url)
+        content, mime = read_data_url(attachment.url)
         return DownloadedAttachment(attachment=attachment, content=content, mime=mime)
 
     with httpx.Client(timeout=30, follow_redirects=True) as client:
@@ -75,7 +75,9 @@ def _extension(filename: str) -> str:
     return filename.rsplit(".", 1)[-1].strip().lower()
 
 
-def _read_data_url(url: str) -> tuple[bytes, str | None]:
+def read_data_url(url: str) -> tuple[bytes, str | None]:
+    """Decode a ``data:`` URL into (bytes, mime). Shared by the analyze-path
+    attachment fetcher so both fetchers handle data URLs identically."""
     header, sep, payload = url.partition(",")
     if not sep:
         raise ValueError("invalid data URL")
