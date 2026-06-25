@@ -11,7 +11,10 @@ from api.config import settings
 from api.main import app
 from api.routers import notices
 from api.routers.notices import bid_pipeline, metadata
-from api.services.document_automation import analyze_document_requirements
+from api.services.document_automation import (
+    analyze_document_requirements,
+    validate_pre_compose,
+)
 
 
 @pytest.fixture
@@ -79,6 +82,56 @@ def test_rule_based_document_analysis_builds_checklist(sqlite_engine):
     assert "사업자등록증" in names
     assert "technical_compliance" in result["drafts"]
     assert result["source"] == "rule"
+
+
+def test_company_common_defaults_to_candidate_with_role(sqlite_engine):
+    """회사 공통/추정형은 기본 required=False(후보)이고 document_role이 붙는다.
+    생성 타깃(bid_form/technical_compliance)만 기본 required."""
+    _seed(sqlite_engine)
+    with sqlite_engine.begin() as conn:
+        row = conn.execute(
+            select(bid_pipeline.c).where(bid_pipeline.c.notice_no == "DOC-1")
+        ).mappings().one()
+    by_id = {i["id"]: i for i in analyze_document_requirements(row)["checklist"]}
+
+    assert by_id["business_registration"]["required"] is False
+    assert by_id["business_registration"]["status"] == "not_applicable"
+    assert by_id["business_registration"]["document_role"] == "internal_prep"
+    assert by_id["bid_form"]["required"] is True
+    assert by_id["bid_form"]["document_role"] == "submit_required"
+    assert by_id["technical_compliance"]["required"] is True
+
+
+def test_pre_compose_blocks_on_notice_required_documents_not_checklist():
+    """compose 차단은 공고 원문(notice_required_documents) 기준 — 회사 체크리스트는 경고."""
+    doc_automation = {
+        "checklist": [
+            {"id": "business_registration", "name": "사업자등록증",
+             "required": True, "status": "needed"},
+        ],
+    }
+    required_docs = [
+        {"id": 1, "doc_name": "가격제안서", "requirement_type": "required",
+         "submit_stage": "price", "checked": False},
+        {"id": 2, "doc_name": "포장명세서", "requirement_type": "required",
+         "submit_stage": "delivery", "checked": False},  # 납품단계 → 차단 안 함
+    ]
+    errors, warnings = validate_pre_compose(
+        doc_automation,
+        spec_rows=[{"item_key": "x"}],
+        required_docs=required_docs,
+    )
+    blocks = [e for e in errors if e["stage"] == "pre_compose.required_document"]
+    assert len(blocks) == 1
+    assert "가격제안서" in blocks[0]["detail"]
+    # 회사 체크리스트 미준비는 경고로만
+    assert any(w["stage"] == "pre_compose.company_prep" for w in warnings)
+    # 체크하면 차단 해제
+    required_docs[0]["checked"] = True
+    errors2, _ = validate_pre_compose(
+        doc_automation, spec_rows=[{"item_key": "x"}], required_docs=required_docs
+    )
+    assert not [e for e in errors2 if e["stage"] == "pre_compose.required_document"]
 
 
 def test_keyword_fallback_uses_attachment_text(sqlite_engine):

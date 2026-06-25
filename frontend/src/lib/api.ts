@@ -275,6 +275,13 @@ export type DocumentItemStatus =
   | "blocked"
   | "not_applicable";
 
+export type DocumentRole =
+  | "submit_required"
+  | "reference_only"
+  | "qualification_evidence"
+  | "price_document"
+  | "internal_prep";
+
 export interface DocumentChecklistItem {
   id: string;
   name: string;
@@ -286,6 +293,7 @@ export interface DocumentChecklistItem {
   source: string;
   due_hint: string | null;
   note?: string | null;
+  document_role?: DocumentRole | null;
 }
 
 export interface DocumentAutomationResult {
@@ -776,15 +784,33 @@ export interface NoticeRequiredDocument {
   note?: string | null;
 }
 
+export type RequiredDocsStopPoint =
+  | "no_uploads"
+  | "no_text"
+  | "no_candidates"
+  | "no_classification"
+  | "ok";
+
+export interface RequiredDocumentDiagnostics {
+  uploads: number;
+  files_extracted: number;
+  total_chars: number;
+  candidates: number;
+  classified: number;
+  stopped_at: RequiredDocsStopPoint;
+}
+
 export interface RequiredDocumentListResponse {
   notice_no: string;
   items: NoticeRequiredDocument[];
+  diagnostics?: RequiredDocumentDiagnostics | null;
 }
 
 export interface RequiredDocumentAnalyzeResponse {
   notice_no: string;
   items: NoticeRequiredDocument[];
   upserted: number;
+  diagnostics?: RequiredDocumentDiagnostics | null;
   errors: { stage?: string; detail?: string }[];
 }
 

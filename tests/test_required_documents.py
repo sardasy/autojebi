@@ -180,3 +180,33 @@ def test_patch_check_persists_and_reanalyze_preserves(client, sqlite_engine, mon
 def test_analyze_404_for_unknown_notice(client, sqlite_engine):
     r = client.post("/notices/NOPE/required-documents/analyze")
     assert r.status_code == 404
+
+
+def test_diagnostics_reports_stop_point(client, sqlite_engine, monkeypatch):
+    """첨부가 없으면 diagnostics.stopped_at == no_uploads, 0건."""
+    now = datetime.now(tz=UTC)
+    with sqlite_engine.begin() as conn:
+        conn.execute(
+            insert(bid_pipeline).values(
+                notice_no="REQ-EMPTY",
+                title="첨부 없음",
+                source="G2B",
+                raw={},
+                category="혼합",
+                fit_score=0,
+                assignee="이용문",
+                analysis={"document_automation": {"uploads": [], "checklist": []}},
+                status="documents_analyzed",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    monkeypatch.setattr(notices, "classify_required_documents", lambda c: [])
+    r = client.post("/notices/REQ-EMPTY/required-documents/analyze")
+    assert r.status_code == 200, r.text
+    diag = r.json()["diagnostics"]
+    assert diag["stopped_at"] == "no_uploads"
+    assert r.json()["upserted"] == 0
+    # GET 목록에서도 진단이 영속화되어 보여야 함
+    g = client.get("/notices/REQ-EMPTY/required-documents")
+    assert g.json()["diagnostics"]["stopped_at"] == "no_uploads"

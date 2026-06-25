@@ -83,6 +83,7 @@ from api.models.notices import (
     ProposalComposeResponse,
     ProposalComposeResult,
     RequiredDocumentAnalyzeResponse,
+    RequiredDocumentDiagnostics,
     RequiredDocumentListResponse,
     RequiredDocumentUpdateRequest,
     SpecItemExtractResponse,
@@ -1223,6 +1224,28 @@ def analyze_required_documents(notice_no: str) -> RequiredDocumentAnalyzeRespons
         candidates = find_candidate_segments(file_pages)
         classified = classify_required_documents(candidates)
 
+        # 진단: 파이프라인이 어디서 0건으로 멈췄는지
+        total_chars = sum(len(str(fp.get("text") or "")) for fp in file_pages)
+        files_extracted = len({fp.get("source_file") for fp in file_pages})
+        if not uploads:
+            stopped_at = "no_uploads"
+        elif total_chars == 0:
+            stopped_at = "no_text"
+        elif not candidates:
+            stopped_at = "no_candidates"
+        elif not classified:
+            stopped_at = "no_classification"
+        else:
+            stopped_at = "ok"
+        diagnostics = RequiredDocumentDiagnostics(
+            uploads=len(uploads),
+            files_extracted=files_extracted,
+            total_chars=total_chars,
+            candidates=len(candidates),
+            classified=len(classified),
+            stopped_at=stopped_at,
+        )
+
         upserted = 0
         now = datetime.now(tz=UTC)
         for item in classified:
@@ -1268,11 +1291,24 @@ def analyze_required_documents(notice_no: str) -> RequiredDocumentAnalyzeRespons
                 )
                 upserted += 1
 
+        # 진단 결과를 analysis.document_automation.required_docs_meta에 영속화
+        # (GET 목록에서 0건 멈춤 지점을 다시 보여주기 위함)
+        if isinstance(docs, dict):
+            updated_docs = dict(docs)
+            updated_docs["required_docs_meta"] = diagnostics.model_dump()
+            analysis["document_automation"] = updated_docs
+            conn.execute(
+                update(bid_pipeline)
+                .where(bid_pipeline.c.notice_no == notice_no)
+                .values(analysis=analysis)
+            )
+
         rows = _list_required_document_rows(conn, notice_no)
         return RequiredDocumentAnalyzeResponse(
             notice_no=notice_no,
             items=[_required_doc_to_model(r) for r in rows],
             upserted=upserted,
+            diagnostics=diagnostics,
             errors=errors,
         )
 
@@ -1284,15 +1320,23 @@ def analyze_required_documents(notice_no: str) -> RequiredDocumentAnalyzeRespons
 def list_required_documents(notice_no: str) -> RequiredDocumentListResponse:
     engine = require_engine()
     with engine.begin() as conn:
-        exists = conn.execute(
-            select(bid_pipeline.c.notice_no).where(bid_pipeline.c.notice_no == notice_no)
-        ).scalar_one_or_none()
-        if not exists:
+        row = conn.execute(
+            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == notice_no)
+        ).mappings().one_or_none()
+        if not row:
             raise HTTPException(status_code=404, detail="notice not found")
         rows = _list_required_document_rows(conn, notice_no)
+        meta = None
+        docs = (dict(row["analysis"] or {})).get("document_automation")
+        if isinstance(docs, dict) and isinstance(docs.get("required_docs_meta"), dict):
+            try:
+                meta = RequiredDocumentDiagnostics(**docs["required_docs_meta"])
+            except Exception:  # noqa: BLE001
+                meta = None
         return RequiredDocumentListResponse(
             notice_no=notice_no,
             items=[_required_doc_to_model(r) for r in rows],
+            diagnostics=meta,
         )
 
 
@@ -2491,6 +2535,7 @@ def export_document(
         pre_errors, pre_warnings = validate_pre_compose(
             document_automation,
             spec_rows=spec_rows,
+            required_docs=_list_required_document_rows(conn, notice_no),
             values={},
             target_item_ids={"technical_compliance"},
         )
@@ -2559,6 +2604,7 @@ def compose_hwp_documents(notice_no: str, body: HwpComposeRequest) -> HwpCompose
         pre_errors, pre_warnings = validate_pre_compose(
             document_automation,
             spec_rows=spec_rows,
+            required_docs=_list_required_document_rows(conn, notice_no),
             values=body.values,
             target_item_ids=target_ids,
         )
@@ -2690,6 +2736,7 @@ def compose_proposal_document(
         pre_errors, pre_warnings = validate_pre_compose(
             document_automation,
             spec_rows=spec_rows,
+            required_docs=_list_required_document_rows(conn, notice_no),
             values=body.values_override,
             target_item_ids={"bid_form", "technical_compliance", "proposal"},
         )
