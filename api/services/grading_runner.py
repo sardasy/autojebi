@@ -14,6 +14,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import Engine, select, update
 
 from api.config import settings
@@ -126,7 +127,8 @@ def grade_notice_impl(
         elec_dict = analysis_dict.get("elec_spec") or {}
         try:
             spec = ElecSpec.model_validate(elec_dict)
-        except Exception:
+        except (ValidationError, TypeError) as exc:
+            log.debug("[grade] elec_spec 파싱 실패 %s — 빈 ElecSpec 폴백: %s", notice_no, exc)
             spec = ElecSpec()
 
         raw_json = json.dumps(row["raw"]) if row["raw"] else None

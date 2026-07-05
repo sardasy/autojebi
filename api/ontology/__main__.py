@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         # 한국어 안전 출력 (stdout 인코딩 강제)
         try:
             sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-        except Exception:
+        except Exception:  # noqa: BLE001 — stdout 인코딩 재설정은 best-effort
             pass
         print(json.dumps(dict(report), ensure_ascii=False, indent=2))
         return 0

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import anthropic
+from pydantic import ValidationError
 
 from api.config import settings
 from api.models.notices import DocumentChecklistItem
@@ -680,7 +681,8 @@ def _refresh_validation(document_automation: dict[str, Any]) -> None:
     for item in document_automation.get("checklist") or []:
         try:
             parsed.append(DocumentChecklistItem.model_validate(item))
-        except Exception:  # noqa: BLE001
+        except (ValidationError, TypeError) as exc:
+            log.warning("[document_automation] checklist 항목 파싱 실패 — 건너뜀: %s", exc)
             continue
     missing = validate_checklist(parsed)
     document_automation["missing_required"] = [item.model_dump() for item in missing]

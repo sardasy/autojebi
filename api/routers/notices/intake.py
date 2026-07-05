@@ -95,6 +95,6 @@ def search_notices_endpoint(payload: NoticeSearchRequest) -> NoticeSearchRespons
         )
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — 외부 API 경계: 502로 변환
         # G2B HTTP/네트워크/파싱 실패 → 외부 의존성 장애로 분류
         raise HTTPException(status_code=502, detail=f"G2B search failed: {exc}")

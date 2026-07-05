@@ -82,7 +82,7 @@ def summarize_fit(
 
         log.warning("[summarizer] tool_use 블록 없음 → fallback 사용")
         return _fallback_summary(spec, top_matches, breakdown, qual_notes, price_note)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — LLM 경계: 어떤 실패든 fallback으로 흡수
         log.warning("[summarizer] Claude 호출 실패(%s) → fallback 사용", exc)
         return _fallback_summary(spec, top_matches, breakdown, qual_notes, price_note)
 

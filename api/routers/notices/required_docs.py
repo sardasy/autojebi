@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select, update
 
 from api.db import Conn, require_engine
@@ -208,8 +209,8 @@ def list_required_documents(notice_no: str, conn: Conn) -> RequiredDocumentListR
     if isinstance(docs, dict) and isinstance(docs.get("required_docs_meta"), dict):
         try:
             meta = RequiredDocumentDiagnostics(**docs["required_docs_meta"])
-        except Exception:  # noqa: BLE001
-            meta = None
+        except (ValidationError, TypeError):
+            meta = None  # 진단 메타는 선택 정보 — 형식이 깨졌으면 표시만 생략
     return RequiredDocumentListResponse(
         notice_no=notice_no,
         items=[_required_doc_to_model(r) for r in rows],
