@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { actionAutofill } from "@/lib/actions";
 import type { NoticeRecord } from "@/lib/api";
+import { DEFAULT_COMPANY_NAME } from "@/lib/constants/company";
 import { readDocumentAutomation } from "@/lib/documentAutomation";
 import { Modal } from "./Modal";
 import { useToast } from "./Toast";
@@ -15,7 +16,7 @@ type Props = {
 };
 
 const DEFAULT_VALUES = {
-  company_name: "미림씨스콘",
+  company_name: DEFAULT_COMPANY_NAME,
   business_number: "",
   ceo_name: "",
   address: "",
