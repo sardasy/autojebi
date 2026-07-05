@@ -27,7 +27,7 @@ jobs:
         run: ruff check .
 
       - name: pytest
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=api --cov-report=term
 
   frontend:
     name: frontend (test + build)
@@ -47,6 +47,9 @@ jobs:
       - name: install
         run: npm ci --no-audit --no-fund --legacy-peer-deps
 
+      - name: typecheck
+        run: npm run typecheck
+
       - name: vitest
         run: npm test
 
@@ -54,3 +57,44 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_BASE: http://localhost:8001
+
+  e2e:
+    name: e2e (playwright — 외부 API 무관 spec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 외부 API 키 없이 기동 — compose는 모든 env에 기본값이 있고,
+      # chromium-ci 프로젝트는 Claude/G2B 실호출 spec을 포함하지 않는다.
+      - name: start stack (db + api + frontend)
+        run: docker compose -f infra/docker-compose.yml up -d --wait --build db api frontend
+        env:
+          API_KEY: ci-test-key
+          E2E_CLEANUP_ENABLED: "true"
+          SCHEDULER_ENABLED: "false"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund --legacy-peer-deps
+
+      - name: playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: playwright (chromium-ci)
+        working-directory: frontend
+        run: npx playwright test --project=chromium-ci
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          E2E_API_BASE: http://localhost:8001
+          E2E_API_KEY: ci-test-key
+
+      - name: compose logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --tail=100 api frontend

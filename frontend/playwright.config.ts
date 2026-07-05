@@ -19,6 +19,13 @@ export default defineConfig({
   },
   projects: [
     {
+      // CI 전용 — 외부 API(Claude/G2B) 실호출이 없는 spec만.
+      // notices-search-api: 422 검증 가드, ontology-api: 로컬 API, notices-search: UI만.
+      name: "chromium-ci",
+      testMatch: /.*(?:notices-search-api|ontology-api|notices-search)\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "chromium-smoke",
       testMatch: /.*(?:program-smoke|notices-flow|notices-search|notices-search-api|ontology-api)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
