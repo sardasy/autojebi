@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select, update
 
-from api.db import require_engine
+from api.db import Conn, require_engine
 from api.llm.extractor import extract_pdf_pages
 from api.models.notices import (
     NoticeRequiredDocument,
@@ -25,7 +25,7 @@ from api.services.required_documents import (
 from api.tables import bid_pipeline, notice_required_documents
 
 from . import _common
-from ._common import _list_required_document_rows
+from ._common import _list_required_document_rows, require_notice
 
 router = APIRouter()
 
@@ -98,11 +98,7 @@ def _extract_file_pages(uploads: list[Any]) -> tuple[list[dict[str, Any]], list[
 def analyze_required_documents(notice_no: str) -> RequiredDocumentAnalyzeResponse:
     engine = require_engine()
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no)
         analysis = dict(row["analysis"] or {})
         docs = analysis.get("document_automation")
         uploads = list(docs.get("uploads") or []) if isinstance(docs, dict) else []
@@ -204,27 +200,21 @@ def analyze_required_documents(notice_no: str) -> RequiredDocumentAnalyzeRespons
     "/{notice_no}/required-documents",
     response_model=RequiredDocumentListResponse,
 )
-def list_required_documents(notice_no: str) -> RequiredDocumentListResponse:
-    engine = require_engine()
-    with engine.begin() as conn:
-        row = conn.execute(
-            select(bid_pipeline.c.analysis).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
-        rows = _list_required_document_rows(conn, notice_no)
-        meta = None
-        docs = (dict(row["analysis"] or {})).get("document_automation")
-        if isinstance(docs, dict) and isinstance(docs.get("required_docs_meta"), dict):
-            try:
-                meta = RequiredDocumentDiagnostics(**docs["required_docs_meta"])
-            except Exception:  # noqa: BLE001
-                meta = None
-        return RequiredDocumentListResponse(
-            notice_no=notice_no,
-            items=[_required_doc_to_model(r) for r in rows],
-            diagnostics=meta,
-        )
+def list_required_documents(notice_no: str, conn: Conn) -> RequiredDocumentListResponse:
+    row = require_notice(conn, notice_no, columns=[bid_pipeline.c.analysis])
+    rows = _list_required_document_rows(conn, notice_no)
+    meta = None
+    docs = (dict(row["analysis"] or {})).get("document_automation")
+    if isinstance(docs, dict) and isinstance(docs.get("required_docs_meta"), dict):
+        try:
+            meta = RequiredDocumentDiagnostics(**docs["required_docs_meta"])
+        except Exception:  # noqa: BLE001
+            meta = None
+    return RequiredDocumentListResponse(
+        notice_no=notice_no,
+        items=[_required_doc_to_model(r) for r in rows],
+        diagnostics=meta,
+    )
 
 
 @router.patch(

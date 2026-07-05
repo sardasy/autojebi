@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from api.db import require_engine
 from api.models.notices import (
@@ -19,7 +19,7 @@ from api.services.routing import assignee_for_category
 from api.services.status import can_transition, compute_notify_status
 from api.tables import bid_pipeline
 
-from ._common import _notice_select_columns, _record_errors
+from ._common import _notice_select_columns, _record_errors, require_notice
 
 router = APIRouter()
 
@@ -29,11 +29,7 @@ def analyze_notice(notice_no: str) -> NoticeAnalyzeResponse:
     engine = require_engine()
 
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*_notice_select_columns()).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no, columns=_notice_select_columns())
 
         current_status = row["status"]
         if not can_transition(current_status, "analyzed"):
@@ -76,11 +72,7 @@ def notify_notice(notice_no: str, body: NotifyRequest) -> NotifyResponse:
     notifier = TeamsNotifier()
 
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no)
 
         next_status = compute_notify_status(int(row["fit_score"] or 0))
         if not can_transition(row["status"], next_status):

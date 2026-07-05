@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from api.db import require_engine
 from api.models.notices import (
@@ -20,7 +20,7 @@ from api.services.document_automation import (
 from api.services.status import advance_status
 from api.tables import bid_pipeline
 
-from ._common import _record_errors
+from ._common import _record_errors, require_notice
 
 router = APIRouter()
 
@@ -30,11 +30,7 @@ def analyze_documents(notice_no: str) -> DocumentAutomationResponse:
     engine = require_engine()
 
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no)
         if row["status"] not in {
             "analyzed",
             "attachments_fetched",
@@ -88,11 +84,7 @@ def patch_document_checklist_item(
     engine = require_engine()
 
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no)
         analysis = dict(row["analysis"] or {})
         document_automation = analysis.get("document_automation")
         if not isinstance(document_automation, dict):
@@ -125,11 +117,7 @@ def validate_documents(notice_no: str) -> DocumentValidationResponse:
     engine = require_engine()
 
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no)
         analysis = dict(row["analysis"] or {})
         document_automation = analysis.get("document_automation")
         if not isinstance(document_automation, dict):

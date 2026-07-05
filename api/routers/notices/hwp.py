@@ -66,6 +66,7 @@ from ._common import (
     _record_errors,
     _record_export,
     _replace_technical_draft_from_spec_items,
+    require_notice,
 )
 
 router = APIRouter()
@@ -82,11 +83,7 @@ def autofill_form(notice_no: str, body: AutofillFormRequest) -> AutofillFormResp
     engine = require_engine()
 
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no)
 
         if not can_transition(row["status"], "form_filled"):
             raise HTTPException(

@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert
 
 from api.config import settings
-from api.db import require_engine
+from api.db import Conn, require_engine
 from api.models.notices import (
     E2ECleanupResponse,
     NoticeListResponse,
@@ -38,7 +38,7 @@ from api.tables import (
     notice_spec_items,
 )
 
-from ._common import _notice_select_columns, _row_to_record
+from ._common import _notice_select_columns, _row_to_record, require_notice
 
 router = APIRouter()
 
@@ -167,9 +167,8 @@ def _is_ready_for_submission(analysis: dict[str, Any] | None) -> bool:
 
 
 @router.get("/summary", response_model=NoticeSummary)
-def get_notice_summary() -> NoticeSummary:
+def get_notice_summary(conn: Conn) -> NoticeSummary:
     """Saved notice work-queue counters for the /notices console."""
-    engine = require_engine()
     now = datetime.now(tz=UTC)
     today_kst = now.astimezone(ZoneInfo("Asia/Seoul")).date()
 
@@ -179,8 +178,7 @@ def get_notice_summary() -> NoticeSummary:
         bid_pipeline.c.graded_at,
         bid_pipeline.c.analysis,
     )
-    with engine.begin() as conn:
-        rows = conn.execute(stmt).mappings().all()
+    rows = conn.execute(stmt).mappings().all()
 
     summary = NoticeSummary()
     for row in rows:
@@ -425,6 +423,7 @@ def _parse_csv(values: list[str] | None) -> list[str] | None:
 
 @router.get("", response_model=NoticeListResponse)
 def list_notices(
+    conn: Conn,
     q: str | None = Query(default=None, max_length=200, description="통합 키워드 부분일치"),
     status: list[str] | None = Query(default=None, description="상태 (다중 가능)"),
     category: list[str] | None = Query(default=None),
@@ -452,8 +451,7 @@ def list_notices(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> NoticeListResponse:
-    engine = require_engine()
-    dialect_name = engine.dialect.name
+    dialect_name = conn.dialect.name
     now_utc = datetime.now(tz=UTC)
 
     status_list = _parse_csv(status)
@@ -495,9 +493,8 @@ def list_notices(
         (page - 1) * page_size
     )
 
-    with engine.begin() as conn:
-        total = conn.execute(count_stmt).scalar_one()
-        rows = conn.execute(paged_stmt).mappings().all()
+    total = conn.execute(count_stmt).scalar_one()
+    rows = conn.execute(paged_stmt).mappings().all()
 
     total_pages = math.ceil(total / page_size) if total else 0
     return NoticeListResponse(
@@ -510,12 +507,6 @@ def list_notices(
 
 
 @router.get("/{notice_no}", response_model=NoticeRecord)
-def get_notice(notice_no: str) -> NoticeRecord:
-    engine = require_engine()
-    with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
-        return _row_to_record(row)
+def get_notice(notice_no: str, conn: Conn) -> NoticeRecord:
+    row = require_notice(conn, notice_no)
+    return _row_to_record(row)

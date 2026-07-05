@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from api.db import require_engine
+from api.db import Conn, require_engine
 from api.models.notices import (
     UploadedDocument,
     UploadListResponse,
@@ -80,16 +80,14 @@ def import_common_document(notice_no: str, upload_id: str) -> UploadResponse:
         return UploadResponse(notice_no=notice_no, uploaded=imported)
 
 @router.get("/{notice_no}/documents/uploads", response_model=UploadListResponse)
-def list_document_uploads(notice_no: str) -> UploadListResponse:
-    engine = require_engine()
-    with engine.begin() as conn:
-        _, _, document_automation = _load_document_automation(conn, notice_no)
-        items = [
-            UploadedDocument.model_validate(item)
-            for item in (document_automation.get("uploads") or [])
-            if isinstance(item, dict)
-        ]
-        return UploadListResponse(notice_no=notice_no, items=items)
+def list_document_uploads(notice_no: str, conn: Conn) -> UploadListResponse:
+    _, _, document_automation = _load_document_automation(conn, notice_no)
+    items = [
+        UploadedDocument.model_validate(item)
+        for item in (document_automation.get("uploads") or [])
+        if isinstance(item, dict)
+    ]
+    return UploadListResponse(notice_no=notice_no, items=items)
 
 
 @router.delete("/{notice_no}/documents/uploads/{upload_id}")
@@ -107,18 +105,16 @@ def delete_document_upload(notice_no: str, upload_id: str) -> dict[str, Any]:
 
 
 @router.get("/{notice_no}/documents/uploads/{upload_id}/download")
-def download_document_upload(notice_no: str, upload_id: str) -> FileResponse:
-    engine = require_engine()
-    with engine.begin() as conn:
-        _, _, document_automation = _load_document_automation(conn, notice_no)
-        for item in document_automation.get("uploads") or []:
-            if isinstance(item, dict) and item.get("id") == upload_id:
-                storage_path = str(item.get("storage_path") or "")
-                if not storage_path or not os.path.isfile(storage_path):
-                    raise HTTPException(status_code=410, detail="upload file missing on disk")
-                return FileResponse(
-                    storage_path,
-                    media_type=str(item.get("mime") or "application/octet-stream"),
-                    filename=str(item.get("name") or upload_id),
-                )
-        raise HTTPException(status_code=404, detail="upload not found")
+def download_document_upload(notice_no: str, upload_id: str, conn: Conn) -> FileResponse:
+    _, _, document_automation = _load_document_automation(conn, notice_no)
+    for item in document_automation.get("uploads") or []:
+        if isinstance(item, dict) and item.get("id") == upload_id:
+            storage_path = str(item.get("storage_path") or "")
+            if not storage_path or not os.path.isfile(storage_path):
+                raise HTTPException(status_code=410, detail="upload file missing on disk")
+            return FileResponse(
+                storage_path,
+                media_type=str(item.get("mime") or "application/octet-stream"),
+                filename=str(item.get("name") or upload_id),
+            )
+    raise HTTPException(status_code=404, detail="upload not found")

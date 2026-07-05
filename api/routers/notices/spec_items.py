@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select, update
 
-from api.db import require_engine
+from api.db import Conn, require_engine
 from api.models.notices import (
     NoticeSpecItem,
     SpecItemExtractResponse,
@@ -23,7 +23,11 @@ from api.services.spec_items import (
 from api.services.status import advance_status
 from api.tables import bid_pipeline, notice_spec_items
 
-from ._common import _list_spec_item_rows, _replace_technical_draft_from_spec_items
+from ._common import (
+    _list_spec_item_rows,
+    _replace_technical_draft_from_spec_items,
+    require_notice,
+)
 
 router = APIRouter()
 
@@ -60,11 +64,7 @@ def _spec_item_to_model(row: Any) -> NoticeSpecItem:
 def extract_spec_items(notice_no: str) -> SpecItemExtractResponse:
     engine = require_engine()
     with engine.begin() as conn:
-        row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-        ).mappings().one_or_none()
-        if not row:
-            raise HTTPException(status_code=404, detail="notice not found")
+        row = require_notice(conn, notice_no)
 
         existing_rows = {
             item["item_key"]: item
@@ -136,19 +136,13 @@ def extract_spec_items(notice_no: str) -> SpecItemExtractResponse:
 
 
 @router.get("/{notice_no}/spec-items", response_model=SpecItemListResponse)
-def list_spec_items(notice_no: str) -> SpecItemListResponse:
-    engine = require_engine()
-    with engine.begin() as conn:
-        exists = conn.execute(
-            select(bid_pipeline.c.notice_no).where(bid_pipeline.c.notice_no == notice_no)
-        ).scalar_one_or_none()
-        if not exists:
-            raise HTTPException(status_code=404, detail="notice not found")
-        rows = _list_spec_item_rows(conn, notice_no)
-        return SpecItemListResponse(
-            notice_no=notice_no,
-            items=[_spec_item_to_model(item) for item in rows],
-        )
+def list_spec_items(notice_no: str, conn: Conn) -> SpecItemListResponse:
+    require_notice(conn, notice_no, columns=[bid_pipeline.c.notice_no])
+    rows = _list_spec_item_rows(conn, notice_no)
+    return SpecItemListResponse(
+        notice_no=notice_no,
+        items=[_spec_item_to_model(item) for item in rows],
+    )
 
 
 @router.patch("/{notice_no}/spec-items/{item_id}", response_model=NoticeSpecItem)

@@ -97,6 +97,21 @@ def _notice_select_columns() -> list[Any]:
     ]
 
 
+def require_notice(conn, notice_no: str, *, columns: list[Any] | None = None) -> Any:
+    """bid_pipeline에서 공고 한 건 조회, 없으면 404.
+
+    서브모듈마다 반복되던 lookup + "notice not found" 패턴의 단일 출처.
+    columns 미지정 시 bid_pipeline 전체 컬럼.
+    """
+    stmt = select(*(columns if columns is not None else bid_pipeline.c)).where(
+        bid_pipeline.c.notice_no == notice_no
+    )
+    row = conn.execute(stmt).mappings().one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="notice not found")
+    return row
+
+
 def _to_float(v: Any) -> float | None:
     if v is None:
         return None
@@ -175,11 +190,7 @@ def _list_required_document_rows(conn, notice_no: str) -> list[dict[str, Any]]:
 
 
 def _load_document_automation(conn, notice_no: str) -> tuple[Any, dict, dict]:
-    row = conn.execute(
-        select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-    ).mappings().one_or_none()
-    if not row:
-        raise HTTPException(status_code=404, detail="notice not found")
+    row = require_notice(conn, notice_no)
     analysis = dict(row["analysis"] or {})
     document_automation = analysis.get("document_automation")
     if not isinstance(document_automation, dict):
@@ -287,11 +298,7 @@ def _parse_dt(value: Any) -> datetime | None:
 
 
 def _load_or_create_document_automation(conn, notice_no: str) -> tuple[Any, dict, dict]:
-    row = conn.execute(
-        select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
-    ).mappings().one_or_none()
-    if not row:
-        raise HTTPException(status_code=404, detail="notice not found")
+    row = require_notice(conn, notice_no)
     analysis = dict(row["analysis"] or {})
     document_automation = analysis.get("document_automation")
     if isinstance(document_automation, dict):

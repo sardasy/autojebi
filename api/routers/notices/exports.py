@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
-from api.db import require_engine
+from api.db import Conn, require_engine
 from api.models.notices import (
     ExportCreateRequest,
     ExportKind,
@@ -189,28 +189,24 @@ def _export_file_response(notice_no: str, meta: dict[str, Any]) -> FileResponse:
 
 
 @router.get("/{notice_no}/documents/exports/by-id/{export_id}/download")
-def download_document_export_by_id(notice_no: str, export_id: int) -> FileResponse:
-    engine = require_engine()
-    with engine.begin() as conn:
-        _load_document_automation(conn, notice_no)
-        meta = _lookup_export_by_id(conn, notice_no, export_id)
-        if not meta:
-            raise HTTPException(status_code=404, detail="export not found")
-        return _export_file_response(notice_no, meta)
+def download_document_export_by_id(notice_no: str, export_id: int, conn: Conn) -> FileResponse:
+    _load_document_automation(conn, notice_no)
+    meta = _lookup_export_by_id(conn, notice_no, export_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="export not found")
+    return _export_file_response(notice_no, meta)
 
 
 @router.get("/{notice_no}/documents/exports/{kind}/download")
-def download_document_export(notice_no: str, kind: ExportKind) -> FileResponse:
-    engine = require_engine()
-    with engine.begin() as conn:
-        _, _, document_automation = _load_document_automation(conn, notice_no)
-        draft_id = "proposal" if kind == "proposal_hwp" else "technical_compliance"
-        meta = _lookup_active_export(conn, notice_no, kind=kind, draft_id=draft_id)
-        if not meta:
-            meta = lookup_export(document_automation, kind=kind, draft_id=draft_id)
-        if not meta:
-            raise HTTPException(
-                status_code=404,
-                detail=f"export not generated yet — POST /notices/{notice_no}/documents/exports/{kind} first",
-            )
-        return _export_file_response(notice_no, meta)
+def download_document_export(notice_no: str, kind: ExportKind, conn: Conn) -> FileResponse:
+    _, _, document_automation = _load_document_automation(conn, notice_no)
+    draft_id = "proposal" if kind == "proposal_hwp" else "technical_compliance"
+    meta = _lookup_active_export(conn, notice_no, kind=kind, draft_id=draft_id)
+    if not meta:
+        meta = lookup_export(document_automation, kind=kind, draft_id=draft_id)
+    if not meta:
+        raise HTTPException(
+            status_code=404,
+            detail=f"export not generated yet — POST /notices/{notice_no}/documents/exports/{kind} first",
+        )
+    return _export_file_response(notice_no, meta)
