@@ -12,7 +12,6 @@ from api.models.notices import (
     HwpTemplateListResponse,
     HwpTemplateRecord,
 )
-from api.routers.notices import document_field_mappings, hwp_templates
 from api.services.hwp_agent_client import HwpAgentClient
 from api.services.uploads import (
     analyze_upload,
@@ -21,6 +20,7 @@ from api.services.uploads import (
     save_common_upload,
     save_stream,
 )
+from api.tables import document_field_mappings, hwp_templates
 
 router = APIRouter(
     prefix="/documents",

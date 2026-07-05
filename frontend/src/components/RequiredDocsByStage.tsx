@@ -9,6 +9,7 @@ import type {
   RequirementType,
   SubmitStage,
 } from "@/lib/api";
+import { DocSourceBadge } from "./DocSourceBadge";
 import { useToast } from "./Toast";
 
 const STAGE_LABEL: Record<SubmitStage, string> = {
@@ -77,6 +78,7 @@ function DocRow({ noticeNo, doc }: { noticeNo: string; doc: NoticeRequiredDocume
         <span className={`min-w-0 flex-1 truncate text-sm ${doc.checked ? "text-slate-500 line-through" : "text-slate-100"}`}>
           {doc.doc_name}
         </span>
+        <DocSourceBadge origin={{ kind: "notice", checked: doc.checked }} />
         <span className="shrink-0 text-xs text-slate-500">
           {Math.round((doc.confidence || 0) * 100)}%
         </span>

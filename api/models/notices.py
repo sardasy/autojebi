@@ -161,6 +161,16 @@ DocumentItemStatus = Literal[
     "not_applicable",
 ]
 
+# 서류의 역할 구분 — 제출서류/참고원문/자격증빙/가격/내부준비.
+# 입찰공고문·규격서 같은 '검토 원문'을 제출서류로 오인하지 않게 분리하는 용도.
+DocumentRole = Literal[
+    "submit_required",
+    "reference_only",
+    "qualification_evidence",
+    "price_document",
+    "internal_prep",
+]
+
 
 class DocumentChecklistItem(BaseModel):
     id: str
@@ -173,6 +183,7 @@ class DocumentChecklistItem(BaseModel):
     source: str = "rule"
     due_hint: str | None = None
     note: str | None = None
+    document_role: DocumentRole | None = None
 
 
 class DocumentAutomationResult(BaseModel):
@@ -347,15 +358,27 @@ class NoticeRequiredDocument(BaseModel):
     updated_at: Any | None = None
 
 
+class RequiredDocumentDiagnostics(BaseModel):
+    uploads: int = 0
+    files_extracted: int = 0
+    total_chars: int = 0
+    candidates: int = 0
+    classified: int = 0
+    # no_uploads | no_text | no_candidates | no_classification | ok
+    stopped_at: str = "ok"
+
+
 class RequiredDocumentListResponse(BaseModel):
     notice_no: str
     items: list[NoticeRequiredDocument]
+    diagnostics: RequiredDocumentDiagnostics | None = None
 
 
 class RequiredDocumentAnalyzeResponse(BaseModel):
     notice_no: str
     items: list[NoticeRequiredDocument]
     upserted: int
+    diagnostics: RequiredDocumentDiagnostics | None = None
     errors: list[dict[str, Any]] = Field(default_factory=list)
 
 

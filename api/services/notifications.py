@@ -39,7 +39,7 @@ class TeamsNotifier:
                     if 200 <= resp.status_code < 300:
                         return NotifyOutcome(delivered=True)
                     last_exc = RuntimeError(f"Teams webhook status={resp.status_code}")
-                except Exception as e:
+                except httpx.HTTPError as e:
                     last_exc = e
             return NotifyOutcome(delivered=False, detail=str(last_exc) if last_exc else "failed")
 

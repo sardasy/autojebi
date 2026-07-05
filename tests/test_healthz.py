@@ -57,7 +57,7 @@ def test_healthz_reports_db_missing_when_url_unset(client_no_db):
 
 
 def test_healthz_reports_db_error_on_connection_failure(monkeypatch):
-    """get_engine() 자체는 성공하나 .connect()가 raise할 때 error: 메시지."""
+    """get_engine() 자체는 성공하나 .connect()가 raise할 때 고정 "error" (원문 비노출)."""
     from unittest.mock import MagicMock
 
     bad_engine = MagicMock()
@@ -71,5 +71,6 @@ def test_healthz_reports_db_error_on_connection_failure(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is False
-    assert body["checks"]["db"].startswith("error:")
-    assert "connection refused" in body["checks"]["db"]
+    assert body["checks"]["db"] == "error"
+    # 예외 원문(접속 정보 등)이 응답으로 새어나가지 않아야 한다
+    assert "connection refused" not in body["checks"]["db"]

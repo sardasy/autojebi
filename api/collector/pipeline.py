@@ -24,7 +24,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from api.collector.g2b_client import G2BClient, RawBid
 from api.models.notices import NoticeSearchItem, NoticeSearchResponse
-from api.routers.notices import bid_pipeline
+from api.tables import bid_pipeline
 
 log = logging.getLogger(__name__)
 

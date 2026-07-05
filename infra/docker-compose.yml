@@ -39,10 +39,13 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      # qdrant 이미지에는 curl/wget이 없어 curl 기반 체크는 영구 unhealthy가 된다.
+      # bash 내장 /dev/tcp로 REST 포트 오픈 여부만 확인.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 10s
 
   api:
     build:

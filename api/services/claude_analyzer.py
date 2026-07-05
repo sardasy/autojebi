@@ -58,7 +58,7 @@ def safe_parse_json_object(text: str) -> dict[str, Any]:
         if isinstance(value, dict):
             return value
         return {}
-    except Exception:
+    except (TypeError, ValueError):
         return {}
 
 

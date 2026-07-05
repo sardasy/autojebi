@@ -9,8 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.config import settings
 from api.main import app
-from api.routers import notices
-from api.routers.notices import bid_pipeline, metadata, notice_errors
+from api.routers.notices import analysis, bid_pipeline, metadata, notice_errors
 from api.services.claude_analyzer import AnalyzeResult
 
 
@@ -65,7 +64,7 @@ def test_analyze_records_claude_schema_errors(client, sqlite_engine, monkeypatch
                 },
             )
 
-    monkeypatch.setattr(notices, "ClaudeAnalyzer", lambda: FakeAnalyzer())
+    monkeypatch.setattr(analysis, "ClaudeAnalyzer", lambda: FakeAnalyzer())
 
     response = client.post("/notices/ANALYZE-SCHEMA-1/analyze")
 

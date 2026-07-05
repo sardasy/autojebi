@@ -14,6 +14,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import Engine, select, update
 
 from api.config import settings
@@ -26,6 +27,7 @@ from api.models.notices import NoticeGradeResponse
 from api.services import qual_cache
 from api.services.slack_notifier import SlackNotifier
 from api.sku.matcher import match_skus
+from api.tables import bid_pipeline
 
 log = logging.getLogger(__name__)
 
@@ -112,8 +114,6 @@ def grade_notice_impl(
     status 변동 없음. grade는 analyzed 이후 어디서든 재호출 가능.
     HTTP 비종속 — 도메인 예외(GradeError 계열)만 던진다.
     """
-    from api.routers.notices import bid_pipeline  # 순환 의존 방지
-
     with engine.begin() as conn:
         row = conn.execute(
             select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
@@ -127,7 +127,8 @@ def grade_notice_impl(
         elec_dict = analysis_dict.get("elec_spec") or {}
         try:
             spec = ElecSpec.model_validate(elec_dict)
-        except Exception:
+        except (ValidationError, TypeError) as exc:
+            log.debug("[grade] elec_spec 파싱 실패 %s — 빈 ElecSpec 폴백: %s", notice_no, exc)
             spec = ElecSpec()
 
         raw_json = json.dumps(row["raw"]) if row["raw"] else None

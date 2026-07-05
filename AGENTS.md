@@ -90,7 +90,6 @@ autojebi/
 ├── infra/              # docker-compose.yml, Dockerfile
 ├── n8n/                # 워크플로우 JSON (M12 placeholder)
 ├── data/               # uploads/, exports/ (gitignore — 런타임 산출물)
-├── dashboard/ · tools/ # BI/CLI 보조
 └── .github/workflows/  # ci.yml (ruff+pytest, vitest+next build)
 ```
 

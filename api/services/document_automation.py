@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import anthropic
+from pydantic import ValidationError
 
 from api.config import settings
 from api.models.notices import DocumentChecklistItem
@@ -90,8 +91,10 @@ def _apply_uploads_to_checklist(
     if not upload_items:
         return checklist
     for item in checklist:
-        if item.id in upload_items and item.status in {"needed", "blocked"}:
+        # 업로드는 "이 서류를 우리가 준비한다"는 확인 → 후보(not_applicable)도 필수+ready로 승격.
+        if item.id in upload_items and item.status in {"needed", "blocked", "not_applicable"}:
             item.status = "ready"
+            item.required = True
             parts = [p for p in item.source.split("+") if p]
             if "upload" not in parts:
                 parts.append("upload")
@@ -140,13 +143,16 @@ def validate_pre_compose(
     document_automation: dict[str, Any],
     *,
     spec_rows: list[dict[str, Any]],
+    required_docs: list[dict[str, Any]] | None = None,
     values: dict[str, Any] | None = None,
     target_item_ids: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """HWP/제안서 생성 전 품질 게이트.
 
-    생성 대상 서류 자체는 이 단계에서 만들어질 수 있으므로 누락 차단 대상에서 제외한다.
-    낮은 confidence/검토 후보는 담당자가 볼 수 있는 경고로만 반환한다.
+    차단(error)의 권위는 **공고 원문 제출서류**(notice_required_documents)다:
+    requirement_type=required 이고 즉시 제출 단계(bid/proposal/price)인데 사람이 아직
+    확인(checked)하지 않은 항목이 있으면 차단한다. 공고 원문이 0건이면 차단하지 않는다.
+    회사 공통/추정 체크리스트 미준비는 경고로만 노출한다(생성 대상은 제외).
     """
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
@@ -161,6 +167,25 @@ def validate_pre_compose(
             }
         )
 
+    # 공고 원문 제출서류 미확인 → 차단
+    for rd in required_docs or []:
+        if not isinstance(rd, dict):
+            continue
+        if (
+            rd.get("requirement_type") == "required"
+            and rd.get("submit_stage") in {"bid", "proposal", "price"}
+            and not rd.get("checked")
+        ):
+            errors.append(
+                {
+                    "stage": "pre_compose.required_document",
+                    "severity": "error",
+                    "detail": f"공고 필수 제출서류 미확인: {rd.get('doc_name')}",
+                    "item_id": rd.get("id"),
+                }
+            )
+
+    # 회사 공통/추정 체크리스트 미준비 → 경고(차단 아님)
     checklist = document_automation.get("checklist") if isinstance(document_automation, dict) else None
     if isinstance(checklist, list):
         for item in checklist:
@@ -169,11 +194,11 @@ def validate_pre_compose(
             if item.get("id") in targets:
                 continue
             if item.get("required") is True and item.get("status") not in READY_STATUSES:
-                errors.append(
+                warnings.append(
                     {
-                        "stage": "pre_compose.required_document",
-                        "severity": "error",
-                        "detail": f"필수 서류 누락: {item.get('name') or item.get('id')}",
+                        "stage": "pre_compose.company_prep",
+                        "severity": "warning",
+                        "detail": f"회사 준비서류 미준비: {item.get('name') or item.get('id')}",
                         "item_id": item.get("id"),
                     }
                 )
@@ -298,24 +323,46 @@ def _rule_checklist(row: Any, attachments_text: str = "") -> list[DocumentCheckl
         + attachments_text.lower()
     )
 
+    # 생성 타깃(bid_form/technical_compliance)만 기본 required, 나머지는 "후보"(required=False).
+    # 회사 공통/추정형은 공고 원문(notice_required_documents)이 1순위 권위이므로 공고 필수처럼
+    # 보이지 않게 not_applicable 후보로 시작하고, 키워드/LLM이 확인하면 승격한다.
     items = [
-        _item("bid_form", "입찰참가신청서", "bid_form", assignee, "HWP autofill 대상 기본 양식입니다."),
-        _item("business_registration", "사업자등록증", "company_common", assignee, "회사 공통 제출서류입니다."),
-        _item("corporate_seal", "법인등기/인감 관련 서류", "company_common", assignee, "계약/입찰 공통 확인 서류입니다."),
-        _item("manufacturer_letter", "제조사 공급확약서", "qualification", assignee, "공급 가능성과 제조사 권한 확인이 필요할 수 있습니다."),
-        _item("catalog", "카탈로그/기술자료", "technical", assignee, "추천 SKU와 공고 사양을 검토해야 합니다."),
-        _item("technical_compliance", "규격대응표", "technical", assignee, "공고 요구사양과 제안 사양의 대응표 초안이 필요합니다."),
-        _item("performance_record", "납품실적증명", "qualification", assignee, "실적 제한 여부 확인이 필요합니다."),
-        _item("bid_bond", "보증보험/입찰보증 관련 서류", "price", assignee, "입찰보증금 또는 지급각서 조건을 확인해야 합니다."),
-        _item("license_certificate", "자격/면허 증빙", "qualification", assignee, "지역/면허/자격 제한을 확인해야 합니다."),
+        _item("bid_form", "입찰참가신청서", "bid_form", assignee,
+              "HWP autofill 대상 기본 양식입니다.",
+              required=True, status="needed", document_role="submit_required"),
+        _item("technical_compliance", "규격대응표", "technical", assignee,
+              "공고 요구사양과 제안 사양의 대응표 초안이 필요합니다.",
+              required=True, status="needed", document_role="submit_required"),
+        _item("business_registration", "사업자등록증", "company_common", assignee,
+              "회사 공통 준비서류(후보) — 공고 원문에서 요구가 확인되면 필수로 승격됩니다.",
+              required=False, status="not_applicable", document_role="internal_prep"),
+        _item("corporate_seal", "법인등기/인감 관련 서류", "company_common", assignee,
+              "회사 공통 준비서류(후보).",
+              required=False, status="not_applicable", document_role="internal_prep"),
+        _item("manufacturer_letter", "제조사 공급확약서", "qualification", assignee,
+              "공급 가능성·제조사 권한 확인 후보입니다.",
+              required=False, status="not_applicable", document_role="qualification_evidence"),
+        _item("catalog", "카탈로그/기술자료", "technical", assignee,
+              "추천 SKU·공고 사양 검토 후보입니다.",
+              required=False, status="not_applicable", document_role="qualification_evidence"),
+        _item("performance_record", "납품실적증명", "qualification", assignee,
+              "실적 제한 여부 확인 후보입니다.",
+              required=False, status="not_applicable", document_role="qualification_evidence"),
+        _item("bid_bond", "보증보험/입찰보증 관련 서류", "price", assignee,
+              "보증금·지급각서 조건 확인 후보입니다.",
+              required=False, status="not_applicable", document_role="price_document"),
+        _item("license_certificate", "자격/면허 증빙", "qualification", assignee,
+              "지역/면허/자격 제한 확인 후보입니다.",
+              required=False, status="not_applicable", document_role="qualification_evidence"),
     ]
 
-    if "실적" not in joined and "납품실적" not in joined:
-        _set_optional(items, "performance_record", "공고문에서 실적 조건 키워드가 명확하지 않습니다.")
-    if "보증" not in joined and "입찰보증" not in joined:
-        _set_optional(items, "bid_bond", "보증 조건 키워드가 명확하지 않습니다.")
-    if "면허" not in joined and "자격" not in joined and "license" not in joined:
-        _set_optional(items, "license_certificate", "자격 제한은 grade 단계 결과와 함께 재확인합니다.")
+    # 키워드가 본문/공고에 보이면 후보 → 필수로 승격(needed).
+    if "실적" in joined or "납품실적" in joined:
+        _promote(items, "performance_record", "공고문에 실적 조건 키워드가 있어 확인이 필요합니다.")
+    if "보증" in joined or "입찰보증" in joined:
+        _promote(items, "bid_bond", "공고문에 보증 조건 키워드가 있어 확인이 필요합니다.")
+    if "면허" in joined or "자격" in joined or "license" in joined:
+        _promote(items, "license_certificate", "공고문에 자격/면허 제한 키워드가 있어 확인이 필요합니다.")
 
     if analysis.get("bid_form"):
         for item in items:
@@ -325,24 +372,37 @@ def _rule_checklist(row: Any, attachments_text: str = "") -> list[DocumentCheckl
     return items
 
 
-def _item(item_id: str, name: str, item_type: str, owner: str, reason: str) -> DocumentChecklistItem:
+def _item(
+    item_id: str,
+    name: str,
+    item_type: str,
+    owner: str,
+    reason: str,
+    *,
+    required: bool = True,
+    status: str = "needed",
+    document_role: str | None = None,
+) -> DocumentChecklistItem:
     return DocumentChecklistItem(
         id=item_id,
         name=name,
         type=item_type,  # type: ignore[arg-type]
-        required=True,
-        status="needed",
+        required=required,
+        status=status,  # type: ignore[arg-type]
         owner=owner or None,
         reason=reason,
         source="rule",
+        document_role=document_role,  # type: ignore[arg-type]
     )
 
 
-def _set_optional(items: list[DocumentChecklistItem], item_id: str, reason: str) -> None:
+def _promote(items: list[DocumentChecklistItem], item_id: str, reason: str) -> None:
+    """후보(required=False/not_applicable)를 확인 필요(required=True/needed)로 승격."""
     for item in items:
         if item.id == item_id:
-            item.required = False
-            item.status = "not_applicable"
+            item.required = True
+            if item.status == "not_applicable":
+                item.status = "needed"
             item.reason = reason
             return
 
@@ -371,6 +431,10 @@ def _merge_checklist(
                 elif not new_required and target.status in {"needed", "blocked"}:
                     target.status = "not_applicable"
             target.reason = str(raw_item.get("reason") or target.reason or "")
+            role = raw_item.get("document_role")
+            # 생성 타깃(입찰참가신청서·규격대응표)은 항상 제출서류 — LLM이 참고원문으로 강등 못 하게 보호.
+            if role in _DOCUMENT_ROLES and item_id not in _PROTECTED_SUBMIT_IDS:
+                target.document_role = role
             target.source = _append_source(target.source, "llm")
             continue
         item_type = str(raw_item.get("type") or "other")
@@ -385,6 +449,7 @@ def _merge_checklist(
         }:
             item_type = "other"
         new_required = bool(raw_item.get("required", True))
+        role = raw_item.get("document_role")
         by_id[item_id] = DocumentChecklistItem(
             id=item_id,
             name=name,
@@ -395,8 +460,21 @@ def _merge_checklist(
             reason=str(raw_item.get("reason") or "LLM이 공고문에서 추출한 제출서류입니다."),
             source="llm",
             due_hint=str(raw_item.get("due_hint") or "") or None,
+            document_role=role if role in _DOCUMENT_ROLES else None,  # type: ignore[arg-type]
         )
     return list(by_id.values())
+
+
+_DOCUMENT_ROLES = {
+    "submit_required",
+    "reference_only",
+    "qualification_evidence",
+    "price_document",
+    "internal_prep",
+}
+
+# 생성 타깃 — 항상 submit_required(제출서류)로 유지하고 LLM 역할 강등에서 보호.
+_PROTECTED_SUBMIT_IDS = {"bid_form", "technical_compliance"}
 
 
 def _preserve_manual_updates(
@@ -547,7 +625,13 @@ def _llm_suggestions(row: Any, attachments_text: str = "") -> tuple[dict[str, An
             "실제로 필요한지(required true/false)를 결정하세요.\n"
             "출력은 JSON 객체 하나만 — 설명/마크다운/코드펜스 없이. "
             "JSON은 checklist, risks, drafts 키만 사용하세요. "
-            "checklist 각 항목은 id,name,type,required(true/false),reason를 포함하세요.\n"
+            "checklist 각 항목은 id,name,type,required(true/false),reason,document_role을 포함하세요.\n"
+            "document_role은 다음 중 하나로 분류하세요: "
+            "submit_required(실제 제출서류), reference_only(입찰공고문·규격서·평가준칙 등 검토용 원문 — 제출서류 아님), "
+            "qualification_evidence(자격·실적·인증 증빙), price_document(가격제안서·산출내역서 등 가격 관련), "
+            "internal_prep(사업자등록증·인감 등 회사 내부 공통 준비). "
+            "입찰공고문/규격입찰설명서/구매규격서처럼 '검토해야 할 원문 첨부'는 reference_only로, "
+            "required는 false로 두세요(제출 대상이 아님).\n"
             "다음 표준 id를 가능한 한 모두 평가하세요: bid_form, business_registration, "
             "corporate_seal, manufacturer_letter, catalog, technical_compliance, "
             "performance_record, bid_bond, license_certificate.\n"
@@ -597,7 +681,8 @@ def _refresh_validation(document_automation: dict[str, Any]) -> None:
     for item in document_automation.get("checklist") or []:
         try:
             parsed.append(DocumentChecklistItem.model_validate(item))
-        except Exception:  # noqa: BLE001
+        except (ValidationError, TypeError) as exc:
+            log.warning("[document_automation] checklist 항목 파싱 실패 — 건너뜀: %s", exc)
             continue
     missing = validate_checklist(parsed)
     document_automation["missing_required"] = [item.model_dump() for item in missing]

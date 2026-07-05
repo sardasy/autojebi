@@ -264,7 +264,9 @@ describe("DocumentPreparationPanel", () => {
     renderPanel(Panel, mkNotice({ documentAutomation: docs }));
 
     expect(screen.getByText(/compliance_excel_v2/)).toBeInTheDocument();
-    expect(screen.getByText(/검토 필요/)).toBeInTheDocument();
+    // 정규식 /검토 필요/는 하단 안내문구("검토 필요/검증 실패 파일도…")에도 걸리므로
+    // 배지의 전체 텍스트와 정확히 일치하는 문자열 매처로 좁힌다.
+    expect(screen.getByText("검토 필요")).toBeInTheDocument();
     expect(screen.getByText(/2KB/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "다운로드" })).toHaveAttribute(
       "href",

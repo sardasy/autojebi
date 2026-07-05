@@ -71,7 +71,7 @@ def extract_pdf_pages(pdf_bytes: bytes) -> list[dict[str, Any]]:
                         cells = [str(c).strip() for c in tr if c and str(c).strip()]
                         if cells:
                             parts.append(" | ".join(cells))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # 표 추출은 best-effort — 실패해도 본문은 유지
                 pass
             text = "\n".join(parts).strip()

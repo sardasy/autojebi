@@ -245,7 +245,7 @@ def test_hwp_compose_uses_spec_items_and_persists_exports(client, sqlite_engine,
             assert kwargs["headers"] == ["항목", "공고 요구사양", "제안/대응 사양", "단위", "확인상태", "근거"]
             return {"output_path": kwargs["output_path"], "sheet_count": 1}
 
-    monkeypatch.setattr("api.routers.notices._make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
     r = client.post("/notices/SPEC-1/documents/hwp-compose", json={})
     assert r.status_code == 200
     body = r.json()
@@ -289,7 +289,7 @@ def test_proposal_compose_persists_draft_and_export(client, sqlite_engine, monke
                 raw={},
             )
 
-    monkeypatch.setattr("api.routers.notices._make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
     r = client.post(
         "/notices/SPEC-1/documents/proposal-compose",
         json={"values_override": {"company_name": "테스트회사"}},
@@ -330,7 +330,7 @@ def test_proposal_compose_remaining_placeholders_marks_export_warning(
                 raw={},
             )
 
-    monkeypatch.setattr("api.routers.notices._make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
     r = client.post("/notices/SPEC-1/documents/proposal-compose", json={})
 
     assert r.status_code == 200, r.text
@@ -354,7 +354,7 @@ def test_proposal_compose_agent_failure_keeps_draft_without_export(
         def put_fields(self, **kwargs):
             raise HwpAgentError("agent missing /document/put-fields")
 
-    monkeypatch.setattr("api.routers.notices._make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
     r = client.post("/notices/SPEC-1/documents/proposal-compose", json={})
 
     assert r.status_code == 200, r.text

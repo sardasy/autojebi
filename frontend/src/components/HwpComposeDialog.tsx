@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import { actionComposeHwpDocuments, actionGetHwpAgentHealth } from "@/lib/actions";
+import { actionComposeHwpDocuments } from "@/lib/actions";
 import type { HwpComposeRequest, NoticeRecord, NoticeSpecItem } from "@/lib/api";
-import { readDocumentAutomation } from "@/lib/documentAutomation";
+import { useHwpAgentHealth } from "./hooks/useHwpAgentHealth";
+import { useHwpComposeForm } from "./hooks/useHwpComposeForm";
 import { Modal } from "./Modal";
 import { useToast } from "./Toast";
 
@@ -16,56 +17,10 @@ type Props = {
   specItems: NoticeSpecItem[];
 };
 
-function defaultValues(notice: NoticeRecord, specItems: NoticeSpecItem[]): Record<string, string> {
-  const docs = readDocumentAutomation(notice);
-  const draft = docs?.drafts?.bid_form_values;
-  const draftValues =
-    draft && typeof draft === "object" && !Array.isArray(draft)
-      ? (draft as Record<string, unknown>).values
-      : null;
-  const specs = specItems
-    .filter((item) => item.status !== "ignored")
-    .map((item) => {
-      const value = item.proposed_value || item.required_value || "";
-      const unit = item.unit ? ` ${item.unit}` : "";
-      return value ? `${item.label}: ${value}${unit}` : "";
-    })
-    .filter(Boolean)
-    .join("; ");
-  return {
-    company_name: "미림씨스콘",
-    business_number: "",
-    ceo_name: "",
-    address: "",
-    ...(draftValues && typeof draftValues === "object" && !Array.isArray(draftValues)
-      ? Object.fromEntries(
-          Object.entries(draftValues as Record<string, unknown>).map(([key, value]) => [
-            key,
-            String(value ?? ""),
-          ]),
-        )
-      : {}),
-    spec_summary: specs,
-    technical_compliance_summary: specs,
-  };
-}
-
-function isUnsafePath(value: string): boolean {
-  return !value || value.includes("..") || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
-}
-
 export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
-  const [templatePath, setTemplatePath] = useState("templates/입찰참가신청서_양식.hwp");
-  const [outputPath, setOutputPath] = useState(`output/autofilled_${notice.notice_no}.hwp`);
-  const [includeBidForm, setIncludeBidForm] = useState(true);
-  const [includeCompliance, setIncludeCompliance] = useState(true);
+  const { form, patch, validation } = useHwpComposeForm(notice, specItems);
   const [visible, setVisible] = useState(false);
-  const [valuesText, setValuesText] = useState(
-    JSON.stringify(defaultValues(notice, specItems), null, 2),
-  );
-  const [agentStatus, setAgentStatus] = useState<"checking" | "ok" | "unavailable">(
-    "checking",
-  );
+  const agentStatus = useHwpAgentHealth(open);
   const [lastErrors, setLastErrors] = useState<{ stage?: string; detail?: string }[]>([]);
   const [requiredMissing, setRequiredMissing] = useState<string[]>([]);
   const [remainingFields, setRemainingFields] = useState<string[]>([]);
@@ -73,56 +28,16 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
   const toast = useToast();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    setAgentStatus("checking");
-    actionGetHwpAgentHealth()
-      .then((result) => {
-        if (alive) setAgentStatus(result.ok ? "ok" : "unavailable");
-      })
-      .catch(() => {
-        if (alive) setAgentStatus("unavailable");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [open]);
-
-  const validation = useMemo(() => {
-    const errors: string[] = [];
-    if (includeBidForm && isUnsafePath(templatePath)) errors.push("template_path 확인 필요");
-    if (includeBidForm && isUnsafePath(outputPath)) errors.push("output_path 확인 필요");
-    let values: Record<string, string> = {};
-    try {
-      const parsed = valuesText.trim() ? JSON.parse(valuesText) : {};
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        errors.push("values는 JSON 객체여야 합니다");
-      } else {
-        values = Object.fromEntries(
-          Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [
-            key,
-            String(value ?? ""),
-          ]),
-        );
-      }
-    } catch (e) {
-      errors.push(`JSON 파싱 실패: ${(e as Error).message}`);
-    }
-    if (!includeBidForm && !includeCompliance) errors.push("작성할 HWP 문서를 선택하세요");
-    return { errors, values };
-  }, [includeBidForm, includeCompliance, outputPath, templatePath, valuesText]);
-
   const submit = () => {
     if (validation.errors.length > 0) {
       toast.push("error", validation.errors.join("\n"));
       return;
     }
     const payload: HwpComposeRequest = {
-      bid_form_template_path: templatePath,
-      bid_form_output_path: outputPath,
-      include_bid_form: includeBidForm,
-      include_technical_compliance: includeCompliance,
+      bid_form_template_path: form.templatePath,
+      bid_form_output_path: form.outputPath,
+      include_bid_form: form.includeBidForm,
+      include_technical_compliance: form.includeCompliance,
       visible,
       values: validation.values,
     };
@@ -185,16 +100,16 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
           <label className="inline-flex items-center gap-2">
             <input
               type="checkbox"
-              checked={includeBidForm}
-              onChange={(e) => setIncludeBidForm(e.target.checked)}
+              checked={form.includeBidForm}
+              onChange={(e) => patch({ includeBidForm: e.target.checked })}
             />
             입찰참가신청서
           </label>
           <label className="inline-flex items-center gap-2">
             <input
               type="checkbox"
-              checked={includeCompliance}
-              onChange={(e) => setIncludeCompliance(e.target.checked)}
+              checked={form.includeCompliance}
+              onChange={(e) => patch({ includeCompliance: e.target.checked })}
             />
             규격대응표
           </label>
@@ -208,16 +123,16 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
           <label className="block text-xs text-slate-400">
             template_path
             <input
-              value={templatePath}
-              onChange={(e) => setTemplatePath(e.target.value)}
+              value={form.templatePath}
+              onChange={(e) => patch({ templatePath: e.target.value })}
               className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm"
             />
           </label>
           <label className="block text-xs text-slate-400">
             output_path
             <input
-              value={outputPath}
-              onChange={(e) => setOutputPath(e.target.value)}
+              value={form.outputPath}
+              onChange={(e) => patch({ outputPath: e.target.value })}
               className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm"
             />
           </label>
@@ -226,8 +141,8 @@ export function HwpComposeDialog({ open, onClose, notice, specItems }: Props) {
         <label className="block text-xs text-slate-400">
           values
           <textarea
-            value={valuesText}
-            onChange={(e) => setValuesText(e.target.value)}
+            value={form.valuesText}
+            onChange={(e) => patch({ valuesText: e.target.value })}
             rows={9}
             spellCheck={false}
             className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs"

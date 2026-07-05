@@ -1,0 +1,22 @@
+# 일회성 검증(ephemeral verification)용 오버라이드.
+# 기존 'infra' 프로젝트(0011 데이터 볼륨)를 건드리지 않고, 별도 프로젝트명
+# (-p autojebiev)으로 새 postgres 볼륨(autojebiev_postgres_data)에 M14 스택을 띄운다.
+# container_name 충돌을 피하려 ev-prefix로 바꾸고, 호스트 포트도 분리한다.
+services:
+  db:
+    container_name: autojebiev-postgres
+    ports: !override
+      - "5435:5432"
+
+  api:
+    container_name: autojebiev-api
+    ports: !override
+      - "8002:8000"
+
+  frontend:
+    container_name: autojebiev-frontend
+    ports: !override
+      - "3002:3000"
+
+  e2e:
+    container_name: autojebiev-e2e

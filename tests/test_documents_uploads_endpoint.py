@@ -197,7 +197,7 @@ def test_hwp_agent_failure_records_error_but_upload_succeeds(client, sqlite_engi
 
             raise HwpAgentError("agent down")
 
-    monkeypatch.setattr("api.routers.notices._make_hwp_agent_client", lambda: FailingClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FailingClient())
     r = client.post(
         "/notices/DOC-1/documents/uploads",
         files={"file": ("form.hwp", b"HWP", "application/x-hwp")},

@@ -31,7 +31,7 @@ from sqlalchemy import (
     func,
 )
 
-from api.routers.notices import metadata  # 단일 MetaData 공유 (bid_pipeline 포함)
+from api.tables import metadata  # 단일 MetaData 공유 (bid_pipeline 포함)
 
 # 1. 핵심 어휘 — 개념 정의
 ontology_concepts = Table(

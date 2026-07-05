@@ -66,8 +66,10 @@ def create_app() -> FastAPI:
             status["ok"] = False
             status["checks"]["db"] = "DATABASE_URL not set"
         except Exception as exc:  # noqa: BLE001
+            # 예외 원문은 응답에 노출하지 않는다 (DB 접속 정보 등 유출 위험) — 로그로만.
+            logging.getLogger(__name__).warning("healthz db check failed", exc_info=exc)
             status["ok"] = False
-            status["checks"]["db"] = f"error: {str(exc)[:200]}"
+            status["checks"]["db"] = "error"
         return status
 
     return app

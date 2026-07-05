@@ -149,7 +149,7 @@ def test_hwp_context_templates_and_review_api(client, sqlite_engine, monkeypatch
                 raw={"queued": True},
             )
 
-    monkeypatch.setattr("api.routers.notices._make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
 
     templates = client.get("/documents/hwp-templates")
     assert templates.status_code == 200

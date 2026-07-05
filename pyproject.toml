@@ -32,6 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "pytest-cov>=5.0",
   "ruff>=0.4",
   "black>=24.0",
 ]
@@ -45,7 +46,9 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+# BLE: 광범위 except Exception 금지 — 의도적 경계(스케줄러 루프·외부 API·웹훅)는
+#      로깅/구조화된 폴백을 갖추고 `# noqa: BLE001`로 개별 허용한다.
+select = ["E", "F", "I", "B", "UP", "BLE"]
 # E501: 줄 길이는 black이 다룬다.
 # B008: FastAPI는 Body(...)/File(...)/Depends(...)를 default arg로 쓰는 게 표준 패턴.
 # B904: 기존 endpoint들이 HTTPException(...)을 from 절 없이 던지는 패턴을 일관되게 유지.
