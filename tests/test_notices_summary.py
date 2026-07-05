@@ -7,8 +7,7 @@ from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 from sqlalchemy import insert
 
-from api.routers import notices
-from api.routers.notices import bid_pipeline
+from api.routers.notices import bid_pipeline, crud
 
 
 def _seed_notice(
@@ -63,7 +62,7 @@ def test_notice_summary_counts_work_queue_buckets(client, sqlite_engine, monkeyp
             fixed = datetime(2026, 6, 21, 1, 0, tzinfo=UTC)
             return fixed if tz is None else fixed.astimezone(tz)
 
-    monkeypatch.setattr(notices, "datetime", FixedDateTime)
+    monkeypatch.setattr(crud, "datetime", FixedDateTime)
     today_kst = FixedDateTime.now(tz=ZoneInfo("Asia/Seoul")).date()
     today_close = datetime.combine(today_kst, time(15, 0), tzinfo=ZoneInfo("Asia/Seoul"))
     now = today_close.astimezone(UTC)

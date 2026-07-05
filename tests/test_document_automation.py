@@ -9,7 +9,6 @@ from sqlalchemy.pool import StaticPool
 
 from api.config import settings
 from api.main import app
-from api.routers import notices
 from api.routers.notices import bid_pipeline, metadata
 from api.services.document_automation import (
     analyze_document_requirements,
@@ -243,7 +242,7 @@ def test_autofill_links_bid_form_draft(client, sqlite_engine, monkeypatch):
         def autofill_bid_form(self, **kwargs):
             return FakeOutcome()
 
-    monkeypatch.setattr(notices, "_make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
 
     r = client.post(
         "/notices/DOC-1/autofill-form",

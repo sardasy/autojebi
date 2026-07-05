@@ -15,7 +15,6 @@ from sqlalchemy.pool import StaticPool
 
 from api.config import settings
 from api.main import app
-from api.routers import notices as notices_router
 from api.routers.notices import bid_pipeline, metadata, notice_exports, notice_spec_items
 from api.services.hwp_agent_client import HwpAgentError
 
@@ -159,7 +158,7 @@ def test_export_hwp_returns_502_when_agent_errors(client, sqlite_engine, monkeyp
         def generate_compliance_table(self, **kw):
             raise HwpAgentError("agent missing /document/insert-table")
 
-    monkeypatch.setattr(notices_router, "_make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
     r = client.post("/notices/DOC-1/documents/exports/hwp")
     assert r.status_code == 502
     assert "hwp agent failed" in r.json()["detail"]
@@ -175,7 +174,7 @@ def test_export_hwp_uses_agent_output_path_and_persists(client, sqlite_engine, m
         def generate_compliance_table(self, **kw):
             return {"output_path": str(final_path), "sheet_count": 1}
 
-    monkeypatch.setattr(notices_router, "_make_hwp_agent_client", lambda: FakeClient())
+    monkeypatch.setattr("api.routers.notices._common._make_hwp_agent_client", lambda: FakeClient())
     r = client.post("/notices/DOC-1/documents/exports/hwp")
     assert r.status_code == 200, r.text
     assert r.json()["export"]["output_path"] == str(final_path)

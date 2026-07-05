@@ -9,8 +9,12 @@ from sqlalchemy.pool import StaticPool
 
 from api.config import settings
 from api.main import app
-from api.routers import notices
-from api.routers.notices import bid_pipeline, metadata, notice_required_documents
+from api.routers.notices import (
+    bid_pipeline,
+    metadata,
+    notice_required_documents,
+    required_docs,
+)
 from api.services.required_documents import find_candidate_segments
 
 
@@ -121,7 +125,7 @@ def test_find_candidate_segments_picks_keyword_lines():
 
 def test_analyze_upserts_and_lists(client, sqlite_engine, monkeypatch):
     _seed(sqlite_engine)
-    monkeypatch.setattr(notices, "classify_required_documents", lambda candidates: _CANNED)
+    monkeypatch.setattr(required_docs, "classify_required_documents", lambda candidates: _CANNED)
 
     r = client.post("/notices/REQ-1/required-documents/analyze")
     assert r.status_code == 200, r.text
@@ -144,7 +148,7 @@ def test_analyze_upserts_and_lists(client, sqlite_engine, monkeypatch):
 
 def test_patch_check_persists_and_reanalyze_preserves(client, sqlite_engine, monkeypatch):
     _seed(sqlite_engine)
-    monkeypatch.setattr(notices, "classify_required_documents", lambda candidates: _CANNED)
+    monkeypatch.setattr(required_docs, "classify_required_documents", lambda candidates: _CANNED)
     client.post("/notices/REQ-1/required-documents/analyze")
 
     with sqlite_engine.begin() as conn:
@@ -165,7 +169,7 @@ def test_patch_check_persists_and_reanalyze_preserves(client, sqlite_engine, mon
 
     # 재분석해도 사람이 만진 checked/owner는 보존, 추출 필드는 갱신
     monkeypatch.setattr(
-        notices,
+        required_docs,
         "classify_required_documents",
         lambda candidates: [{**_CANNED[0], "confidence": 0.99}],
     )
@@ -201,7 +205,7 @@ def test_diagnostics_reports_stop_point(client, sqlite_engine, monkeypatch):
                 updated_at=now,
             )
         )
-    monkeypatch.setattr(notices, "classify_required_documents", lambda c: [])
+    monkeypatch.setattr(required_docs, "classify_required_documents", lambda c: [])
     r = client.post("/notices/REQ-EMPTY/required-documents/analyze")
     assert r.status_code == 200, r.text
     diag = r.json()["diagnostics"]
