@@ -26,6 +26,7 @@ from api.models.notices import NoticeGradeResponse
 from api.services import qual_cache
 from api.services.slack_notifier import SlackNotifier
 from api.sku.matcher import match_skus
+from api.tables import bid_pipeline
 
 log = logging.getLogger(__name__)
 
@@ -112,8 +113,6 @@ def grade_notice_impl(
     status 변동 없음. grade는 analyzed 이후 어디서든 재호출 가능.
     HTTP 비종속 — 도메인 예외(GradeError 계열)만 던진다.
     """
-    from api.routers.notices import bid_pipeline  # 순환 의존 방지
-
     with engine.begin() as conn:
         row = conn.execute(
             select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)

@@ -16,7 +16,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from api.config import settings
-from api.routers.notices import metadata as target_metadata
+from api.tables import metadata as target_metadata
 
 config = context.config
 if config.config_file_name is not None:
