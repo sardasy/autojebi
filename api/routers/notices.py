@@ -38,6 +38,7 @@ from sqlalchemy.dialects.postgresql import insert
 from api.auth import verify_api_key
 from api.config import settings
 from api.db import require_engine
+from api.llm.extractor import extract_pdf_pages
 from api.models.notices import (
     AttachmentFetchFileResult,
     AttachmentFetchResponse,
@@ -71,10 +72,10 @@ from api.models.notices import (
     NoticeGradeResponse,
     NoticeListResponse,
     NoticeRecord,
+    NoticeRequiredDocument,
     NoticeSearchRequest,
     NoticeSearchResponse,
     NoticeSpecItem,
-    NoticeRequiredDocument,
     NoticeSummary,
     NoticeUpsertRequest,
     NotifyRequest,
@@ -93,12 +94,7 @@ from api.models.notices import (
     UploadListResponse,
     UploadResponse,
 )
-from api.llm.extractor import extract_pdf_pages
 from api.services.claude_analyzer import ClaudeAnalyzer
-from api.services.required_documents import (
-    classify_required_documents,
-    find_candidate_segments,
-)
 from api.services.document_automation import (
     analyze_document_requirements,
     attach_bid_form_result,
@@ -129,6 +125,10 @@ from api.services.proposals import (
     build_proposal_export,
     build_proposal_payload,
     proposal_output_path,
+)
+from api.services.required_documents import (
+    classify_required_documents,
+    find_candidate_segments,
 )
 from api.services.routing import assignee_for_category
 from api.services.spec_items import (
