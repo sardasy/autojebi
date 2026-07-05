@@ -44,6 +44,13 @@ router = APIRouter(
     dependencies=[Depends(verify_api_key)],
 )
 
+# 매칭 순서 불변식: 리터럴 경로가 같은 모양의 파라미터 경로보다 먼저 등록돼야 한다.
+# 충돌 가능한 쌍은 둘뿐 — 둘 다 "같은 파일 내 선언 순서"로 보장된다:
+#   (a) GET /summary, GET ""(목록)  vs  GET /{notice_no}  → crud.py에서 /{notice_no}를 마지막에 선언
+#   (b) exports/by-id/{id}/download  vs  exports/{kind}/download → exports.py 선언 순서
+# crud(캐치올 GET /{notice_no} 보유)를 마지막에 include해 다른 모듈의 리터럴 경로가 항상 앞선다.
+# 주의: include 후 router.routes를 정렬/조작하지 말 것 — FastAPI 0.139+는 include_router가
+# 라우트를 즉시 평탄화하지 않고 _IncludedRouter 플레이스홀더를 넣으므로 import 시점에 깨진다.
 for _sub in (
     intake,
     analysis,
@@ -58,62 +65,3 @@ for _sub in (
 ):
     router.include_router(_sub.router, prefix="/notices")
 
-# 분해 전 단일 파일의 데코레이터 등장 순서 = FastAPI 등록 순서 = 경로 매칭 순서.
-# 서브모듈 include만으로는 원본의 교차 순서(예: crud의 upsert는 앞, summary/목록은 뒤)를
-# 재현할 수 없어, include 후 원본 등록 순서로 재정렬한다.
-# 리터럴 경로(/summary, /exports/by-id/...)가 파라미터 경로(/{notice_no}, {kind})보다
-# 먼저 오는 원본 불변식이 그대로 유지된다.
-_ORIGINAL_ROUTE_ORDER: dict[tuple[str, str], int] = {
-    (path, method): index
-    for index, (path, method) in enumerate(
-        [
-            ("/notices/extract-from-mail", "POST"),
-            ("/notices/search", "POST"),
-            ("/notices/upsert", "POST"),
-            ("/notices/e2e/cleanup", "POST"),
-            ("/notices/{notice_no}/analyze", "POST"),
-            ("/notices/{notice_no}/notify", "POST"),
-            ("/notices/{notice_no}/autofill-form", "POST"),
-            ("/notices/{notice_no}/documents/analyze", "POST"),
-            ("/notices/{notice_no}/spec-items/extract", "POST"),
-            ("/notices/{notice_no}/spec-items", "GET"),
-            ("/notices/{notice_no}/spec-items/{item_id}", "PATCH"),
-            ("/notices/{notice_no}/required-documents/analyze", "POST"),
-            ("/notices/{notice_no}/required-documents", "GET"),
-            ("/notices/{notice_no}/required-documents/{doc_id}", "PATCH"),
-            ("/notices/{notice_no}/documents/checklist/{item_id}", "PATCH"),
-            ("/notices/{notice_no}/documents/validate", "POST"),
-            ("/notices/{notice_no}/documents/hwp-context", "POST"),
-            ("/notices/{notice_no}/documents/hwp-put-fields", "POST"),
-            ("/notices/{notice_no}/documents/hwp-jobs/{job_id}/review", "POST"),
-            ("/notices/{notice_no}/attachments/fetch", "POST"),
-            ("/notices/{notice_no}/documents/uploads", "POST"),
-            ("/notices/{notice_no}/documents/import-common/{upload_id}", "POST"),
-            ("/notices/{notice_no}/documents/uploads", "GET"),
-            ("/notices/{notice_no}/documents/uploads/{upload_id}", "DELETE"),
-            ("/notices/{notice_no}/documents/uploads/{upload_id}/download", "GET"),
-            ("/notices/{notice_no}/documents/exports/{kind}", "POST"),
-            ("/notices/{notice_no}/documents/hwp-compose", "POST"),
-            ("/notices/{notice_no}/documents/proposal-compose", "POST"),
-            ("/notices/{notice_no}/documents/exports/by-id/{export_id}/download", "GET"),
-            ("/notices/{notice_no}/documents/exports/{kind}/download", "GET"),
-            ("/notices/{notice_no}/grade", "POST"),
-            ("/notices/summary", "GET"),
-            ("/notices/{notice_no}", "GET"),
-            ("/notices", "GET"),
-        ]
-    )
-}
-
-def _route_order(route) -> int:
-    key = (route.path, sorted(route.methods)[0])
-    try:
-        return _ORIGINAL_ROUTE_ORDER[key]
-    except KeyError:
-        raise RuntimeError(
-            f"새 라우트 {key}가 _ORIGINAL_ROUTE_ORDER에 없습니다. "
-            "리터럴 경로가 /{notice_no}보다 먼저 매칭되도록 순서를 정해 테이블에 추가하세요."
-        ) from None
-
-
-router.routes.sort(key=_route_order)
