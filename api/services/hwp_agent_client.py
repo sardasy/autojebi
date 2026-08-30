@@ -103,7 +103,7 @@ class HwpAgentClient:
                     last_exc = exc
                     # 연결 자체가 안 되는 경우(에이전트 미실행 등)는 별도 분류 →
                     # 호출자에게 "[Errno 101] Network is unreachable" 대신 actionable 메시지 제공.
-                    connect_failed = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
+                    connect_failed = isinstance(exc, httpx.ConnectError | httpx.ConnectTimeout)
                     continue
                 if 200 <= resp.status_code < 300:
                     try:

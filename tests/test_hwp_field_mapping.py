@@ -177,3 +177,89 @@ def test_hwp_context_templates_and_review_api(client, sqlite_engine, monkeypatch
             select(hwp_generation_jobs).where(hwp_generation_jobs.c.id == job_id)
         ).mappings().one()
     assert job["review_status"] == "approved"
+
+
+def test_hwp_template_admin_api_upserts_updates_and_soft_disables(client):
+    created = client.post(
+        "/documents/hwp-templates",
+        json={
+            "template_key": "admin_bid_form",
+            "kind": "bid_form",
+            "name": "관리자 입찰양식",
+            "template_path": "templates/admin_bid.hwp",
+            "template_version": "v1",
+            "active": True,
+        },
+    )
+    assert created.status_code == 200
+    template = created.json()
+    assert template["template_key"] == "admin_bid_form"
+
+    updated = client.patch(
+        f"/documents/hwp-templates/{template['id']}",
+        json={"name": "관리자 입찰양식 v2", "template_version": "v2"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "관리자 입찰양식 v2"
+
+    mapped = client.post(
+        f"/documents/hwp-templates/{template['id']}/mappings",
+        json={
+            "hwp_field_name": "company_name",
+            "context_path": "company.company_name",
+            "required": True,
+            "transform": "strip",
+            "sort_order": 10,
+        },
+    )
+    assert mapped.status_code == 200
+    mappings = mapped.json()["mappings"]
+    assert mappings[0]["hwp_field_name"] == "company_name"
+    assert mappings[0]["required"] is True
+    mapping_id = mappings[0]["id"]
+
+    remapped = client.post(
+        f"/documents/hwp-templates/{template['id']}/mappings",
+        json={
+            "hwp_field_name": "company_name",
+            "context_path": "company.address",
+            "required": False,
+            "transform": "truncate_1000",
+            "sort_order": 20,
+        },
+    )
+    assert remapped.status_code == 200
+    assert remapped.json()["mappings"][0]["context_path"] == "company.address"
+    assert remapped.json()["mappings"][0]["id"] == mapping_id
+
+    disabled = client.patch(
+        f"/documents/hwp-templates/{template['id']}/mappings/{mapping_id}",
+        json={"active": False},
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["mappings"] == []
+
+
+def test_hwp_template_admin_api_rejects_unknown_transform(client):
+    created = client.post(
+        "/documents/hwp-templates",
+        json={
+            "template_key": "admin_proposal",
+            "kind": "proposal",
+            "name": "관리자 제안서",
+            "template_path": "templates/proposal.hwp",
+            "active": True,
+        },
+    )
+    assert created.status_code == 200
+    template_id = created.json()["id"]
+
+    invalid = client.post(
+        f"/documents/hwp-templates/{template_id}/mappings",
+        json={
+            "hwp_field_name": "bad",
+            "context_path": "proposal.summary",
+            "transform": "eval",
+        },
+    )
+    assert invalid.status_code == 422

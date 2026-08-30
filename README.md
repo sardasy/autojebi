@@ -62,7 +62,7 @@ autojebi는 OS-무관한 **중앙 파이프라인 서버**, milim-hwp-agent는 *
 | M11 | 서류 자동화 v2 | 파일 업로드/삭제/다운로드, Excel·HWP 내보내기 (`POST /notices/{notice_no}/documents/uploads`, `.../exports/{kind}`) |
 | M13 | G2B 라이브 검색 | `POST /notices/search` 페이지네이션(`page`/`page_size`/`total_pages`), 등록 전 `already_exists` 확인, 5엔드포인트×30일윈도우 병렬 페치 |
 | M14 (Stage 1) | 온톨로지 기반 | `0003_ontology` 마이그레이션 8 테이블 + `GET /ontology/*` 읽기 API + 통제어휘 시드(`python -m api.ontology seed`) |
-| M14 (Stage 2) | HWP 제안서 자동 생성 | 공고 메타·규격 항목·서류 분석·SKU 추천을 모아 `POST /proposal/compose`로 HWP 제안서 작성 |
+| M14 (Stage 2) | HWP 제안서 자동 생성 | 공고 메타·규격 항목·서류 분석·SKU 추천을 모아 필드 매핑 기반 `POST /document/put-fields`로 HWP 제안서 작성 |
 
 ---
 
@@ -120,6 +120,12 @@ cd frontend && npm test    # Vitest 단위
 # Playwright e2e — docker 풀스택 선행 + override 표준 포트(:3001)
 cd frontend && E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:8001 \
   E2E_API_KEY="${API_KEY:-}" npm run e2e
+
+# Windows 로컬에서 기존 3000/8001 프로그램을 유지한 채 E2E만 분리 실행
+# 1) 새 Postgres DB에 alembic upgrade head
+# 2) python -m api.ontology seed && python -m api.hwp_fields seed
+# 3) API=:8002, frontend=:3002로 실행
+# 4) cd frontend; $env:E2E_BASE_URL='http://127.0.0.1:3002'; $env:E2E_API_BASE='http://127.0.0.1:8002'; npm run e2e
 
 # 운영 근접 live smoke — 실제 G2B/Claude/Qdrant/HWP agent 준비 시에만 opt-in
 cd frontend && E2E_OPS_LIVE=1 E2E_BASE_URL=http://localhost:3001 E2E_API_BASE=http://localhost:8001 \
@@ -348,6 +354,9 @@ form_filled ──────────────────────�
 - **SKU 인제스트** ([components/SkuIngestButton.tsx](frontend/src/components/SkuIngestButton.tsx)) → `POST /skus/ingest`
   - 입력: `source` (선택, 비우면 [data/abb_catalog_sample.json](data/) 사용)
   - 응답: `{ ingested, collection }`
+- **HWP 필드 매핑 관리** ([components/HwpMappingAdmin.tsx](frontend/src/components/HwpMappingAdmin.tsx)) → `/documents/hwp-templates`
+  - 템플릿과 필드 매핑을 생성/수정하고, 삭제 대신 `active=false`로 비활성화
+  - transform은 whitelist만 선택 가능하며 자유 코드 입력은 없음
 
 > `/admin`은 별도 인증/권한이 없다 — 내부 네트워크 전용으로 가정. 외부 노출 금지.
 
@@ -495,7 +504,7 @@ curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/uploads \
 서버가 저장한 파일을 그대로 스트리밍. 프론트는 `/api/notices/{notice_no}/documents/uploads/{upload_id}/download` Next.js route로 프록시 호출.
 
 ### `POST /notices/{notice_no}/documents/exports/{kind}` — Excel/HWP 생성 (M11)
-`kind` ∈ {`excel`, `hwp`}. `proposal_hwp`는 `POST /notices/{notice_no}/documents/proposal-compose`로 생성한다.
+`kind` ∈ {`excel`, `hwp`}. `bid_form_hwp`와 `proposal_hwp`는 필드 매핑 기반 `POST /notices/{notice_no}/documents/hwp-put-fields` 또는 `proposal-compose`로 생성한다.
 ```bash
 curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/exports/excel \
      -H "X-API-Key: $API_KEY"
@@ -511,19 +520,34 @@ curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/exports/e
 응답: `{ "notice_no", "export", "proposal", "remaining_placeholders", "errors" }`.
 - 입력 소스는 공고 정규 컬럼/raw, `analysis.document_automation`, `notice_spec_items`, grade/SKU 결과다.
 - `notice_spec_items`가 없으면 409(`규격 항목 추출 필요`).
-- milim-hwp-agent의 `POST /proposal/compose`에 `{ template_path, output_path, values, sections, tables, visible }`를 위임한다.
+- HWP 필드 매핑이 seed되어 있으면 `template_key='proposal'`의 `document_field_mappings`를 통해 Windows HWP Worker `POST /document/put-fields`에 `{ template_path, output_path, values, visible }`를 위임한다.
 - agent 실패 시 제안서 draft와 `errors[]`는 저장하고, HWP 파일이 생성된 경우에만 `proposal_hwp` export를 기록한다. `remaining_placeholders`가 남으면 export는 저장하되 `validation_status=warning`으로 표시한다.
 
 ### HWP 필드 매핑 기반 자동작성 (M14+)
 `python -m api.hwp_fields seed`로 `company_profiles`, `hwp_templates`, `document_field_mappings` 기본값을 upsert한다. HWP 양식에는 `document_field_mappings.hwp_field_name`과 같은 필드명을 미리 삽입한다.
 
 - `GET /documents/hwp-templates` — active 템플릿과 필드 매핑 조회.
+- `POST /documents/hwp-templates` / `PATCH /documents/hwp-templates/{template_id}` — 관리자용 템플릿 upsert/수정/soft-disable.
+- `POST /documents/hwp-templates/{template_id}/mappings` / `PATCH /documents/hwp-templates/{template_id}/mappings/{mapping_id}` — 관리자용 필드 매핑 upsert/수정/soft-disable.
 - `POST /notices/{notice_no}/documents/hwp-context` — `template_key` 기준 Context JSON, 실제 입력값, required 누락 미리보기.
 - `POST /notices/{notice_no}/documents/hwp-put-fields` — Windows HWP Worker `/document/put-fields`에 `{ template_path, output_path, values, visible }`를 위임해 `PutFieldText` 입력.
 - `POST /notices/{notice_no}/documents/hwp-jobs/{job_id}/review` — 사람 검토 결과(`pending`/`approved`/`rejected`) 저장.
 - transform은 whitelist(`none`, `date_yyyy_mm_dd`, `number_comma`, `business_number_dash`, `strip`, `truncate_1000`)만 허용한다.
 - 생성 로그는 `hwp_generation_jobs`에 context/input/missing/remaining/review_status로 저장되고, UI는 required 누락·remaining placeholder·검토 상태를 표시한다.
 - Windows HWP Worker는 HWP COM 제약 때문에 단일 Lock/Queue로 `/document/put-fields` 작업을 순차 실행해야 한다.
+
+### Proposal Agent POC — Evidence 기반 제안서 Workspace
+공고 맞춤형 제안서 자동작성의 첫 단계로, AI가 바로 본문을 지어내지 않고 `요구사항 → Evidence → 섹션 초안 → 사실검증 → coverage` 순서로 구조화한다. 원문은 PostgreSQL의 `proposal_documents` / `document_chunks`가 원장이고, 정확한 실적 수치는 `project_performances`에 별도로 저장한다.
+
+- `POST /proposals/documents` — 사내 제안서/보고서/회사소개서와 chunk를 등록한다. Qdrant에는 추후 `chunk_id`만 연결한다.
+- `POST /proposals/performances` — 유사 실적을 정형 DB로 등록한다.
+- `POST /proposals/analyze/{notice_no}` — 공고와 규격 항목에서 제안서 요구사항을 추출해 `notice_requirements`에 저장한다.
+- `POST /proposals/{notice_no}/retrieve` — 문서 chunk와 실적 DB에서 요구사항별 Evidence Top 5를 저장한다.
+- `POST /proposals/{notice_no}/generate` — Evidence ID가 붙은 제안서 섹션 초안을 `proposal_sections`에 저장한다.
+- `POST /proposals/{notice_no}/verify` — Evidence 없는 주장과 `[검증필요]` 문구를 검사한다.
+- `GET /proposals/{notice_no}/coverage` — 요구사항별 자료 확보 현황과 Proposal Readiness 점수를 반환하며, 공고 상세의 제안서 준비도 패널에 표시한다.
+
+운영 투입 전 실제 또는 준실제 공고 3건 리허설은 [docs/operations-rehearsal.md](docs/operations-rehearsal.md)를 기준으로 기록한다.
 
 ### `GET /notices/{notice_no}/documents/exports/by-id/{export_id}/download` — 생성 결과 다운로드
 `ExportRecord.id`가 있는 경우 이 경로를 우선 사용한다. active export row가 없으면 404, metadata는 있으나 파일이 없으면 410.
@@ -692,7 +716,7 @@ fit_score   = int(score_total × 100)                           # 0~100
 
 ## 9. HWP 양식 자동 작성
 
-[milim-hwp-agent](../../Desktop/milim-hwp-agent)는 Windows 데스크톱에서 HWP COM을 통해 입찰참가신청서/제안서를 자동 작성한다. autojebi는 `POST /notices/{notice_no}/autofill-form` 호출 시 `/bid-form/autofill`, `POST /notices/{notice_no}/documents/proposal-compose` 호출 시 `/proposal/compose`를 위임한다.
+[milim-hwp-agent](../../Desktop/milim-hwp-agent)는 Windows 데스크톱에서 HWP COM을 통해 입찰참가신청서/제안서를 자동 작성한다. autojebi는 레거시 `POST /notices/{notice_no}/autofill-form` 호출 시 `/bid-form/autofill`을 유지하고, 필드 매핑 기반 HWP 생성은 `POST /notices/{notice_no}/documents/hwp-put-fields`와 `proposal-compose`에서 `/document/put-fields`를 위임한다.
 
 ### 전송되는 값
 **환경변수 (회사 상수)** — [.env](#11-환경변수-레퍼런스)에서 로드:
@@ -765,6 +789,7 @@ docker compose -f infra/docker-compose.yml ps
 python -m pytest -v           # 백엔드 262 tests (인증 8개)
 cd frontend && npm test       # Vitest 단위
 cd frontend && npm run e2e    # Playwright smoke/workflow (`docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.yml up -d db api frontend` 선행)
+cd frontend && E2E_BASE_URL=http://127.0.0.1:3002 E2E_API_BASE=http://127.0.0.1:8002 npm run e2e  # 로컬 분리 포트 smoke/workflow
 cd frontend && E2E_OPS_LIVE=1 npm run e2e -- --project=chromium-ops-live  # 실제 외부 의존성 smoke
 ```
 

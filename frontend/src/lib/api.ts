@@ -542,6 +542,59 @@ export interface HwpTemplateListResponse {
   items: HwpTemplateRecord[];
 }
 
+export type HwpTransform =
+  | "none"
+  | "date_yyyy_mm_dd"
+  | "number_comma"
+  | "business_number_dash"
+  | "strip"
+  | "truncate_1000";
+
+export interface HwpTemplateUpsertRequest {
+  template_key: string;
+  kind: "bid_form" | "proposal";
+  name: string;
+  template_path: string;
+  template_version?: string | null;
+  active?: boolean;
+}
+
+export interface HwpTemplateUpdateRequest {
+  kind?: "bid_form" | "proposal";
+  name?: string;
+  template_path?: string;
+  template_version?: string | null;
+  active?: boolean;
+}
+
+export interface HwpMappingUpsertRequest {
+  hwp_field_name: string;
+  context_path: string;
+  value_type?: string;
+  required?: boolean;
+  default_value?: string | null;
+  transform?: HwpTransform;
+  sort_order?: number;
+  active?: boolean;
+}
+
+export type HwpMappingUpdateRequest = Partial<HwpMappingUpsertRequest>;
+
+export interface ProposalCoverageItem {
+  requirement_id: string;
+  requirement_type: string;
+  requirement_text: string;
+  mandatory: boolean;
+  evidence_count: number;
+  status: "ready" | "partial" | "missing";
+}
+
+export interface ProposalCoverageResponse {
+  notice_no: string;
+  readiness_score: number;
+  items: ProposalCoverageItem[];
+}
+
 export interface HwpComposeResponse {
   notice_no: string;
   status: string;
@@ -663,6 +716,26 @@ async function postComposeAllowingValidation<T>(
       detail = r.statusText;
     }
     throw new Error(`POST ${path} failed: ${r.status} ${detail}`);
+  }
+  return r.json();
+}
+
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(`${INTERNAL_API_BASE}${path}`, {
+    method: "PATCH",
+    headers: defaultHeaders(true),
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!r.ok) {
+    let detail: string;
+    try {
+      const j = await r.json();
+      detail = j?.detail ? JSON.stringify(j.detail) : r.statusText;
+    } catch {
+      detail = r.statusText;
+    }
+    throw new Error(`PATCH ${path} failed: ${r.status} ${detail}`);
   }
   return r.json();
 }
@@ -977,6 +1050,40 @@ export async function listHwpTemplates(): Promise<HwpTemplateListResponse> {
   return r.json();
 }
 
+export async function upsertHwpTemplate(
+  payload: HwpTemplateUpsertRequest,
+): Promise<HwpTemplateRecord> {
+  return postJson<HwpTemplateRecord>("/documents/hwp-templates", payload);
+}
+
+export async function updateHwpTemplate(
+  templateId: number,
+  payload: HwpTemplateUpdateRequest,
+): Promise<HwpTemplateRecord> {
+  return patchJson<HwpTemplateRecord>(`/documents/hwp-templates/${templateId}`, payload);
+}
+
+export async function upsertHwpMapping(
+  templateId: number,
+  payload: HwpMappingUpsertRequest,
+): Promise<HwpTemplateRecord> {
+  return postJson<HwpTemplateRecord>(
+    `/documents/hwp-templates/${templateId}/mappings`,
+    payload,
+  );
+}
+
+export async function updateHwpMapping(
+  templateId: number,
+  mappingId: number,
+  payload: HwpMappingUpdateRequest,
+): Promise<HwpTemplateRecord> {
+  return patchJson<HwpTemplateRecord>(
+    `/documents/hwp-templates/${templateId}/mappings/${mappingId}`,
+    payload,
+  );
+}
+
 export async function importCommonUpload(
   noticeNo: string,
   uploadId: string,
@@ -1077,6 +1184,15 @@ export async function composeProposalDocument(
       errors,
     }),
   );
+}
+
+export async function getProposalCoverage(noticeNo: string): Promise<ProposalCoverageResponse> {
+  const r = await fetch(
+    `${INTERNAL_API_BASE}/proposals/${encodeURIComponent(noticeNo)}/coverage`,
+    { headers: defaultHeaders(), cache: "no-store" },
+  );
+  if (!r.ok) throw new Error(`GET proposal coverage failed: ${r.status}`);
+  return r.json();
 }
 
 // M12 — KJEBI 메일 paste-UI 추출

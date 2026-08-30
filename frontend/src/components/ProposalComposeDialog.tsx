@@ -49,6 +49,7 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
   const [requiredMissing, setRequiredMissing] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ stage?: string; detail?: string }[]>([]);
   const [exportPath, setExportPath] = useState<string | null>(null);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const toast = useToast();
   const router = useRouter();
 
@@ -82,6 +83,7 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
     setRequiredMissing([]);
     setErrors([]);
     setExportPath(null);
+    setResultMessage(null);
     actionGetHwpAgentHealth()
       .then((result) => setAgentStatus(result.ok ? "ok" : "unavailable"))
       .catch(() => setAgentStatus("unavailable"));
@@ -107,6 +109,7 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
       values_override,
       visible,
     };
+    setResultMessage(null);
     startTransition(async () => {
       try {
         const result = await actionComposeProposalDocument(notice.notice_no, payload);
@@ -116,16 +119,24 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
         setExportPath(result.export?.output_path || null);
         router.refresh();
         if (result.export) {
-          toast.push("success", "제안서 HWP 생성 완료");
+          const message = "제안서 HWP 생성 완료";
+          setResultMessage(message);
+          toast.push("success", message);
           onClose();
         } else if (result.errors.length > 0) {
-          toast.push("error", "제안서 HWP 생성 실패: 오류를 확인하세요.");
+          const message = "제안서 HWP 생성 실패: 오류를 확인하세요.";
+          setResultMessage(message);
+          toast.push("error", message);
         } else {
-          toast.push("info", "제안서 초안이 저장되었습니다.");
+          const message = "제안서 초안이 저장되었습니다.";
+          setResultMessage(message);
+          toast.push("info", message);
         }
       } catch (e) {
         setErrors([{ stage: "request", detail: (e as Error).message }]);
-        toast.push("error", `제안서 작성 실패: ${(e as Error).message}`);
+        const message = `제안서 작성 실패: ${(e as Error).message}`;
+        setResultMessage(message);
+        toast.push("error", message);
       }
     });
   };
@@ -225,6 +236,11 @@ export function ProposalComposeDialog({ open, onClose, notice, specItems }: Prop
         {exportPath ? (
           <div className="rounded border border-emerald-800 bg-emerald-950/20 p-3 text-emerald-100">
             생성 파일: {exportPath}
+          </div>
+        ) : null}
+        {resultMessage ? (
+          <div role="status" className="rounded border border-slate-700 bg-slate-900/70 p-3 text-slate-100">
+            {resultMessage}
           </div>
         ) : null}
         {remaining.length > 0 ? (

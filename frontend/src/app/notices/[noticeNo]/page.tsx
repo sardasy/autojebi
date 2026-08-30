@@ -5,9 +5,10 @@ import { BidWorkflowRail } from "@/components/BidWorkflowRail";
 import { DocumentPreparationPanel } from "@/components/DocumentPreparationPanel";
 import { MetricCard } from "@/components/MetricCard";
 import { NoticeActionsBar } from "@/components/NoticeActionsBar";
+import { ProposalCoveragePanel } from "@/components/ProposalCoveragePanel";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { StatusBadge } from "@/components/StatusBadge";
-import { getNotice, type NoticeRecord } from "@/lib/api";
+import { getNotice, getProposalCoverage, type NoticeRecord, type ProposalCoverageResponse } from "@/lib/api";
 import {
   documentSummaryText,
   readDocumentAutomation,
@@ -39,6 +40,8 @@ export default async function NoticeDetailPage({
   const { noticeNo } = await params;
   let notice: NoticeRecord | null = null;
   let error: string | null = null;
+  let proposalCoverage: ProposalCoverageResponse | null = null;
+  let proposalCoverageError: string | null = null;
   try {
     notice = await getNotice(decodeURIComponent(noticeNo));
   } catch (e) {
@@ -63,6 +66,12 @@ export default async function NoticeDetailPage({
   const qualNotes = Array.isArray(grade.qual_notes) ? (grade.qual_notes as string[]) : [];
   const g2bUrl = String(raw.bidNtceDtlUrl || raw.bidNtceUrl || "").trim();
   const docs = readDocumentAutomation(notice);
+
+  try {
+    proposalCoverage = await getProposalCoverage(notice.notice_no);
+  } catch (e) {
+    proposalCoverageError = (e as Error).message;
+  }
 
   return (
     <div className="space-y-6">
@@ -177,6 +186,16 @@ export default async function NoticeDetailPage({
         <Card>
           <DocumentPreparationPanel notice={notice} />
         </Card>
+      </section>
+
+      <section id="proposal-readiness" className="scroll-mt-24">
+        <h2 className="mb-2 text-sm font-semibold text-slate-300">
+          제안서 준비도
+        </h2>
+        <ProposalCoveragePanel
+          coverage={proposalCoverage}
+          error={proposalCoverageError}
+        />
       </section>
 
       <section>

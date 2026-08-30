@@ -13,8 +13,7 @@ test.describe("program smoke", () => {
     expect(health.ok(), `healthz failed: ${health.status()}`).toBeTruthy();
 
     await page.goto("/");
-    await expect(page).toHaveURL(/\/notices$/);
-    await expect(page.getByRole("heading", { name: "저장 공고 업무 큐" })).toBeVisible();
+    await expect(page).toHaveURL(/\/search$/);
 
     await page.goto("/notices?mode=g2b");
     await expect(page.getByRole("heading", { name: "G2B 실시간 공고 검색" })).toBeVisible();

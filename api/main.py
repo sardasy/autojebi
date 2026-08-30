@@ -11,6 +11,7 @@ from api.db import MissingDatabaseUrl, get_engine
 from api.routers.documents import router as documents_router
 from api.routers.notices import router as notices_router
 from api.routers.ontology import router as ontology_router
+from api.routers.proposals import router as proposals_router
 from api.routers.skus import router as skus_router
 
 
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
 
     app.include_router(notices_router)
     app.include_router(documents_router)
+    app.include_router(proposals_router)
     app.include_router(skus_router)
     app.include_router(ontology_router)
 

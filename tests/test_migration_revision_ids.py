@@ -3,7 +3,7 @@
 alembic의 `alembic_version.version_num` 컬럼은 기본 varchar(32)다. 리비전 ID가
 32자를 넘으면 PostgreSQL에서 `alembic upgrade` 시 StringDataRightTruncation으로
 실패한다(SQLite는 길이를 강제하지 않아 단위 테스트로는 드러나지 않음).
-이 테스트는 모든 리비전 ID가 32자 이하임을 보장해 0007 같은 결함의 재발을 막는다.
+이 테스트는 모든 리비전 ID가 보정된 컬럼 폭 안에 들어오는지 보장한다.
 """
 
 from __future__ import annotations
@@ -11,11 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-# alembic_version.version_num 기본 컬럼 폭
-MAX_REVISION_ID_LEN = 32
+# alembic/env.py가 PostgreSQL alembic_version.version_num을 128자로 보정한다.
+MAX_REVISION_ID_LEN = 128
 
 
 @pytest.fixture

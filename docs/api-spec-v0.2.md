@@ -38,12 +38,23 @@
 | 규격 항목 목록 | GET | `/notices/{notice_no}/spec-items` | 없음 | items sorted by `sort_order` | status 변경 없음 |
 | 규격 항목 수정 | PATCH | `/notices/{notice_no}/spec-items/{item_id}` | proposed_value, status, evidence, note | 갱신된 item | reviewed/matched 수동값은 재추출보다 우선 |
 | 규격대응표 HWP 작성 | POST | `/notices/{notice_no}/documents/hwp-compose` | template/output/values_override | export, remaining_placeholders, errors | `hwp_composed`/`form_filled` 전이, export/error 저장 |
-| 제안서 HWP 작성 | POST | `/notices/{notice_no}/documents/proposal-compose` | template_path, values_override, visible | export, proposal, remaining_placeholders, errors | `hwp_composed` 전이, `proposal_hwp` export 저장 가능 |
+| 제안서 HWP 작성 | POST | `/notices/{notice_no}/documents/proposal-compose` | template_path, values_override, visible | export, proposal, remaining_placeholders, errors | 필드 매핑 기반 `/document/put-fields`, `proposal_hwp` export 저장 가능 |
 | HWP 템플릿/필드 조회 | GET | `/documents/hwp-templates` | 없음 | active templates + mappings | seed/API 관리용 |
+| HWP 템플릿 upsert | POST | `/documents/hwp-templates` | template_key, kind, name, template_path | template + mappings | 관리자용 생성/갱신 |
+| HWP 템플릿 수정 | PATCH | `/documents/hwp-templates/{template_id}` | kind/name/path/version/active | template + mappings | `active=false`로 soft-disable |
+| HWP 필드 매핑 upsert | POST | `/documents/hwp-templates/{template_id}/mappings` | field, context_path, required, transform | template + mappings | `(template_id, hwp_field_name)` 기준 갱신 |
+| HWP 필드 매핑 수정 | PATCH | `/documents/hwp-templates/{template_id}/mappings/{mapping_id}` | mapping fields, active | template + mappings | `active=false`로 soft-disable |
 | HWP context 미리보기 | POST | `/notices/{notice_no}/documents/hwp-context` | template_key, values_override | context, input_values, required_missing | 생성 전 검토 |
 | HWP PutFieldText 생성 | POST | `/notices/{notice_no}/documents/hwp-put-fields` | template_key, output_path, values_override, visible | export, job, required_missing, remaining_placeholders | mapping 기반 HWP 생성 |
 | HWP 생성 검토 | POST | `/notices/{notice_no}/documents/hwp-jobs/{job_id}/review` | review_status, note, reviewer | job | 사람 검토 상태 저장 |
 | HWP agent health | GET | `/documents/hwp-agent/health` | 없음 | ok, base_url, detail | 전역 readiness 확인 |
+| Proposal 문서 원장 등록 | POST | `/proposals/documents` | document metadata + chunks | document | 사내 제안서/보고서/chunk 원장 |
+| Proposal 실적 등록 | POST | `/proposals/performances` | performance metadata | performance | 정확한 실적 수치 원장 |
+| Proposal 요구사항 분석 | POST | `/proposals/analyze/{notice_no}` | 없음 | requirements | 공고 기반 제안 요구사항 구조화 |
+| Proposal Evidence 검색 | POST | `/proposals/{notice_no}/retrieve` | 없음 | evidences | 문서 chunk + 실적 DB Top evidence 저장 |
+| Proposal 섹션 생성 | POST | `/proposals/{notice_no}/generate` | 없음 | sections | Evidence ID가 연결된 초안 문장 생성 |
+| Proposal 사실검증 | POST | `/proposals/{notice_no}/verify` | 없음 | sections + status | Evidence 참조와 검증필요 문구 검사 |
+| Proposal coverage | GET | `/proposals/{notice_no}/coverage` | 없음 | readiness_score, items | 요구사항별 자료 확보 현황 |
 | E2E cleanup | POST | `/notices/e2e/cleanup` | prefix/options | 삭제 결과 | dev/test 전용, `E2E-*` 범위만 |
 
 ## 3. 상태머신 표
@@ -174,7 +185,7 @@ Phase 1 현재 구현은 `notice_errors`를 우선 저장소로 사용하고, �
 | `validation_errors` | 사전 검증/placeholder/검토 경고 목록 |
 | `file_size`, `sha256` | 파일 검증용 메타데이터 |
 
-`POST /notices/{notice_no}/documents/exports/{kind}`는 `excel`과 `hwp`만 생성한다. Excel 기본값은 `version=compliance_excel_v2`이며 `compliance_excel_v1`은 기존 단일 시트 호환 포맷이다. `proposal_hwp`는 `POST /notices/{notice_no}/documents/proposal-compose`가 생성한다.
+`POST /notices/{notice_no}/documents/exports/{kind}`는 `excel`과 `hwp`만 생성한다. Excel 기본값은 `version=compliance_excel_v2`이며 `compliance_excel_v1`은 기존 단일 시트 호환 포맷이다. `bid_form_hwp`와 `proposal_hwp`는 필드 매핑 기반 `POST /notices/{notice_no}/documents/hwp-put-fields` 또는 `proposal-compose`가 생성한다.
 
 다운로드 API는 export_id 기반 경로를 우선 사용한다. 기존 kind 기반 다운로드는 최신 active export alias로 남겨 프론트/문서 호환을 유지한다. metadata가 없으면 404, metadata는 있으나 파일이 없으면 410을 반환한다.
 
@@ -186,7 +197,7 @@ HWP/제안서 생성 전 `validate_pre_compose()`가 `규격 항목 없음`, 생
 |---|---|
 | `id` | export row 식별자 |
 | `notice_no` | 공고 번호 |
-| `kind` | `excel`, `hwp`, `proposal_hwp` |
+| `kind` | `excel`, `hwp`, `bid_form_hwp`, `proposal_hwp` |
 | `draft_id` | export 입력 draft 식별자 |
 | `output_path` | 파일 저장 경로 |
 | `mime` | 다운로드 MIME type |

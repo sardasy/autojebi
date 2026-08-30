@@ -264,7 +264,7 @@ describe("DocumentPreparationPanel", () => {
     renderPanel(Panel, mkNotice({ documentAutomation: docs }));
 
     expect(screen.getByText(/compliance_excel_v2/)).toBeInTheDocument();
-    expect(screen.getByText(/검토 필요/)).toBeInTheDocument();
+    expect(screen.getAllByText(/검토 필요/).length).toBeGreaterThan(0);
     expect(screen.getByText(/2KB/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "다운로드" })).toHaveAttribute(
       "href",

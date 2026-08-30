@@ -50,5 +50,11 @@ test.describe("program admin workflows", () => {
     await skuSection.getByRole("button", { name: "Qdrant에 인제스트" }).click();
     // 카탈로그 임베딩+Qdrant upsert는 수 초 소요 — 기본 5초 대기로는 불안정했다.
     await expectToast(page, /Qdrant 인제스트 완료|인제스트 실패/);
+
+    const hwpSection = page.locator("section", { hasText: "HWP 필드 매핑" });
+    await expect(hwpSection).toBeVisible();
+    await expect(
+      hwpSection.getByRole("button", { name: /새 템플릿|입찰참가신청서|제안서/ }).first(),
+    ).toBeVisible();
   });
 });

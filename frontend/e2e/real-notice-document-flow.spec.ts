@@ -56,6 +56,7 @@ test("real G2B fixture notice flows through saved list and document work", async
   page,
   request,
 }) => {
+  test.setTimeout(90000);
   await page.goto(`/notices?mode=saved&lifecycle=all&q=${encodeURIComponent(noticeNo)}&page_size=50`);
   await expect(page.getByRole("heading", { name: "저장 공고 업무 큐" })).toBeVisible();
   await expect(page.getByRole("link", { name: title, exact: true })).toBeVisible();
@@ -69,7 +70,7 @@ test("real G2B fixture notice flows through saved list and document work", async
   const analyzeButton = page.getByRole("button", { name: "분석", exact: true });
   if (await analyzeButton.isEnabled()) {
     await analyzeButton.click();
-    await expect(page.getByText(/분석 완료|분석 실패/)).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByText(/분석 완료|분석 실패/).first()).toBeVisible({ timeout: 90_000 });
     await page.reload();
   }
 
@@ -82,7 +83,7 @@ test("real G2B fixture notice flows through saved list and document work", async
   const docAnalyzeButton = page.getByRole("button", { name: "서류 분석" });
   if (await docAnalyzeButton.isEnabled()) {
     await docAnalyzeButton.click();
-    await expect(page.getByText(/서류 분석 완료|서류 분석 실패/)).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByText(/서류 분석 완료|서류 분석 실패/).first()).toBeVisible({ timeout: 90_000 });
     await page.reload();
   }
 

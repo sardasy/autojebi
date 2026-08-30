@@ -11,19 +11,25 @@ import { useToast } from "./Toast";
  */
 export function SkuIngestButton() {
   const [source, setSource] = useState("");
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
   const submit = () => {
+    setResultMessage(null);
     startTransition(async () => {
       try {
         const r = await actionIngestSkus(source ? { source } : {});
+        const message = `Qdrant 인제스트 완료 — ${r.ingested}개 SKU (컬렉션: ${r.collection})`;
+        setResultMessage(message);
         toast.push(
           "success",
-          `Qdrant 인제스트 완료 — ${r.ingested}개 SKU (컬렉션: ${r.collection})`,
+          message,
         );
       } catch (e) {
-        toast.push("error", `인제스트 실패: ${(e as Error).message}`);
+        const message = `인제스트 실패: ${(e as Error).message}`;
+        setResultMessage(message);
+        toast.push("error", message);
       }
     });
   };
@@ -50,6 +56,11 @@ export function SkuIngestButton() {
       >
         {pending ? "인제스트 중…" : "Qdrant에 인제스트"}
       </button>
+      {resultMessage ? (
+        <div role="status" className="text-xs text-slate-300">
+          {resultMessage}
+        </div>
+      ) : null}
     </div>
   );
 }

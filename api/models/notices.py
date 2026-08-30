@@ -397,16 +397,24 @@ class HwpComposeRequest(BaseModel):
 
 HwpTemplateKind = Literal["bid_form", "proposal"]
 HwpReviewStatus = Literal["pending", "approved", "rejected"]
+HwpTransform = Literal[
+    "none",
+    "date_yyyy_mm_dd",
+    "number_comma",
+    "business_number_dash",
+    "strip",
+    "truncate_1000",
+]
 
 
 class HwpTemplateFieldMapping(BaseModel):
     id: int | None = None
-    hwp_field_name: str
-    context_path: str
+    hwp_field_name: str = Field(min_length=1, max_length=200)
+    context_path: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
     value_type: str = "string"
     required: bool = False
     default_value: str | None = None
-    transform: str = "none"
+    transform: HwpTransform = "none"
     sort_order: int = 0
     active: bool = True
 
@@ -424,6 +432,49 @@ class HwpTemplateRecord(BaseModel):
 
 class HwpTemplateListResponse(BaseModel):
     items: list[HwpTemplateRecord]
+
+
+class HwpTemplateUpsertRequest(BaseModel):
+    template_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+    kind: HwpTemplateKind
+    name: str = Field(min_length=1, max_length=300)
+    template_path: str = Field(min_length=1)
+    template_version: str | None = None
+    active: bool = True
+
+
+class HwpTemplateUpdateRequest(BaseModel):
+    kind: HwpTemplateKind | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    template_path: str | None = Field(default=None, min_length=1)
+    template_version: str | None = None
+    active: bool | None = None
+
+
+class HwpMappingUpsertRequest(BaseModel):
+    hwp_field_name: str = Field(min_length=1, max_length=200)
+    context_path: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
+    value_type: str = "string"
+    required: bool = False
+    default_value: str | None = None
+    transform: HwpTransform = "none"
+    sort_order: int = 0
+    active: bool = True
+
+
+class HwpMappingUpdateRequest(BaseModel):
+    hwp_field_name: str | None = Field(default=None, min_length=1, max_length=200)
+    context_path: str | None = Field(
+        default=None,
+        min_length=1,
+        pattern=r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$",
+    )
+    value_type: str | None = None
+    required: bool | None = None
+    default_value: str | None = None
+    transform: HwpTransform | None = None
+    sort_order: int | None = None
+    active: bool | None = None
 
 
 class HwpContextRequest(BaseModel):

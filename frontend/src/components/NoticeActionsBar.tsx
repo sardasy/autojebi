@@ -13,6 +13,7 @@ type DialogKind = "grade" | null;
 
 export function NoticeActionsBar({ notice }: Props) {
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
@@ -20,15 +21,20 @@ export function NoticeActionsBar({ notice }: Props) {
   const gradeDisabled = notice.status === "collected" || pending;
 
   const onAnalyze = () => {
+    setResultMessage(null);
     startTransition(async () => {
       try {
         const r = await actionAnalyze(notice.notice_no);
+        const message = `분석 완료 — 카테고리: ${r.category}, fit_score: ${r.fit_score}, 담당자: ${r.assignee}`;
+        setResultMessage(message);
         toast.push(
           "success",
-          `분석 완료 — 카테고리: ${r.category}, fit_score: ${r.fit_score}, 담당자: ${r.assignee}`,
+          message,
         );
       } catch (e) {
-        toast.push("error", `분석 실패: ${(e as Error).message}`);
+        const message = `분석 실패: ${(e as Error).message}`;
+        setResultMessage(message);
+        toast.push("error", message);
       }
     });
   };
@@ -49,6 +55,11 @@ export function NoticeActionsBar({ notice }: Props) {
           hint={notice.status === "collected" ? "분석 후 가능" : undefined}
         />
       </div>
+      {resultMessage ? (
+        <div role="status" className="mt-2 text-xs text-slate-300">
+          {resultMessage}
+        </div>
+      ) : null}
       <GradeDialog
         open={openDialog === "grade"}
         onClose={() => setOpenDialog(null)}

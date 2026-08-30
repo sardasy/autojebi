@@ -32,9 +32,9 @@ test.beforeAll(async ({ request }) => {
   expect(response.ok(), `seed notice failed: ${response.status()} ${await response.text()}`).toBeTruthy();
 });
 
-test("home redirects to /notices", async ({ page }) => {
+test("home redirects to /search", async ({ page }) => {
   await page.goto("/");
-  await expect(page).toHaveURL(/\/notices$/);
+  await expect(page).toHaveURL(/\/search$/);
 });
 
 test("notices list renders header + KJEBI-style filter form", async ({ page }) => {
@@ -59,12 +59,7 @@ test("admin page renders Upsert + SKU sections", async ({ page }) => {
 });
 
 test("notice detail (when present) shows action bar", async ({ page }) => {
-  await page.goto("/notices");
-  const firstRow = page.locator("tbody tr").first();
-  const rowCount = await firstRow.count();
-  test.skip(rowCount === 0, "no notices seeded in DB; skipping detail flow");
-
-  await firstRow.locator("a").first().click();
+  await page.goto(`/notices/${encodeURIComponent(SEEDED_NOTICE_NO)}`);
   await expect(page.getByRole("heading", { name: "작업" })).toBeVisible();
   await expect(page.getByRole("button", { name: "분석", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "그레이드", exact: true })).toBeVisible();

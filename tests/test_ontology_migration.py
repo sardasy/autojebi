@@ -35,8 +35,8 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
     script = ScriptDirectory.from_config(alembic_cfg)
     heads = list(script.get_heads())
     assert len(heads) == 1, f"unexpected branching: {heads}"
-    assert heads[0] == "0011_required_documents", (
-        f"expected 0011 as head, got {heads}"
+    assert heads[0] == "0012_proposal_agent_workspace", (
+        f"expected 0012 as head, got {heads}"
     )
     chain = [r.revision for r in script.walk_revisions()]
     for rev in (
@@ -52,8 +52,15 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
         "0010_export_kind_bid_form_hwp",
         "0010b_noop_placeholder",
         "0011_required_documents",
+        "0012_proposal_agent_workspace",
     ):
         assert rev in chain, f"{rev} missing from chain: {chain}"
+
+
+def test_alembic_revision_ids_fit_version_table(alembic_cfg):
+    script = ScriptDirectory.from_config(alembic_cfg)
+    revisions = [r.revision for r in script.walk_revisions()]
+    assert max(len(rev) for rev in revisions) <= 128
 
 
 def test_ontology_metadata_create_all_succeeds_on_sqlite():

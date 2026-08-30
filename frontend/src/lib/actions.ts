@@ -17,7 +17,11 @@ import type {
   HwpComposeRequest,
   HwpContextRequest,
   HwpJobReviewRequest,
+  HwpMappingUpdateRequest,
+  HwpMappingUpsertRequest,
   HwpPutFieldsRequest,
+  HwpTemplateUpdateRequest,
+  HwpTemplateUpsertRequest,
   ProposalComposeRequest,
   IngestRequest,
   MailExtractRequest,
@@ -168,6 +172,40 @@ export async function actionGetHwpAgentHealth() {
 
 export async function actionListHwpTemplates() {
   return api.listHwpTemplates();
+}
+
+export async function actionUpsertHwpTemplate(payload: HwpTemplateUpsertRequest) {
+  const result = await api.upsertHwpTemplate(payload);
+  revalidatePath("/admin");
+  return result;
+}
+
+export async function actionUpdateHwpTemplate(
+  templateId: number,
+  payload: HwpTemplateUpdateRequest,
+) {
+  const result = await api.updateHwpTemplate(templateId, payload);
+  revalidatePath("/admin");
+  return result;
+}
+
+export async function actionUpsertHwpMapping(
+  templateId: number,
+  payload: HwpMappingUpsertRequest,
+) {
+  const result = await api.upsertHwpMapping(templateId, payload);
+  revalidatePath("/admin");
+  return result;
+}
+
+export async function actionUpdateHwpMapping(
+  templateId: number,
+  mappingId: number,
+  payload: HwpMappingUpdateRequest,
+) {
+  const result = await api.updateHwpMapping(templateId, mappingId, payload);
+  revalidatePath("/admin");
+  return result;
 }
 
 export async function actionImportCommonUpload(noticeNo: string, uploadId: string) {

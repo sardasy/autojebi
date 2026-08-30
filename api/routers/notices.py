@@ -15,6 +15,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -38,6 +39,7 @@ from sqlalchemy.dialects.postgresql import insert
 from api.auth import verify_api_key
 from api.config import settings
 from api.db import require_engine
+from api.llm.extractor import extract_pdf_pages
 from api.models.notices import (
     AttachmentFetchFileResult,
     AttachmentFetchResponse,
@@ -71,10 +73,10 @@ from api.models.notices import (
     NoticeGradeResponse,
     NoticeListResponse,
     NoticeRecord,
+    NoticeRequiredDocument,
     NoticeSearchRequest,
     NoticeSearchResponse,
     NoticeSpecItem,
-    NoticeRequiredDocument,
     NoticeSummary,
     NoticeUpsertRequest,
     NotifyRequest,
@@ -92,12 +94,7 @@ from api.models.notices import (
     UploadListResponse,
     UploadResponse,
 )
-from api.llm.extractor import extract_pdf_pages
 from api.services.claude_analyzer import ClaudeAnalyzer
-from api.services.required_documents import (
-    classify_required_documents,
-    find_candidate_segments,
-)
 from api.services.document_automation import (
     analyze_document_requirements,
     attach_bid_form_result,
@@ -128,6 +125,10 @@ from api.services.proposals import (
     build_proposal_export,
     build_proposal_payload,
     proposal_output_path,
+)
+from api.services.required_documents import (
+    classify_required_documents,
+    find_candidate_segments,
 )
 from api.services.routing import assignee_for_category
 from api.services.spec_items import (
@@ -339,6 +340,150 @@ hwp_generation_jobs = Table(
     CheckConstraint("review_status IN ('pending','approved','rejected')"),
     Index("hwp_generation_jobs_notice_idx", "notice_no"),
     Index("hwp_generation_jobs_review_idx", "review_status"),
+)
+
+proposal_documents = Table(
+    "proposal_documents",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("title", String(500), nullable=False),
+    Column("file_name", String(500)),
+    Column("file_path", Text),
+    Column("document_type", String(100)),
+    Column("category", String(100), nullable=False),
+    Column("project_name", String(500)),
+    Column("customer_name", String(300)),
+    Column("checksum", String(128)),
+    Column("indexing_status", String(50), nullable=False, default="pending"),
+    Column("document_metadata", JSON, nullable=False, default=dict),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "category IN ('proposal','report','certificate','product','company','performance','other')",
+        name="proposal_documents_category_check",
+    ),
+    CheckConstraint(
+        "indexing_status IN ('pending','indexed','failed')",
+        name="proposal_documents_indexing_status_check",
+    ),
+    Index("proposal_documents_category_idx", "category"),
+    Index("proposal_documents_customer_idx", "customer_name"),
+    Index("proposal_documents_checksum_idx", "checksum"),
+)
+
+document_chunks = Table(
+    "document_chunks",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("document_id", String, ForeignKey("proposal_documents.id", ondelete="CASCADE"), nullable=False),
+    Column("chunk_index", Integer, nullable=False),
+    Column("page_number", Integer),
+    Column("heading", Text),
+    Column("content", Text, nullable=False),
+    Column("token_count", Integer, nullable=False, default=0),
+    Column("chunk_metadata", JSON, nullable=False, default=dict),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("document_id", "chunk_index", name="document_chunks_document_index_unique"),
+    Index("document_chunks_document_idx", "document_id"),
+)
+
+project_performances = Table(
+    "project_performances",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("project_name", String(500), nullable=False),
+    Column("customer_name", String(300)),
+    Column("contract_date", Date),
+    Column("completion_date", Date),
+    Column("contract_amount", Numeric(18, 2)),
+    Column("project_type", String(200)),
+    Column("technologies", JSON, nullable=False, default=list),
+    Column("products", JSON, nullable=False, default=list),
+    Column("description", Text),
+    Column("evidence_document_id", String, ForeignKey("proposal_documents.id", ondelete="SET NULL")),
+    Column("verified", Boolean, nullable=False, default=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("project_performances_verified_idx", "verified"),
+    Index("project_performances_customer_idx", "customer_name"),
+)
+
+notice_requirements = Table(
+    "notice_requirements",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
+    Column("section", String(300), nullable=False),
+    Column("requirement_type", String(100), nullable=False),
+    Column("requirement_text", Text, nullable=False),
+    Column("mandatory", Boolean, nullable=False, default=True),
+    Column("evaluation_score", Numeric(6, 2)),
+    Column("source_page", Integer),
+    Column("extracted_data", JSON, nullable=False, default=dict),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "notice_no",
+        "requirement_type",
+        "requirement_text",
+        name="notice_requirements_notice_type_text_unique",
+    ),
+    Index("notice_requirements_notice_idx", "notice_no"),
+    Index("notice_requirements_type_idx", "requirement_type"),
+)
+
+requirement_evidences = Table(
+    "requirement_evidences",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("requirement_id", String, ForeignKey("notice_requirements.id", ondelete="CASCADE"), nullable=False),
+    Column("document_id", String, ForeignKey("proposal_documents.id", ondelete="SET NULL")),
+    Column("chunk_id", String, ForeignKey("document_chunks.id", ondelete="SET NULL")),
+    Column("performance_id", String, ForeignKey("project_performances.id", ondelete="SET NULL")),
+    Column("evidence_type", String(100), nullable=False),
+    Column("relevance_score", Numeric(5, 4), nullable=False, default=0),
+    Column("confidence_score", Numeric(5, 4), nullable=False, default=0),
+    Column("quoted_text", Text, nullable=False),
+    Column("reasoning_summary", Text),
+    Column("approved", Boolean, nullable=False, default=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("requirement_evidences_requirement_idx", "requirement_id"),
+    Index("requirement_evidences_document_idx", "document_id"),
+)
+
+proposal_sections = Table(
+    "proposal_sections",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
+    Column("template_key", String(200), nullable=False, default="proposal"),
+    Column("section_key", String(200), nullable=False),
+    Column("section_title", String(500), nullable=False),
+    Column("generated_content", Text, nullable=False),
+    Column("generation_status", String(50), nullable=False, default="draft"),
+    Column("evidence_ids", JSON, nullable=False, default=list),
+    Column("confidence_score", Numeric(5, 4), nullable=False, default=0),
+    Column("fact_check_status", String(50), nullable=False, default="pending"),
+    Column("fact_check_notes", JSON, nullable=False, default=list),
+    Column("human_approved", Boolean, nullable=False, default=False),
+    Column("version", Integer, nullable=False, default=1),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "generation_status IN ('draft','verified','rejected','approved')",
+        name="proposal_sections_generation_status_check",
+    ),
+    CheckConstraint(
+        "fact_check_status IN ('pending','pass','warning','reject')",
+        name="proposal_sections_fact_check_status_check",
+    ),
+    UniqueConstraint(
+        "notice_no",
+        "section_key",
+        "version",
+        name="proposal_sections_notice_section_version_unique",
+    ),
+    Index("proposal_sections_notice_idx", "notice_no"),
 )
 
 notice_errors = Table(
@@ -2816,7 +2961,12 @@ def download_document_export(notice_no: str, kind: ExportKind) -> FileResponse:
     engine = require_engine()
     with engine.begin() as conn:
         _, _, document_automation = _load_document_automation(conn, notice_no)
-        draft_id = "proposal" if kind == "proposal_hwp" else "technical_compliance"
+        if kind == "proposal_hwp":
+            draft_id = "proposal"
+        elif kind == "bid_form_hwp":
+            draft_id = "bid_form"
+        else:
+            draft_id = "technical_compliance"
         meta = _lookup_active_export(conn, notice_no, kind=kind, draft_id=draft_id)
         if not meta:
             meta = lookup_export(document_automation, kind=kind, draft_id=draft_id)

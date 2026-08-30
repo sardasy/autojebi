@@ -1,12 +1,22 @@
 import Link from "next/link";
 
+import { HwpMappingAdmin } from "@/components/HwpMappingAdmin";
 import { MailPasteForm } from "@/components/MailPasteForm";
 import { SkuIngestButton } from "@/components/SkuIngestButton";
 import { UpsertNoticeForm } from "@/components/UpsertNoticeForm";
+import { listHwpTemplates, type HwpTemplateRecord } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-export default function AdminPage() {
+export default async function AdminPage() {
+  let hwpTemplates: HwpTemplateRecord[] = [];
+  let hwpError: string | null = null;
+  try {
+    hwpTemplates = (await listHwpTemplates()).items;
+  } catch (e) {
+    hwpError = (e as Error).message;
+  }
+
   return (
     <div className="space-y-8">
       <Link href="/notices" className="text-sm text-slate-400 hover:text-slate-200">
@@ -47,6 +57,17 @@ export default function AdminPage() {
           채움. 카탈로그 변경 시 재실행. 1회 호출이면 충분.
         </p>
         <SkuIngestButton />
+      </section>
+
+      <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-5 space-y-3">
+        <h2 className="text-base font-semibold text-slate-100">HWP 필드 매핑</h2>
+        {hwpError ? (
+          <p className="rounded border border-red-800 bg-red-950/40 p-3 text-sm text-red-200">
+            HWP 템플릿을 불러오지 못했습니다: {hwpError}
+          </p>
+        ) : (
+          <HwpMappingAdmin initialTemplates={hwpTemplates} />
+        )}
       </section>
     </div>
   );
