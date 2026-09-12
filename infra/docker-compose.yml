@@ -68,6 +68,7 @@ services:
       GRADE_ALERT_THRESHOLD: ${GRADE_ALERT_THRESHOLD:-0.6}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       API_KEY: ${API_KEY:-}
+      APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # M11 v2 — 서류 자동화 업로드/내보내기 저장소
       UPLOAD_DIR: /app/uploads

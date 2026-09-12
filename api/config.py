@@ -1,12 +1,17 @@
-from typing import Any
+from typing import Any, Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # 배포 환경. production 에서는 API_KEY 공란을 허용하지 않는다 (api/main.py 기동 가드).
+    app_env: Literal["development", "staging", "production"] = "development"
+
     data_go_kr_api_key: str = ""
+    g2b_api_scheme: Literal["https", "http"] = "https"
     database_url: str = ""
 
     collect_hour: int = 8
@@ -20,6 +25,15 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-4-5"
     anthropic_max_tokens: int = 2048
+    workspace_llm_provider: Literal["anthropic", "gemini", "openai"] = "anthropic"
+    google_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_max_output_tokens: int = Field(default=16384, ge=1024, le=65536)
+    # v2 제안서 전용 Claude 모델 override (빈값 → anthropic_model). Gemini/OpenAI 에는 적용하지 않음.
+    proposal_model: str = ""
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4.1-mini"
+    openai_max_output_tokens: int = Field(default=16384, ge=1024, le=32768)
     llm_attachment_fetch: bool = True
     g2b_attachment_dir: str = ""  # empty → tempfile.gettempdir()
 
@@ -60,7 +74,7 @@ class Settings(BaseSettings):
     upload_dir: str = ""  # 빈값 → tempfile.gettempdir()/autojebi/uploads
     export_dir: str = ""  # 빈값 → tempfile.gettempdir()/autojebi/exports
     upload_max_bytes: int = 30_000_000  # 30MB
-    upload_allowed_exts: str = "pdf,hwp,hwpx,jpg,jpeg,png,xlsx,docx"
+    upload_allowed_exts: str = "pdf,hwp,hwpx,jpg,jpeg,png,xls,xlsx,docx,zip"
     # 첨부 본문 기반 서류 판정용 — 파일당 보존할 추출 텍스트 길이(LLM/키워드 판정에 재사용)
     upload_text_excerpt_chars: int = 6000
 

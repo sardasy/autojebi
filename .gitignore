@@ -17,6 +17,9 @@ htmlcov/
 # 런타임 업로드/내보내기 산출물 (호스트 마운트, 코드 아님)
 data/uploads/
 data/exports/
+data/downloads/
+data/workspace/
+data/spec-validation/
 
 *.log
 dist/
@@ -25,6 +28,7 @@ build/
 node_modules/
 frontend/node_modules/
 frontend/.next/
+frontend/.next-*/
 frontend/playwright-report/
 frontend/test-results/
 frontend/tsconfig.tsbuildinfo
@@ -34,3 +38,11 @@ data/search*.json
 
 .DS_Store
 Thumbs.db
+
+# 로컬 스크래치·검증 산출물 (코드 아님, 커밋 금지)
+tmp/
+output/
+chroma_db/
+data/logs/
+data/templates/*.hwp
+data/templates/*.hwpx
