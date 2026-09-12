@@ -8,11 +8,11 @@ const PALETTE: Record<string, string> = {
   수동소자: "bg-orange-700 text-white",
   ABB장비: "bg-orange-500 text-white",
   혼합: "bg-purple-700 text-white",
-  비분류: "bg-slate-700 text-slate-300",
+  비분류: "bg-slate-200 text-slate-700",
 };
 
 export function CategoryBadge({ value }: Props) {
-  const cls = PALETTE[value] || "bg-slate-700 text-slate-300";
+  const cls = PALETTE[value] || "bg-slate-200 text-slate-700";
   return (
     <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
       {value || "?"}

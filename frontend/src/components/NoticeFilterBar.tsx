@@ -130,7 +130,7 @@ export function NoticeFilterBar(props: Props) {
       action="/notices"
       onSubmit={handleSubmit}
       aria-busy={pending}
-      className="overflow-hidden rounded border border-slate-800 bg-slate-900/40"
+      className="overflow-hidden border-b border-slate-200"
     >
       {pending ? (
         <div
@@ -139,8 +139,8 @@ export function NoticeFilterBar(props: Props) {
           className="h-0.5 w-full animate-pulse bg-brand-500"
         />
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-2">
-        <div className="text-sm font-semibold text-slate-200">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2">
+        <div className="text-sm font-semibold text-slate-800">
           {mode === "saved" ? "저장 공고 업무 큐" : "G2B 실시간 검색"}
         </div>
         <div className="flex items-center gap-1 text-xs">
@@ -149,17 +149,17 @@ export function NoticeFilterBar(props: Props) {
             className={`rounded px-2 py-1 ${
               mode === "saved"
                 ? "bg-brand-500 text-white"
-                : "border border-slate-700 text-slate-300 hover:border-brand-500"
+                : "border border-slate-300 text-slate-700 hover:border-brand-500"
             }`}
           >
             저장 공고
           </Link>
           <Link
-            href="/notices?mode=g2b"
+            href="/search"
             className={`rounded px-2 py-1 ${
               mode === "g2b"
                 ? "bg-brand-500 text-white"
-                : "border border-slate-700 text-slate-300 hover:border-brand-500"
+                : "border border-slate-300 text-slate-700 hover:border-brand-500"
             }`}
           >
             G2B 검색
@@ -173,7 +173,7 @@ export function NoticeFilterBar(props: Props) {
         <div className="flex flex-wrap items-center gap-3">
           <label
             htmlFor="filter-q"
-            className="shrink-0 w-24 text-xs text-slate-400"
+            className="shrink-0 w-24 text-xs text-slate-600"
           >
             검색어
           </label>
@@ -187,7 +187,7 @@ export function NoticeFilterBar(props: Props) {
                 ? "제목, 공고번호, 기관, SKU 검색"
                 : "나라장터 공고명 키워드"
             }
-            className="flex-1 min-w-[280px] rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm"
+            className="flex-1 min-w-[280px] rounded border border-slate-300 bg-white px-3 py-1.5 text-sm"
           />
         </div>
 
@@ -218,7 +218,7 @@ export function NoticeFilterBar(props: Props) {
           <div
             role="status"
             aria-live="polite"
-            className="flex items-center gap-2 rounded border border-brand-500/40 bg-brand-500/10 px-3 py-2 text-xs text-brand-200"
+            className="flex items-center gap-2 rounded border border-brand-500/40 bg-brand-500/10 px-3 py-2 text-xs text-brand-700"
           >
             <Spinner className="h-3.5 w-3.5 shrink-0" />
             <span>
@@ -229,10 +229,10 @@ export function NoticeFilterBar(props: Props) {
           </div>
         ) : null}
 
-        <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-3">
           <Link
             href={mode === "saved" ? "/notices?mode=saved" : "/notices"}
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-slate-500"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:border-slate-500"
           >
             초기화
           </Link>
@@ -262,12 +262,12 @@ function SavedFilters(props: Props) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="shrink-0 w-24 text-xs text-slate-400">상태</span>
+        <span className="shrink-0 w-24 text-xs text-slate-600">상태</span>
         <div className="flex flex-wrap gap-2">
           {STATUS_OPTIONS.map((option) => (
             <label
               key={option.value}
-              className="inline-flex items-center gap-1 text-xs text-slate-300"
+              className="inline-flex items-center gap-1 text-xs text-slate-700"
             >
               <input
                 type="checkbox"
@@ -281,14 +281,14 @@ function SavedFilters(props: Props) {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="shrink-0 w-24 text-xs text-slate-400" htmlFor="lifecycle">
+        <label className="shrink-0 w-24 text-xs text-slate-600" htmlFor="lifecycle">
           진행 상태
         </label>
         <select
           id="lifecycle"
           name="lifecycle"
           defaultValue={props.lifecycle || DEFAULT_LIFECYCLE}
-          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm"
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
         >
           {LIFECYCLE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -296,14 +296,14 @@ function SavedFilters(props: Props) {
             </option>
           ))}
         </select>
-        <label className="text-xs text-slate-400" htmlFor="sort">
+        <label className="text-xs text-slate-600" htmlFor="sort">
           정렬
         </label>
         <select
           id="sort"
           name="sort"
           defaultValue={props.sort || DEFAULT_SORT}
-          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm"
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
         >
           {SORT_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -314,7 +314,7 @@ function SavedFilters(props: Props) {
         <select
           name="direction"
           defaultValue={props.direction || DEFAULT_DIRECTION}
-          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm"
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
           title="정렬 방향"
         >
           {DIRECTION_OPTIONS.map((option) => (
@@ -351,9 +351,9 @@ function G2BDateFilters({
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="shrink-0 w-24 text-xs text-slate-400">조회 기간</span>
+        <span className="shrink-0 w-24 text-xs text-slate-600">조회 기간</span>
         <div className="flex items-center gap-3 text-sm">
-          <label className="inline-flex cursor-pointer items-center gap-1 text-slate-300">
+          <label className="inline-flex cursor-pointer items-center gap-1 text-slate-700">
             <input
               type="radio"
               checked={dateField === "open"}
@@ -362,7 +362,7 @@ function G2BDateFilters({
             />
             게시일시
           </label>
-          <label className="inline-flex cursor-pointer items-center gap-1 text-slate-300">
+          <label className="inline-flex cursor-pointer items-center gap-1 text-slate-700">
             <input
               type="radio"
               checked={dateField === "close"}
@@ -378,7 +378,7 @@ function G2BDateFilters({
             value={periodFrom}
             onChange={(e) => setPeriodFrom(e.target.value)}
             aria-label="기간 시작일"
-            className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm"
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
           />
           <span className="px-1 text-slate-500">부터</span>
           <input
@@ -386,20 +386,20 @@ function G2BDateFilters({
             value={periodTo}
             onChange={(e) => setPeriodTo(e.target.value)}
             aria-label="기간 종료일"
-            className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm"
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
           />
           <span className="px-1 text-slate-500">까지</span>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="shrink-0 w-24 text-xs text-slate-400">빠른 기간</span>
+        <span className="shrink-0 w-24 text-xs text-slate-600">빠른 기간</span>
         <div className="flex flex-wrap items-center gap-1">
           {PERIOD_QUICK_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => applyQuickPeriod(option.days)}
-              className="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:border-brand-500"
+              className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:border-brand-500"
             >
               {option.label}
             </button>
@@ -439,14 +439,14 @@ function DateHiddenInputs({
 function PageSizeSelect({ pageSize }: { pageSize?: string }) {
   return (
     <>
-      <label className="text-xs text-slate-400" htmlFor="page_size">
+      <label className="text-xs text-slate-600" htmlFor="page_size">
         페이지
       </label>
       <select
         id="page_size"
         name="page_size"
         defaultValue={pageSize || String(DEFAULT_PAGE_SIZE)}
-        className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm"
+        className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
         title="페이지 크기"
       >
         {PAGE_SIZE_OPTIONS.map((n) => (

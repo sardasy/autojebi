@@ -66,6 +66,7 @@ export function G2BSearchDialog() {
   const [meta, setMeta] = useState<{ total: number; total_pages: number } | null>(
     null,
   );
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const toast = useToast();
 
   const reset = () => {
@@ -74,6 +75,7 @@ export function G2BSearchDialog() {
     setSavingNoticeNo(null);
     setPage(1);
     setMeta(null);
+    setResultMessage(null);
   };
 
   const close = () => {
@@ -85,10 +87,13 @@ export function G2BSearchDialog() {
   const fetchPage = (targetPage: number) => {
     const kw = keyword.trim();
     if (!kw) {
-      toast.push("error", "키워드를 입력하세요");
+      const message = "키워드를 입력하세요";
+      setResultMessage(message);
+      toast.push("error", message);
       return;
     }
     startSearchTransition(async () => {
+      setResultMessage(`G2B 검색 중입니다: ${kw}`);
       const r = await actionSearchG2B({
         keyword: kw,
         start_date: startDate ? `${startDate}T00:00:00` : undefined,
@@ -97,7 +102,9 @@ export function G2BSearchDialog() {
         page_size: PAGE_SIZE,
       });
       if (!r.ok) {
-        toast.push("error", `G2B 검색 실패: ${r.error}`);
+        const message = `G2B 검색 실패: ${r.error}`;
+        setResultMessage(`마지막 검색 실패: ${r.error}`);
+        toast.push("error", message);
         setItems([]);
         setSearched(true);
         return;
@@ -106,6 +113,11 @@ export function G2BSearchDialog() {
       setSearched(true);
       setPage(r.data.page);
       setMeta({ total: r.data.total, total_pages: r.data.total_pages });
+      setResultMessage(
+        r.data.total > 0
+          ? `검색 완료: ${r.data.total.toLocaleString("ko-KR")}개 공고를 찾았습니다.`
+          : "검색 완료: 조건에 맞는 공고가 없습니다.",
+      );
     });
   };
 
@@ -116,10 +128,13 @@ export function G2BSearchDialog() {
 
   const save = async (item: NoticeSearchItem) => {
     setSavingNoticeNo(item.notice_no);
+    setResultMessage(`${item.notice_no} 저장 중입니다.`);
     try {
       const r = await actionUpsertFromSearchResult(item);
       if (!r.ok) {
-        toast.push("error", `저장 실패: ${r.error}`);
+        const message = `저장 실패: ${r.error}`;
+        setResultMessage(message);
+        toast.push("error", message);
         return;
       }
       setItems((prev) =>
@@ -127,7 +142,9 @@ export function G2BSearchDialog() {
           it.notice_no === item.notice_no ? { ...it, already_exists: true } : it,
         ),
       );
-      toast.push("success", `${item.notice_no} 저장 완료`);
+      const message = `${item.notice_no} 저장 완료. 상세 화면에서 분석을 시작할 수 있습니다.`;
+      setResultMessage(message);
+      toast.push("success", message);
     } finally {
       setSavingNoticeNo(null);
     }
@@ -138,7 +155,7 @@ export function G2BSearchDialog() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded border border-slate-700 hover:border-brand-500 px-3 py-1.5 text-sm text-slate-200"
+        className="rounded border border-slate-300 hover:border-brand-500 px-3 py-1.5 text-sm text-slate-800"
       >
         G2B 라이브 검색
       </button>
@@ -147,7 +164,7 @@ export function G2BSearchDialog() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-2">
             <label className="block flex-1 min-w-[200px]">
-              <span className="mb-1 block text-xs text-slate-400">키워드</span>
+              <span className="mb-1 block text-xs text-slate-600">키워드</span>
               <input
                 type="text"
                 value={keyword}
@@ -156,25 +173,25 @@ export function G2BSearchDialog() {
                   if (e.key === "Enter") search();
                 }}
                 placeholder="예: ABB 차단기"
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm"
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs text-slate-400">시작일</span>
+              <span className="mb-1 block text-xs text-slate-600">시작일</span>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"
+                className="bg-white border border-slate-300 rounded px-2 py-1.5 text-sm"
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs text-slate-400">종료일</span>
+              <span className="mb-1 block text-xs text-slate-600">종료일</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"
+                className="bg-white border border-slate-300 rounded px-2 py-1.5 text-sm"
               />
             </label>
             <button
@@ -187,14 +204,20 @@ export function G2BSearchDialog() {
             </button>
           </div>
 
+          {resultMessage ? (
+            <div role="status" className="rounded border border-slate-300 bg-slate-50/70 p-3 text-sm text-slate-900">
+              {resultMessage}
+            </div>
+          ) : null}
+
           {searched && items.length === 0 && !searching ? (
-            <div className="rounded border border-slate-800 bg-slate-900/40 p-4 text-center text-sm text-slate-400">
+            <div className="rounded border border-slate-200 bg-slate-50/40 p-4 text-center text-sm text-slate-600">
               G2B 검색 결과가 없습니다.
             </div>
           ) : null}
 
           {meta && meta.total > 0 ? (
-            <div className="flex items-center justify-between text-xs text-slate-400">
+            <div className="flex items-center justify-between text-xs text-slate-600">
               <span>
                 총 {meta.total.toLocaleString("ko-KR")}건 · {page} / {meta.total_pages} 페이지
               </span>
@@ -203,7 +226,7 @@ export function G2BSearchDialog() {
                   type="button"
                   onClick={() => fetchPage(page - 1)}
                   disabled={page <= 1}
-                  className="rounded border border-slate-700 hover:border-brand-500 px-2 py-1 disabled:opacity-30"
+                  className="rounded border border-slate-300 hover:border-brand-500 px-2 py-1 disabled:opacity-30"
                 >
                   ← 이전
                 </button>
@@ -211,7 +234,7 @@ export function G2BSearchDialog() {
                   type="button"
                   onClick={() => fetchPage(page + 1)}
                   disabled={page >= meta.total_pages}
-                  className="rounded border border-slate-700 hover:border-brand-500 px-2 py-1 disabled:opacity-30"
+                  className="rounded border border-slate-300 hover:border-brand-500 px-2 py-1 disabled:opacity-30"
                 >
                   다음 →
                 </button>
@@ -220,9 +243,9 @@ export function G2BSearchDialog() {
           ) : null}
 
           {items.length > 0 ? (
-            <div className="overflow-x-auto rounded border border-slate-800 max-h-[55vh]">
+            <div className="overflow-x-auto rounded border border-slate-200 max-h-[55vh]">
               <table className="w-full text-sm">
-                <thead className="bg-slate-900/80 text-slate-300 sticky top-0">
+                <thead className="bg-slate-50/80 text-slate-700 sticky top-0">
                   <tr>
                     <th className="text-left font-medium px-3 py-2">공고번호</th>
                     <th className="text-left font-medium px-3 py-2">제목</th>
@@ -237,19 +260,19 @@ export function G2BSearchDialog() {
                   {items.map((it) => (
                     <tr
                       key={it.notice_no}
-                      className="border-t border-slate-800 hover:bg-slate-900/40"
+                      className="border-t border-slate-200 hover:bg-slate-50/40"
                     >
-                      <td className="px-3 py-2 font-mono text-xs text-slate-300">
+                      <td className="px-3 py-2 font-mono text-xs text-slate-700">
                         {it.notice_no}
                       </td>
-                      <td className="px-3 py-2 text-slate-100">{it.title}</td>
-                      <td className="px-3 py-2 text-slate-300">
+                      <td className="px-3 py-2 text-slate-900">{it.title}</td>
+                      <td className="px-3 py-2 text-slate-700">
                         {it.org_name || "-"}
                       </td>
-                      <td className="px-3 py-2 text-right text-slate-300 tabular-nums">
+                      <td className="px-3 py-2 text-right text-slate-700 tabular-nums">
                         {fmtPrice(it.base_price)}
                       </td>
-                      <td className="px-3 py-2 text-slate-300 text-xs">
+                      <td className="px-3 py-2 text-slate-700 text-xs">
                         {fmtDate(it.close_date)}
                       </td>
                       <td className="px-3 py-2">
@@ -265,7 +288,7 @@ export function G2BSearchDialog() {
                         {it.already_exists ? (
                           <Link
                             href={`/notices/${encodeURIComponent(it.notice_no)}`}
-                            className="rounded border border-emerald-700 bg-emerald-950/50 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-900/50"
+                            className="rounded border border-emerald-700 bg-emerald-50/50 px-2 py-1 text-xs text-emerald-800 hover:bg-emerald-900/50"
                           >
                             이미 등록 →
                           </Link>
@@ -296,7 +319,7 @@ export function G2BSearchDialog() {
             <button
               type="button"
               onClick={close}
-              className="text-slate-400 hover:text-slate-200"
+              className="text-slate-600 hover:text-slate-800"
             >
               닫기
             </button>

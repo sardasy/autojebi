@@ -15,8 +15,8 @@ type Props = {
 export function Pagination({ page, totalPages, total, pageSize, baseQuery }: Props) {
   if (totalPages <= 1) {
     return (
-      <div className="text-xs text-slate-400">
-        총 <span className="text-slate-200">{total.toLocaleString("ko-KR")}</span>건
+      <div className="text-xs text-slate-600">
+        총 <span className="text-slate-800">{total.toLocaleString("ko-KR")}</span>건
       </div>
     );
   }
@@ -36,9 +36,9 @@ export function Pagination({ page, totalPages, total, pageSize, baseQuery }: Pro
 
   return (
     <nav className="flex items-center gap-1 text-xs">
-      <span className="text-slate-400 mr-2">
-        총 <span className="text-slate-200">{total.toLocaleString("ko-KR")}</span>건 · 페이지{" "}
-        <span className="text-slate-200">
+      <span className="text-slate-600 mr-2">
+        총 <span className="text-slate-800">{total.toLocaleString("ko-KR")}</span>건 · 페이지{" "}
+        <span className="text-slate-800">
           {page}/{totalPages}
         </span>
       </span>
@@ -90,11 +90,11 @@ function PageLink({
   const cls = active
     ? "bg-brand-500 text-white"
     : href
-      ? "bg-slate-900 text-slate-200 hover:bg-slate-800"
-      : "bg-slate-950 text-slate-600 cursor-not-allowed";
+      ? "bg-slate-50 text-slate-800 hover:bg-slate-100"
+      : "bg-white text-slate-600 cursor-not-allowed";
   if (!href) {
     return (
-      <span className={`px-2 py-1 rounded border border-slate-800 ${cls}`} aria-disabled>
+      <span className={`px-2 py-1 rounded border border-slate-200 ${cls}`} aria-disabled>
         {label}
       </span>
     );
@@ -103,7 +103,7 @@ function PageLink({
     <Link
       href={href}
       title={title}
-      className={`px-2 py-1 rounded border border-slate-800 ${cls}`}
+      className={`px-2 py-1 rounded border border-slate-200 ${cls}`}
     >
       {label}
     </Link>

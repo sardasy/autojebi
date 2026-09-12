@@ -127,9 +127,9 @@ export function AutofillDialog({ open, onClose, notice }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="HWP 양식 자동채움" size="lg">
       <div className="space-y-4">
-        <p className="text-sm text-slate-300">
+        <p className="text-sm text-slate-700">
           milim-hwp-agent에 위임. 회사 기본값은 env에서 가져오고{" "}
-          <code className="bg-slate-800 px-1 rounded">values</code>가 위에 덮어쓰기.
+          <code className="bg-slate-100 px-1 rounded">values</code>가 위에 덮어쓰기.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -138,7 +138,7 @@ export function AutofillDialog({ open, onClose, notice }: Props) {
               type="text"
               value={templatePath}
               onChange={(e) => setTemplatePath(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono"
+              className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
             />
           </Field>
           <Field label="output_path (상대경로)">
@@ -146,7 +146,7 @@ export function AutofillDialog({ open, onClose, notice }: Props) {
               type="text"
               value={outputPath}
               onChange={(e) => setOutputPath(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono"
+              className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
             />
           </Field>
         </div>
@@ -156,7 +156,7 @@ export function AutofillDialog({ open, onClose, notice }: Props) {
             value={valuesText}
             onChange={(e) => setValuesText(e.target.value)}
             rows={8}
-            className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono"
+            className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-mono"
             spellCheck={false}
           />
         </Field>
@@ -184,7 +184,7 @@ export function AutofillDialog({ open, onClose, notice }: Props) {
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
           >
             취소
           </button>
@@ -211,7 +211,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs text-slate-400 mb-1">{label}</span>
+      <span className="block text-xs text-slate-600 mb-1">{label}</span>
       {children}
     </label>
   );

@@ -6,6 +6,7 @@ import type { NoticeRecord } from "@/lib/api";
 
 vi.mock("@/lib/actions", () => ({
   actionAnalyze: vi.fn(),
+  actionNotify: vi.fn(),
 }));
 
 async function loadBar() {
@@ -62,6 +63,7 @@ describe("NoticeActionsBar", () => {
     );
     expect(screen.getByRole("button", { name: "분석" })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "그레이드" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "알림" })).toBeDisabled();
   });
 
   it("status='analyzed' → 분석 비활성, 그레이드 활성", async () => {
@@ -73,16 +75,16 @@ describe("NoticeActionsBar", () => {
     );
     expect(screen.getByRole("button", { name: "분석" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "그레이드" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "알림" })).not.toBeDisabled();
   });
 
-  it("숨긴 버튼(알림·HWP 양식)이 렌더되지 않음", async () => {
+  it("HWP 양식 버튼은 상세 작업바에 렌더되지 않음", async () => {
     const Bar = await loadBar();
     render(
       <ToastProvider>
         <Bar notice={buildNotice("analyzed")} />
       </ToastProvider>,
     );
-    expect(screen.queryByRole("button", { name: "알림" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "HWP 양식" }),
     ).not.toBeInTheDocument();

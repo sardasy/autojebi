@@ -16,7 +16,7 @@ export function SkuIngestButton() {
   const toast = useToast();
 
   const submit = () => {
-    setResultMessage(null);
+    setResultMessage("Qdrant 인제스트 중입니다.");
     startTransition(async () => {
       try {
         const r = await actionIngestSkus(source ? { source } : {});
@@ -37,15 +37,15 @@ export function SkuIngestButton() {
   return (
     <div className="space-y-2">
       <label className="block">
-        <span className="block text-xs text-slate-400 mb-1">
-          source 파일 경로 (비우면 <code className="bg-slate-800 px-1 rounded">data/abb_catalog_sample.json</code>)
+        <span className="block text-xs text-slate-600 mb-1">
+          source 파일 경로 (비우면 <code className="bg-slate-100 px-1 rounded">data/abb_catalog_sample.json</code>)
         </span>
         <input
           type="text"
           value={source}
           onChange={(e) => setSource(e.target.value)}
           placeholder="data/abb_catalog_sample.json"
-          className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono"
+          className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
         />
       </label>
       <button
@@ -57,7 +57,7 @@ export function SkuIngestButton() {
         {pending ? "인제스트 중…" : "Qdrant에 인제스트"}
       </button>
       {resultMessage ? (
-        <div role="status" className="text-xs text-slate-300">
+        <div role="status" className="rounded border border-slate-300 bg-white p-2 text-xs text-slate-800">
           {resultMessage}
         </div>
       ) : null}

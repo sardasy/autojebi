@@ -7,6 +7,8 @@ import { ToastProvider } from "../Toast";
 vi.mock("@/lib/actions", () => ({
   actionComposeHwpDocuments: vi.fn(),
   actionGetHwpAgentHealth: vi.fn(),
+  actionListHwpTemplates: vi.fn().mockResolvedValue({ items: [] }),
+  actionPreviewHwpContext: vi.fn().mockResolvedValue({ template: { template_path: "templates/form.hwp" }, input_values: { company_name: "테스트 회사" }, required_missing: [] }),
 }));
 
 async function loadDialog() {
@@ -112,6 +114,7 @@ describe("HwpComposeDialog", () => {
     const Dialog = await loadDialog();
     renderDialog(Dialog);
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "작성" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "작성" }));
 
     await waitFor(() =>
@@ -120,7 +123,38 @@ describe("HwpComposeDialog", () => {
         expect.objectContaining({ include_technical_compliance: true }),
       ),
     );
-    expect(await screen.findByText("HWP 작성 오류")).toBeInTheDocument();
+    expect(await screen.findByText(/HWP 작성 오류/)).toBeInTheDocument();
     expect(screen.getByText(/technical_compliance: agent down/)).toBeInTheDocument();
   });
+
+  it.each([{ errors: [] }, { errors: [{ stage: "hwp.put_fields", detail: "agent down" }] }])(
+    "does not report partial completion for a failed job without files (%j)",
+    async ({ errors }) => {
+      const { actionComposeHwpDocuments, actionGetHwpAgentHealth } = await import("@/lib/actions");
+      vi.mocked(actionGetHwpAgentHealth).mockResolvedValue({
+        ok: false, base_url: "http://hwp-agent.test", detail: "down",
+      });
+      vi.mocked(actionComposeHwpDocuments).mockResolvedValue({
+        notice_no: "DOC-1",
+        status: "analyzed",
+        bid_form: null,
+        technical_compliance: null,
+        required_missing: ["company_name"],
+        remaining_placeholders: [],
+        errors,
+        job: {
+          id: 1, notice_no: "DOC-1", status: "failed", review_status: "pending",
+          error_detail: "agent down", input_values: {}, replaced: [],
+          missing: ["company_name"], remaining_placeholders: [],
+        },
+      });
+      const Dialog = await loadDialog();
+      renderDialog(Dialog);
+      await waitFor(() => expect(screen.getByRole("button", { name: "작성" })).toBeEnabled());
+      fireEvent.click(screen.getByRole("button", { name: "작성" }));
+      expect((await screen.findAllByText(/HWP 작성 불가: agent down/)).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/HWP 작성 일부 완료/)).not.toBeInTheDocument();
+      expect(screen.getByText(/검토 대기/)).toBeInTheDocument();
+    },
+  );
 });

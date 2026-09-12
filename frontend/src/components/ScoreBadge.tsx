@@ -7,7 +7,7 @@ type Props = {
 export function ScoreBadge({ value, label, mode = "0to1" }: Props) {
   if (value === null || value === undefined) {
     return (
-      <span className="inline-flex items-center rounded px-2 py-0.5 text-xs bg-slate-800 text-slate-500">
+      <span className="inline-flex items-center rounded px-2 py-0.5 text-xs bg-slate-100 text-slate-500">
         {label ? `${label} —` : "—"}
       </span>
     );
@@ -24,7 +24,7 @@ export function ScoreBadge({ value, label, mode = "0to1" }: Props) {
           ? "bg-orange-500 text-white"
           : n > 0
             ? "bg-red-700 text-white"
-            : "bg-slate-700 text-slate-400";
+            : "bg-slate-200 text-slate-600";
 
   const display = mode === "0to100" ? raw.toFixed(0) : n.toFixed(2);
   return (

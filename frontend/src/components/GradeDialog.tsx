@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { actionGrade } from "@/lib/actions";
 import { Modal } from "./Modal";
@@ -13,23 +14,28 @@ type Props = {
 };
 
 export function GradeDialog({ open, onClose, noticeNo }: Props) {
-  const [alert, setAlert] = useState(true);
+  const [alert, setAlert] = useState(false);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
+  const router = useRouter();
 
   const submit = () => {
+    setResultMessage("그레이드 실행 중입니다.");
     startTransition(async () => {
       try {
         const r = await actionGrade(noticeNo, alert);
-        toast.push(
-          "success",
+        const message =
           `그레이드 완료: 종합 ${r.score_total.toFixed(2)} ` +
-            `(사양 ${r.score_spec.toFixed(2)} · 자격 ${r.score_qual.toFixed(2)} · 예가 ${r.score_price.toFixed(2)})\n` +
-            `Slack: ${r.slack_delivered ? "발송됨" : "미발송"}`,
-        );
-        onClose();
+          `(사양 ${r.score_spec.toFixed(2)} · 자격 ${r.score_qual.toFixed(2)} · 예가 ${r.score_price.toFixed(2)})\n` +
+          `Slack: ${r.slack_delivered ? "발송됨" : "미발송"}`;
+        setResultMessage(message);
+        toast.push("success", message);
+        router.refresh();
       } catch (e) {
-        toast.push("error", `그레이드 실패: ${(e as Error).message}`);
+        const message = `그레이드 실패: ${(e as Error).message}`;
+        setResultMessage(message);
+        toast.push("error", message);
       }
     });
   };
@@ -37,7 +43,7 @@ export function GradeDialog({ open, onClose, noticeNo }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="그레이드 실행" size="sm">
       <div className="space-y-4">
-        <p className="text-sm text-slate-300">
+        <p className="text-sm text-slate-700">
           ElecSpec → Qdrant SKU 매칭 → 3축 점수 산출. fit_score가 자동 동기화됩니다.
         </p>
         <label className="flex items-center gap-2 text-sm">
@@ -49,12 +55,17 @@ export function GradeDialog({ open, onClose, noticeNo }: Props) {
           />
           <span>Slack 알림 (임계치 초과 시)</span>
         </label>
+        {resultMessage ? (
+          <div role="status" className="rounded border border-slate-300 bg-slate-50/70 p-3 text-sm text-slate-900 whitespace-pre-wrap">
+            {resultMessage}
+          </div>
+        ) : null}
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
           >
             취소
           </button>

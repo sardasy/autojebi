@@ -85,6 +85,7 @@ export function HwpMappingAdmin({
   }
 
   function saveTemplate() {
+    setMessage("템플릿 저장 중입니다.");
     startTransition(async () => {
       try {
         const payload = normalizeTemplate(templateForm);
@@ -115,6 +116,7 @@ export function HwpMappingAdmin({
 
   function disableTemplate() {
     if (!selected?.id) return;
+    setMessage("템플릿 비활성화 중입니다.");
     startTransition(async () => {
       try {
         const next = await actionUpdateHwpTemplate(selected.id, { active: false });
@@ -146,6 +148,7 @@ export function HwpMappingAdmin({
       setMessage("먼저 템플릿을 저장하세요.");
       return;
     }
+    setMessage("필드 매핑 저장 중입니다.");
     startTransition(async () => {
       try {
         const payload = normalizeMapping(mappingForm);
@@ -165,6 +168,7 @@ export function HwpMappingAdmin({
 
   function disableMapping(mappingId: number) {
     if (!selected?.id) return;
+    setMessage("필드 매핑 비활성화 중입니다.");
     startTransition(async () => {
       try {
         const next = await actionUpdateHwpMapping(selected.id, mappingId, {
@@ -181,21 +185,21 @@ export function HwpMappingAdmin({
   }
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-      <aside className="space-y-2">
+    <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="min-w-0 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">템플릿</h3>
+          <h3 className="text-sm font-semibold text-slate-800">템플릿</h3>
           <button
             type="button"
             onClick={newTemplate}
-            className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:border-slate-500"
+            className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 hover:border-slate-500"
           >
             새 템플릿
           </button>
         </div>
         <div className="space-y-2">
           {templates.length === 0 ? (
-            <p className="rounded border border-slate-800 bg-slate-950/50 p-3 text-sm text-slate-500">
+            <p className="rounded border border-slate-200 bg-white/50 p-3 text-sm text-slate-500">
               등록된 HWP 템플릿 없음
             </p>
           ) : (
@@ -206,8 +210,8 @@ export function HwpMappingAdmin({
                 onClick={() => selectTemplate(template)}
                 className={`block w-full rounded border p-3 text-left text-sm ${
                   selectedId === template.id
-                    ? "border-brand-500 bg-brand-500/10 text-slate-100"
-                    : "border-slate-800 bg-slate-950/40 text-slate-300 hover:border-slate-600"
+                    ? "border-brand-500 bg-brand-500/10 text-slate-900"
+                    : "border-slate-200 bg-white/40 text-slate-700 hover:border-slate-600"
                 }`}
               >
                 <span className="block font-medium">{template.name}</span>
@@ -220,7 +224,7 @@ export function HwpMappingAdmin({
         </div>
       </aside>
 
-      <div className="space-y-5">
+      <div className="min-w-0 space-y-5">
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="template_key">
             <input
@@ -229,7 +233,7 @@ export function HwpMappingAdmin({
               onChange={(e) =>
                 setTemplateForm((prev) => ({ ...prev, template_key: e.target.value }))
               }
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 disabled:text-slate-500"
+              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:text-slate-500"
               placeholder="bid_form"
             />
           </Field>
@@ -242,7 +246,7 @@ export function HwpMappingAdmin({
                   kind: e.target.value as HwpTemplateUpsertRequest["kind"],
                 }))
               }
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             >
               <option value="bid_form">입찰양식</option>
               <option value="proposal">제안서</option>
@@ -254,7 +258,7 @@ export function HwpMappingAdmin({
               onChange={(e) =>
                 setTemplateForm((prev) => ({ ...prev, name: e.target.value }))
               }
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               placeholder="입찰참가신청서"
             />
           </Field>
@@ -264,7 +268,7 @@ export function HwpMappingAdmin({
               onChange={(e) =>
                 setTemplateForm((prev) => ({ ...prev, template_version: e.target.value }))
               }
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               placeholder="put_fields_v1"
             />
           </Field>
@@ -274,18 +278,18 @@ export function HwpMappingAdmin({
               onChange={(e) =>
                 setTemplateForm((prev) => ({ ...prev, template_path: e.target.value }))
               }
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               placeholder="templates/form.hwp"
             />
           </Field>
-          <label className="flex items-end gap-2 pb-2 text-sm text-slate-300">
+          <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
             <input
               type="checkbox"
               checked={templateForm.active ?? true}
               onChange={(e) =>
                 setTemplateForm((prev) => ({ ...prev, active: e.target.checked }))
               }
-              className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+              className="h-4 w-4 rounded border-slate-300 bg-white"
             />
             사용
           </label>
@@ -305,32 +309,36 @@ export function HwpMappingAdmin({
               type="button"
               onClick={disableTemplate}
               disabled={isPending}
-              className="rounded border border-amber-700 px-3 py-2 text-sm text-amber-200 hover:border-amber-500 disabled:opacity-60"
+              className="rounded border border-amber-700 px-3 py-2 text-sm text-amber-800 hover:border-amber-500 disabled:opacity-60"
             >
               템플릿 비활성화
             </button>
           ) : null}
-          {message ? <span className="text-sm text-slate-400">{message}</span> : null}
+          {message ? (
+            <span role="status" className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+              {message}
+            </span>
+          ) : null}
         </div>
 
-        <div className="border-t border-slate-800 pt-5">
+        <div className="border-t border-slate-200 pt-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-200">필드 매핑</h3>
+            <h3 className="text-sm font-semibold text-slate-800">필드 매핑</h3>
             <button
               type="button"
               onClick={() => {
                 setEditingMappingId(null);
                 setMappingForm(emptyMapping);
               }}
-              className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:border-slate-500"
+              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 hover:border-slate-500"
             >
               새 필드
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded border border-slate-800">
-            <table className="min-w-full divide-y divide-slate-800 text-sm">
-              <thead className="bg-slate-950/70 text-xs text-slate-400">
+          <div className="overflow-x-auto rounded border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-white/70 text-xs text-slate-600">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">HWP 필드</th>
                   <th className="px-3 py-2 text-left font-medium">Context</th>
@@ -339,16 +347,16 @@ export function HwpMappingAdmin({
                   <th className="px-3 py-2 text-right font-medium">작업</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-slate-200">
                 {selected?.mappings.length ? (
                   selected.mappings.map((mapping) => (
-                    <tr key={mapping.id ?? mapping.hwp_field_name} className="text-slate-200">
+                    <tr key={mapping.id ?? mapping.hwp_field_name} className="text-slate-800">
                       <td className="px-3 py-2 font-medium">{mapping.hwp_field_name}</td>
-                      <td className="px-3 py-2 text-slate-400">{mapping.context_path}</td>
-                      <td className="px-3 py-2 text-slate-400">{mapping.transform}</td>
+                      <td className="px-3 py-2 text-slate-600">{mapping.context_path}</td>
+                      <td className="px-3 py-2 text-slate-600">{mapping.transform}</td>
                       <td className="px-3 py-2">
                         {mapping.required ? (
-                          <span className="rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-200">
+                          <span className="rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-800">
                             필수
                           </span>
                         ) : (
@@ -359,7 +367,7 @@ export function HwpMappingAdmin({
                         <button
                           type="button"
                           onClick={() => editMapping(mapping)}
-                          className="mr-2 rounded border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:border-slate-500"
+                          className="mr-2 rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 hover:border-slate-500"
                         >
                           수정
                         </button>
@@ -367,7 +375,7 @@ export function HwpMappingAdmin({
                           <button
                             type="button"
                             onClick={() => disableMapping(mapping.id!)}
-                            className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-amber-600 hover:text-amber-200"
+                            className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:border-amber-600 hover:text-amber-800"
                           >
                             비활성화
                           </button>
@@ -393,7 +401,7 @@ export function HwpMappingAdmin({
                 onChange={(e) =>
                   setMappingForm((prev) => ({ ...prev, hwp_field_name: e.target.value }))
                 }
-                className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                 placeholder="company_name"
               />
             </Field>
@@ -403,7 +411,7 @@ export function HwpMappingAdmin({
                 onChange={(e) =>
                   setMappingForm((prev) => ({ ...prev, context_path: e.target.value }))
                 }
-                className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                 placeholder="company.company_name"
               />
             </Field>
@@ -416,7 +424,7 @@ export function HwpMappingAdmin({
                     transform: e.target.value as HwpTransform,
                   }))
                 }
-                className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 {TRANSFORMS.map((transform) => (
                   <option key={transform} value={transform}>
@@ -431,7 +439,7 @@ export function HwpMappingAdmin({
                 onChange={(e) =>
                   setMappingForm((prev) => ({ ...prev, default_value: e.target.value }))
                 }
-                className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </Field>
             <Field label="정렬">
@@ -444,17 +452,17 @@ export function HwpMappingAdmin({
                     sort_order: Number(e.target.value || 0),
                   }))
                 }
-                className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </Field>
-            <label className="flex items-end gap-2 pb-2 text-sm text-slate-300">
+            <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={Boolean(mappingForm.required)}
                 onChange={(e) =>
                   setMappingForm((prev) => ({ ...prev, required: e.target.checked }))
                 }
-                className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+                className="h-4 w-4 rounded border-slate-300 bg-white"
               />
               필수
             </label>
@@ -477,7 +485,7 @@ export function HwpMappingAdmin({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1">
-      <span className="text-xs font-medium text-slate-400">{label}</span>
+      <span className="text-xs font-medium text-slate-600">{label}</span>
       {children}
     </label>
   );

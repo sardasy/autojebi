@@ -24,6 +24,6 @@ describe("CategoryBadge", () => {
 
   it("falls back to slate for unknown category", () => {
     const { container } = render(<CategoryBadge value="UNKNOWN" />);
-    expect(container.querySelector(".bg-slate-700")).not.toBeNull();
+    expect(container.querySelector(".bg-slate-200")).not.toBeNull();
   });
 });

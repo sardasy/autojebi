@@ -2,10 +2,10 @@ import type { NoticeRecord } from "@/lib/api";
 import { bidWorkflowSteps, nextNoticeAction } from "@/lib/documentAutomation";
 
 const STATE_CLASS = {
-  done: "border-emerald-700 bg-emerald-950/30 text-emerald-100",
-  current: "border-brand-500 bg-brand-950/40 text-brand-100",
-  pending: "border-slate-800 bg-slate-900/40 text-slate-400",
-  blocked: "border-red-800 bg-red-950/30 text-red-100",
+  done: "border-emerald-700 bg-emerald-50/30 text-emerald-800",
+  current: "border-brand-500 bg-red-50/40 text-brand-700",
+  pending: "border-slate-200 bg-slate-50/40 text-slate-600",
+  blocked: "border-red-800 bg-red-50/30 text-red-800",
 };
 
 const STATE_LABEL = {
@@ -38,15 +38,15 @@ type Props = {
 export function BidWorkflowRail({ notice }: Props) {
   const steps = bidWorkflowSteps(notice);
   return (
-    <section className="rounded border border-slate-800 bg-slate-900/35 p-3">
+    <section className="rounded border border-slate-200 bg-slate-50/35 p-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-slate-200">입찰 업무 흐름</h2>
+          <h2 className="text-sm font-semibold text-slate-800">입찰 업무 흐름</h2>
           <p className="mt-1 text-xs text-slate-500">
             공고 검토에서 제안서 초안까지 현재 처리 위치를 표시합니다.
           </p>
         </div>
-        <div className="rounded border border-brand-700 bg-brand-950/30 px-3 py-1.5 text-sm text-brand-100">
+        <div className="rounded border border-brand-700 bg-red-50/30 px-3 py-1.5 text-sm text-brand-700">
           다음 작업: <span className="font-semibold">{nextNoticeAction(notice)}</span>
         </div>
       </div>
@@ -58,7 +58,7 @@ export function BidWorkflowRail({ notice }: Props) {
           >
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-slate-500">{index + 1}</span>
-              <span className="rounded bg-slate-950/40 px-2 py-0.5 text-[11px]">
+              <span className="rounded bg-white/40 px-2 py-0.5 text-[11px]">
                 {STATE_LABEL[step.state]}
               </span>
             </div>
@@ -66,7 +66,7 @@ export function BidWorkflowRail({ notice }: Props) {
             <div className="mt-1 min-h-8 text-xs opacity-80">{step.detail}</div>
             <a
               href={STEP_TARGET[step.id]}
-              className="mt-3 inline-flex text-xs font-medium text-slate-200 underline decoration-slate-600 underline-offset-4 hover:text-white"
+              className="mt-3 inline-flex text-xs font-medium text-slate-800 underline decoration-slate-600 underline-offset-4 hover:text-white"
             >
               {STEP_ACTION_LABEL[step.id]}
             </a>

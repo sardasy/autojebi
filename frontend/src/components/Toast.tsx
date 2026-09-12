@@ -60,10 +60,10 @@ function ToastView({
 
   const color =
     item.kind === "success"
-      ? "border-emerald-600 bg-emerald-950/80 text-emerald-100"
+      ? "border-emerald-600 bg-emerald-50/80 text-emerald-800"
       : item.kind === "error"
-        ? "border-red-700 bg-red-950/80 text-red-100"
-        : "border-slate-700 bg-slate-900/80 text-slate-100";
+        ? "border-red-700 bg-red-50/80 text-red-800"
+        : "border-slate-300 bg-slate-50/80 text-slate-900";
 
   const icon =
     item.kind === "success" ? "✓" : item.kind === "error" ? "✕" : "ℹ";

@@ -10,6 +10,7 @@ export function UpsertNoticeForm() {
   const [title, setTitle] = useState("Typhoon HIL test procurement");
   const [source, setSource] = useState("KJEBI");
   const [rawText, setRawText] = useState(`{\n  "from": "manual"\n}`);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
@@ -28,13 +29,18 @@ export function UpsertNoticeForm() {
 
   const submit = () => {
     if (!noticeNo.trim()) {
-      toast.push("error", "notice_no가 필요합니다");
+      const message = "notice_no가 필요합니다";
+      setResultMessage(message);
+      toast.push("error", message);
       return;
     }
     if (!rawValidation.ok) {
-      toast.push("error", `raw JSON 파싱 실패: ${rawValidation.error}`);
+      const message = `raw JSON 파싱 실패: ${rawValidation.error}`;
+      setResultMessage(message);
+      toast.push("error", message);
       return;
     }
+    setResultMessage(`${noticeNo} 저장 중입니다.`);
     startTransition(async () => {
       try {
         const r = await actionUpsert({
@@ -43,9 +49,13 @@ export function UpsertNoticeForm() {
           source: source || undefined,
           raw: rawValidation.parsed ?? undefined,
         });
-        toast.push("success", `Upsert 완료 — status: ${r.status}, fit_score: ${r.fit_score}`);
+        const message = `Upsert 완료 — status: ${r.status}, fit_score: ${r.fit_score}`;
+        setResultMessage(message);
+        toast.push("success", message);
       } catch (e) {
-        toast.push("error", `Upsert 실패: ${(e as Error).message}`);
+        const message = `Upsert 실패: ${(e as Error).message}`;
+        setResultMessage(message);
+        toast.push("error", message);
       }
     });
   };
@@ -58,7 +68,7 @@ export function UpsertNoticeForm() {
             type="text"
             value={noticeNo}
             onChange={(e) => setNoticeNo(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono"
+            className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"
           />
         </Field>
         <Field label="title">
@@ -66,7 +76,7 @@ export function UpsertNoticeForm() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"
+            className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm"
           />
         </Field>
         <Field label="source">
@@ -74,7 +84,7 @@ export function UpsertNoticeForm() {
             type="text"
             value={source}
             onChange={(e) => setSource(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"
+            className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm"
           />
         </Field>
       </div>
@@ -83,7 +93,7 @@ export function UpsertNoticeForm() {
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
           rows={6}
-          className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono"
+          className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-mono"
           spellCheck={false}
         />
       </Field>
@@ -98,6 +108,11 @@ export function UpsertNoticeForm() {
       >
         {pending ? "Upsert 중…" : "Upsert 실행"}
       </button>
+      {resultMessage ? (
+        <div role="status" className="rounded border border-slate-300 bg-white p-2 text-xs text-slate-800">
+          {resultMessage}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -111,7 +126,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="block text-xs text-slate-400 mb-1">{label}</span>
+      <span className="block text-xs text-slate-600 mb-1">{label}</span>
       {children}
     </label>
   );
