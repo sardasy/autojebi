@@ -139,6 +139,24 @@ describe("readDocumentAutomation", () => {
     );
     expect(docs).toEqual(fullDocs);
   });
+
+  it("preserves HWP jobs so failures and review actions reach the document panel", () => {
+    const job = {
+      id: 1,
+      status: "failed",
+      review_status: "pending",
+      missing: ["company_name"],
+      remaining_placeholders: ["title"],
+      error_detail: "worker unavailable",
+    };
+    const docs = readDocumentAutomation(mkNotice({
+      document_automation: { checklist: [], hwp_jobs: [job] },
+    }));
+    expect(docs?.hwp_jobs).toEqual([job]);
+    expect(readDocumentAutomation(mkNotice({
+      document_automation: { checklist: [], hwp_jobs: "invalid" },
+    }))?.hwp_jobs).toBeUndefined();
+  });
 });
 
 describe("documentSummaryText", () => {

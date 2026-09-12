@@ -165,7 +165,7 @@ describe("DocumentPreparationPanel", () => {
     expect(screen.getByText("위험/확인 메모")).toBeInTheDocument();
     expect(screen.getByText("마감 임박")).toBeInTheDocument();
     // summary line contains source
-    expect(screen.getByText(/source: rule\+llm/)).toBeInTheDocument();
+    expect(screen.getByText(/서류: 1\/2 준비/)).toBeInTheDocument();
   });
 
   it("shows remaining HWP placeholders when bid_form draft has them", async () => {

@@ -30,18 +30,16 @@ export function readDocumentAutomation(
   };
   if (Array.isArray(value.uploads)) result.uploads = value.uploads;
   if (Array.isArray(value.exports)) result.exports = value.exports;
+  if (Array.isArray(value.hwp_jobs)) result.hwp_jobs = value.hwp_jobs;
   return result;
 }
 
 export function documentSummaryText(docs: DocumentAutomationResult): string {
   const total = docs.checklist.filter((item) => item.required).length;
   const ready = docs.checklist.filter(
-    (item) => item.required && ["ready", "generated"].includes(item.status),
+    (item) => item.required && ["ready", "generated", "not_applicable"].includes(item.status),
   ).length;
-  const missing =
-    docs.missing_required && docs.missing_required.length > 0
-      ? docs.missing_required.length
-      : Math.max(total - ready, 0);
+  const missing = docs.checklist.filter(item => item.required && !["ready", "generated", "not_applicable"].includes(item.status)).length;
   const draftCount = Object.keys(docs.drafts || {}).length;
   const uploadCount = docs.uploads?.length || 0;
   const exportKinds = new Set((docs.exports || []).map((item) => item.kind));
@@ -50,6 +48,15 @@ export function documentSummaryText(docs: DocumentAutomationResult): string {
   const exportText =
     exportKinds.size > 0 ? Array.from(exportKinds).join(", ").toUpperCase() : "없음";
   return `${baseText} · 업로드 ${uploadCount} · 내보내기 ${exportText}`;
+}
+
+export function nextNoticeTab(notice: NoticeRecord): "review" | "documents" | "spec" | "proposal" | "exports" {
+  const action = nextNoticeAction(notice);
+  if (action.includes("공고 분석") || action.includes("그레이딩")) return "review";
+  if (action.includes("서류") || action.includes("제출 전 검증")) return "documents";
+  if (action.includes("규격 추출") || action.includes("규격 요구값")) return "spec";
+  if (action.includes("제안서")) return "proposal";
+  return "exports";
 }
 
 export function nextNoticeAction(notice: NoticeRecord): string {
@@ -63,13 +70,14 @@ export function nextNoticeAction(notice: NoticeRecord): string {
   if (missingCount > 0) return `필수 서류 준비 필요 (${missingCount}건)`;
 
   if ((notice.spec_item_count || 0) === 0) return "규격 추출 필요";
+  if (notice.spec_value_count === 0) return "규격 요구값 확인 필요";
 
   if (!hasTechnicalComplianceExport(docs)) return "규격대응표 작성 필요";
   if (!hasProposalDraftOrExport(docs)) return "제안서 초안 생성 필요";
 
-  if ((notice.unresolved_error_count || 0) > 0 || docs.errors.length > 0) {
-    return "오류 확인 필요";
-  }
+  const latestJob = docs.hwp_jobs?.[0];
+  if (latestJob && (latestJob.status === "failed" || latestJob.review_status === "rejected")) return "생성 결과 확인 필요";
+  if (latestJob && latestJob.review_status !== "approved") return "생성물 검토 필요";
   if (docs.ready_for_submission) return "최종 검토 가능";
   if (notice.status === "form_filled") return "제출 전 검증 필요";
   const label: Record<string, string> = {
@@ -129,7 +137,6 @@ export function bidWorkflowSteps(notice: NoticeRecord): BidWorkflowStep[] {
 }
 
 function requiredMissingCount(docs: DocumentAutomationResult): number {
-  if (docs.missing_required.length > 0) return docs.missing_required.length;
   return docs.checklist.filter(
     (item) => item.required && !["ready", "generated", "not_applicable"].includes(item.status),
   ).length;

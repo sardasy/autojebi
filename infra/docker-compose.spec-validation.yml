@@ -1,0 +1,27 @@
+name: autojebi-spec-validation
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports: ["127.0.0.1:15433:5432"]
+    environment:
+      POSTGRES_DB: spec_validation
+      POSTGRES_USER: spec_validation
+      POSTGRES_PASSWORD: ${SPEC_POSTGRES_PASSWORD:?Set a validation-only password}
+    volumes: ["spec-postgres:/var/lib/postgresql/data"]
+  neo4j:
+    image: neo4j:5.26-community
+    ports: ["127.0.0.1:17474:7474", "127.0.0.1:17687:7687"]
+    environment:
+      NEO4J_AUTH: neo4j/${SPEC_NEO4J_PASSWORD:?Set a validation-only password}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes: ["spec-neo4j:/data"]
+  qdrant:
+    image: qdrant/qdrant:v1.15.5
+    ports: ["127.0.0.1:16333:6333"]
+    volumes: ["spec-qdrant:/qdrant/storage"]
+volumes:
+  spec-postgres:
+  spec-neo4j:
+  spec-qdrant:

@@ -17,6 +17,8 @@ from sqlalchemy import engine_from_config, pool, text
 from alembic import context
 from api.config import settings
 from api.routers.notices import metadata as target_metadata
+from api.specifications import tables as spec_tables  # noqa: F401
+from api.workspace import tables  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

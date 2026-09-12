@@ -173,6 +173,9 @@ export async function actionGetHwpAgentHealth() {
 export async function actionListHwpTemplates() {
   return api.listHwpTemplates();
 }
+export async function actionGetProposalSections(noticeNo: string) {
+  return api.getProposalSections(noticeNo);
+}
 
 export async function actionUpsertHwpTemplate(payload: HwpTemplateUpsertRequest) {
   const result = await api.upsertHwpTemplate(payload);
@@ -208,8 +211,8 @@ export async function actionUpdateHwpMapping(
   return result;
 }
 
-export async function actionImportCommonUpload(noticeNo: string, uploadId: string) {
-  const result = await api.importCommonUpload(noticeNo, uploadId);
+export async function actionImportCommonUpload(noticeNo: string, uploadId: string, itemId?: string) {
+  const result = await api.importCommonUpload(noticeNo, uploadId, itemId);
   revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
   revalidatePath("/notices");
   return result;
@@ -255,8 +258,15 @@ export async function actionReviewHwpJob(
   payload: HwpJobReviewRequest,
 ) {
   const result = await api.reviewHwpJob(noticeNo, jobId, payload);
+  revalidatePath("/reviews");
   revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
   revalidatePath("/notices");
+  return result;
+}
+
+export async function actionProposalStage(noticeNo: string, stage: "analyze" | "retrieve" | "generate" | "verify") {
+  const result = await api.runProposalStage(noticeNo, stage);
+  revalidatePath(`/notices/${encodeURIComponent(noticeNo)}`);
   return result;
 }
 
