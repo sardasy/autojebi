@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import (
@@ -139,7 +140,7 @@ from api.services.spec_items import (
     spec_items_summary,
     spec_items_to_elec_spec,
 )
-from api.services.status import advance_status, can_transition, compute_notify_status
+from api.services.status import advance_status, can_transition
 from api.services.uploads import (
     analyze_upload,
     build_metadata,
@@ -263,11 +264,13 @@ hwp_templates = Table(
     Column("name", String, nullable=False),
     Column("template_path", Text, nullable=False),
     Column("template_version", String),
+    Column("render_mode", String(40), nullable=False, server_default="fields", default="fields"),
     Column("active", Boolean, nullable=False, default=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("template_key", name="hwp_templates_template_key_unique"),
     CheckConstraint("kind IN ('bid_form','proposal')"),
+    CheckConstraint("render_mode IN ('fields','proposal_layout_v1')", name="hwp_template_render_mode"),
     Index("hwp_templates_active_idx", "active"),
 )
 
@@ -568,6 +571,9 @@ attachment_fetch_files = Table(
 
 
 def _row_to_record(row: Any) -> NoticeRecord:
+    analysis = dict(row["analysis"] or {})
+    if isinstance(analysis.get("document_automation"), dict):
+        analysis["document_automation"] = validate_document_automation(analysis["document_automation"])
     return NoticeRecord(
         notice_no=row["notice_no"],
         title=row["title"],
@@ -576,7 +582,7 @@ def _row_to_record(row: Any) -> NoticeRecord:
         category=row["category"],
         fit_score=row["fit_score"],
         assignee=row["assignee"],
-        analysis=row["analysis"] or {},
+        analysis=analysis,
         status=row["status"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -602,6 +608,7 @@ def _row_to_record(row: Any) -> NoticeRecord:
         unresolved_error_count=int(row.get("unresolved_error_count") or 0),
         export_count=int(row.get("export_count") or 0),
         spec_item_count=int(row.get("spec_item_count") or 0),
+        spec_value_count=int(row.get("spec_value_count") or 0),
     )
 
 
@@ -634,6 +641,16 @@ def _notice_select_columns() -> list[Any]:
             .where(notice_spec_items.c.notice_no == bid_pipeline.c.notice_no)
             .scalar_subquery()
             .label("spec_item_count")
+        ),
+        (
+            select(func.count())
+            .select_from(notice_spec_items)
+            .where(
+                notice_spec_items.c.notice_no == bid_pipeline.c.notice_no,
+                func.length(func.trim(notice_spec_items.c.required_value)) > 0,
+            )
+            .scalar_subquery()
+            .label("spec_value_count")
         ),
     ]
 
@@ -753,7 +770,7 @@ def search_notices_endpoint(payload: NoticeSearchRequest) -> NoticeSearchRespons
 
     today = _date.today()
     start = payload.start_date.date() if payload.start_date else (today - _td(days=30))
-    end = payload.end_date.date() if payload.end_date else (today + _td(days=30))
+    end = payload.end_date.date() if payload.end_date else today
 
     if start > end:
         raise HTTPException(
@@ -777,14 +794,34 @@ def search_notices_endpoint(payload: NoticeSearchRequest) -> NoticeSearchRespons
     except HTTPException:
         raise
     except Exception as exc:
-        # G2B HTTP/네트워크/파싱 실패 → 외부 의존성 장애로 분류
-        raise HTTPException(status_code=502, detail=f"G2B search failed: {exc}")
+        if isinstance(exc, ValueError) and str(exc) == "G2B_KEY_MISSING":
+            detail = "G2B 검색 키가 설정되지 않았습니다. 관리자에서 연결 상태를 확인하세요."
+        elif isinstance(exc, PermissionError) or (isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {401, 403}):
+            detail = "G2B 인증에 실패했습니다. API 키와 서비스 이용 승인을 확인하세요."
+        elif isinstance(exc, httpx.ConnectTimeout):
+            detail = "G2B API 서버 연결 시간이 초과되었습니다. API 주소의 HTTP/HTTPS 설정과 방화벽·프록시 또는 서비스 상태를 확인하세요."
+        elif isinstance(exc, httpx.ConnectError):
+            detail = "G2B API 서버에 연결하지 못했습니다. DNS·네트워크·인증서 설정을 확인하세요."
+        elif isinstance(exc, ValueError) and str(exc) == "G2B_RATE_LIMITED":
+            detail = "G2B 호출 허용량을 초과했습니다. 공공데이터포털의 일일·초당 이용 한도를 확인한 뒤 다시 시도하세요."
+        elif isinstance(exc, ValueError) and str(exc) == "G2B_IP_BLOCKED":
+            detail = "G2B에서 현재 요청 IP를 차단했습니다. 공공데이터 활용지원센터에 확인하세요."
+        elif isinstance(exc, ValueError) and str(exc) == "G2B_UPSTREAM_TIMEOUT":
+            detail = "G2B 중계 서버가 기관 API 응답을 받지 못했습니다. 서비스 상태를 확인하고 잠시 후 다시 시도하세요."
+        elif isinstance(exc, httpx.TimeoutException):
+            detail = "G2B 응답 시간이 초과되었습니다. 검색 기간을 줄여 다시 시도하세요."
+        else:
+            detail = "G2B 외부 서비스에 연결하지 못했습니다. 잠시 후 다시 시도하세요."
+        raise HTTPException(status_code=502, detail=detail)
 
 
 @router.post("/upsert", response_model=NoticeRecord)
 def upsert_notice(payload: NoticeUpsertRequest) -> NoticeRecord:
+    from api.services.notice_facts import normalize_notice_facts
+
     engine = require_engine()
     now = datetime.now(tz=UTC)
+    facts = normalize_notice_facts(payload.raw)
 
     stmt = insert(bid_pipeline).values(
         notice_no=payload.notice_no,
@@ -798,6 +835,7 @@ def upsert_notice(payload: NoticeUpsertRequest) -> NoticeRecord:
         status="collected",
         created_at=now,
         updated_at=now,
+        **facts,
     )
 
     # Idempotency rule:
@@ -810,6 +848,7 @@ def upsert_notice(payload: NoticeUpsertRequest) -> NoticeRecord:
             "raw": stmt.excluded.raw,
             "updated_at": now,
             "status": bid_pipeline.c.status,
+            **{key: getattr(stmt.excluded, key) for key in facts},
         },
     ).returning(*bid_pipeline.c)
 
@@ -885,11 +924,21 @@ def analyze_notice(notice_no: str) -> NoticeAnalyzeResponse:
             raise HTTPException(status_code=404, detail="notice not found")
 
         current_status = row["status"]
-        if not can_transition(current_status, "analyzed"):
-            raise HTTPException(status_code=409, detail=f"invalid transition {current_status} -> analyzed")
-
         analyzer = ClaudeAnalyzer()
         result = analyzer.analyze_notice(notice_no=notice_no, title=row["title"], raw=row["raw"])
+        if result.analysis.get("error") or result.analysis.get("schema_valid") is False:
+            _record_errors(conn, notice_no, [{"stage": "claude.schema" if result.analysis.get("schema_valid") is False else "claude.analysis",
+                "source": "claude", "detail": "분석 실패: 인증/연결/응답 형식 확인 필요"}])
+            conn.commit()
+            raise HTTPException(status_code=502, detail={
+                "code": "analysis_failed",
+                "message": "분석하지 못했습니다. 기존 점수와 문서 결과는 유지됩니다.",
+                "next_action": "LLM 인증과 연결을 확인한 뒤 다시 분석하세요.",
+            })
+        merged_analysis = dict(row["analysis"] or {})
+        merged_analysis.update(result.analysis)
+        merged_analysis.pop("error", None)
+        next_status = advance_status(current_status, "analyzed")
         assignee = assignee_for_category(result.category)
         schema_errors = [
             {"stage": "claude.schema", "source": "claude", "detail": str(err)}
@@ -904,8 +953,8 @@ def analyze_notice(notice_no: str) -> NoticeAnalyzeResponse:
                 category=result.category,
                 fit_score=result.fit_score,
                 assignee=assignee,
-                analysis=result.analysis,
-                status="analyzed",
+                analysis=merged_analysis,
+                status=next_status,
             )
         )
 
@@ -914,8 +963,8 @@ def analyze_notice(notice_no: str) -> NoticeAnalyzeResponse:
             category=result.category,  # type: ignore[arg-type]
             fit_score=result.fit_score,
             assignee=assignee,
-            analysis=result.analysis,
-            status="analyzed",
+            analysis=merged_analysis,
+            status=next_status,
         )
 
 
@@ -931,11 +980,10 @@ def notify_notice(notice_no: str, body: NotifyRequest) -> NotifyResponse:
         if not row:
             raise HTTPException(status_code=404, detail="notice not found")
 
-        next_status = compute_notify_status(int(row["fit_score"] or 0))
-        if not can_transition(row["status"], next_status):
-            raise HTTPException(
-                status_code=409, detail=f"invalid transition {row['status']} -> {next_status}"
-            )
+        analysis = row["analysis"] or {}
+        if analysis.get("error") or analysis.get("schema_valid") is False:
+            raise HTTPException(status_code=409, detail="유효한 분석 결과가 없습니다. 분석을 다시 실행하세요.")
+        next_status = row["status"]
 
         title = f"[입찰] {row['title'] or notice_no}"
         body_text = (
@@ -947,11 +995,11 @@ def notify_notice(notice_no: str, body: NotifyRequest) -> NotifyResponse:
         )
         outcome = notifier.deliver(title=title, body=body_text, dry_run=body.dry_run)
 
-        conn.execute(
-            update(bid_pipeline)
-            .where(bid_pipeline.c.notice_no == notice_no)
-            .values(status=next_status)
-        )
+        notification_log = list(analysis.get("notification_log") or [])
+        notification_log.append({"at": datetime.now(tz=UTC).isoformat(), "dry_run": body.dry_run, "delivered": outcome.delivered})
+        conn.execute(update(bid_pipeline).where(bid_pipeline.c.notice_no == notice_no).values(
+            analysis={**analysis, "notification_log": notification_log},
+        ))
 
         return NotifyResponse(notice_no=notice_no, status=next_status, delivered=outcome.delivered)
 
@@ -1635,6 +1683,15 @@ def review_hwp_job(
         ).mappings().one_or_none()
         if not existing:
             raise HTTPException(status_code=404, detail="HWP generation job not found")
+        if body.review_status == "approved":
+            if existing["status"] != "completed":
+                raise HTTPException(status_code=409, detail="완료된 HWP 작업만 승인할 수 있습니다.")
+            export = _lookup_export_by_id(conn, notice_no, existing["export_id"]) if existing["export_id"] else None
+            if not export or export.get("validation_status") == "failed":
+                raise HTTPException(status_code=409, detail="검토 가능한 생성 파일이 없습니다. 다시 생성하세요.")
+            warning = existing["missing"] or existing["remaining_placeholders"] or export.get("validation_status") == "warning" or export.get("validation_errors")
+            if warning and not (body.review_note or "").strip():
+                raise HTTPException(status_code=422, detail="경고가 있는 생성물은 검토 의견을 입력해야 승인할 수 있습니다.")
         conn.execute(
             update(hwp_generation_jobs)
             .where(hwp_generation_jobs.c.id == job_id)
@@ -2056,6 +2113,7 @@ def _hwp_job_to_model(row: dict[str, Any]) -> HwpJobRecord:
         review_status=str(row.get("review_status") or "pending"),
         review_note=row.get("review_note"),
         reviewed_by=row.get("reviewed_by"),
+        created_at=row.get("created_at"),
     )
 
 
@@ -2066,7 +2124,7 @@ def _merge_hwp_job_into_document_automation(document_automation: dict, job: HwpJ
         for item in list(updated.get("hwp_jobs") or [])
         if not (isinstance(item, dict) and item.get("id") == job.id)
     ]
-    jobs.insert(0, job.model_dump())
+    jobs.insert(0, job.model_dump(mode="json"))
     updated["hwp_jobs"] = jobs[:10]
     return updated
 
@@ -2400,12 +2458,12 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                     hwp_client=hwp_client,
                     hwp_available=hwp_ok,
                 )
-                resolved_item_id = str(analysis_meta.pop("item_id") or "") or None
+                analysis_meta.pop("item_id", None)
                 uploaded = build_metadata(
                     saved,
                     original_name=attachment.filename,
                     mime=downloaded.mime,
-                    item_id=resolved_item_id,
+                    item_id=None,
                     source_ref="g2b_attachment",
                     **analysis_meta,
                 )
@@ -2560,7 +2618,7 @@ async def upload_document(
 
 
 @router.post("/{notice_no}/documents/import-common/{upload_id}", response_model=UploadResponse)
-def import_common_document(notice_no: str, upload_id: str) -> UploadResponse:
+def import_common_document(notice_no: str, upload_id: str, item_id: str | None = Query(None)) -> UploadResponse:
     common = get_common_upload(upload_id)
     if common is None:
         raise HTTPException(status_code=404, detail="common upload not found")
@@ -2568,6 +2626,10 @@ def import_common_document(notice_no: str, upload_id: str) -> UploadResponse:
     with engine.begin() as conn:
         _, analysis, document_automation = _load_document_automation(conn, notice_no)
         imported = clone_common_upload_for_notice(common)
+        if item_id:
+            if not any(item.get("id") == item_id for item in document_automation.get("checklist", [])):
+                raise HTTPException(status_code=422, detail="연결할 체크리스트 항목을 확인하세요.")
+            imported = imported.model_copy(update={"item_id": item_id})
         updated_docs = merge_into_document_automation(document_automation, imported)
         _persist_document_automation(conn, notice_no, analysis, updated_docs)
         return UploadResponse(notice_no=notice_no, uploaded=imported)
@@ -2742,7 +2804,7 @@ def compose_hwp_documents(notice_no: str, body: HwpComposeRequest) -> HwpCompose
                 row=row,
                 analysis=updated_analysis,
                 document_automation=updated_docs,
-                template_key="bid_form",
+                template_key=body.template_key,
                 values_override=merged_values,
                 output_path=output_path,
                 visible=body.visible,
@@ -2872,7 +2934,7 @@ def compose_proposal_document(
                 row=row,
                 analysis=analysis,
                 document_automation=updated_docs,
-                template_key="proposal",
+                template_key=body.template_key,
                 values_override=body.values_override,
                 output_path=output_path,
                 visible=body.visible,
@@ -3027,12 +3089,14 @@ def _has_blocked_document(analysis: dict[str, Any] | None) -> bool:
     checklist = doc.get("checklist")
     if not isinstance(checklist, list):
         return False
-    return any(isinstance(item, dict) and item.get("status") == "blocked" for item in checklist)
+    return bool(validate_document_automation(doc).get("missing_required")) or any(
+        isinstance(item, dict) and item.get("status") == "blocked" for item in checklist
+    )
 
 
 def _is_ready_for_submission(analysis: dict[str, Any] | None) -> bool:
     doc = (analysis or {}).get("document_automation")
-    return isinstance(doc, dict) and doc.get("ready_for_submission") is True
+    return isinstance(doc, dict) and validate_document_automation(doc).get("ready_for_submission") is True
 
 
 @router.get("/summary", response_model=NoticeSummary)
@@ -3086,7 +3150,7 @@ def get_notice(notice_no: str) -> NoticeRecord:
     engine = require_engine()
     with engine.begin() as conn:
         row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
+            select(*_notice_select_columns()).where(bid_pipeline.c.notice_no == notice_no)
         ).mappings().one_or_none()
         if not row:
             raise HTTPException(status_code=404, detail="notice not found")

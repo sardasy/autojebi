@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 
 _GRADEABLE_STATUSES = {
     "analyzed",
+    "attachments_fetched",
+    "documents_analyzed",
+    "spec_extracted",
+    "hwp_composed",
     "form_filled",
     "notified",
     "digest_queued",
@@ -105,7 +109,7 @@ def grade_notice_impl(
     engine: Engine,
     notice_no: str,
     *,
-    alert: bool = True,
+    alert: bool = False,
 ) -> NoticeGradeResponse:
     """ElecSpec → Qdrant → 3축 그레이딩 → DB 저장 + fit_score 동기화 + Slack 알림.
 
@@ -124,6 +128,8 @@ def grade_notice_impl(
             raise GradeInvalidStatusError(notice_no, row["status"])
 
         analysis_dict = row["analysis"] or {}
+        if analysis_dict.get("error") or analysis_dict.get("schema_valid") is False:
+            raise GradeInvalidStatusError(notice_no, "analysis_failed")
         elec_dict = analysis_dict.get("elec_spec") or {}
         try:
             spec = ElecSpec.model_validate(elec_dict)

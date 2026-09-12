@@ -69,12 +69,16 @@ def test_analyze_records_claude_schema_errors(client, sqlite_engine, monkeypatch
 
     response = client.post("/notices/ANALYZE-SCHEMA-1/analyze")
 
-    assert response.status_code == 200, response.text
-    assert response.json()["analysis"]["schema_valid"] is False
+    assert response.status_code == 502, response.text
+    assert response.json()["detail"]["code"] == "analysis_failed"
     with sqlite_engine.begin() as conn:
         error = conn.execute(
             select(notice_errors).where(notice_errors.c.notice_no == "ANALYZE-SCHEMA-1")
         ).mappings().one()
     assert error["stage"] == "claude.schema"
     assert error["source"] == "claude"
-    assert error["detail"] == "Input should be a valid number"
+    assert "분석 실패" in error["detail"]
+    with sqlite_engine.connect() as conn:
+        row = conn.execute(select(bid_pipeline).where(bid_pipeline.c.notice_no == "ANALYZE-SCHEMA-1")).mappings().one()
+    assert row["status"] == "collected"
+    assert row["analysis"] == {}

@@ -92,7 +92,8 @@ def test_fetch_g2b_attachment_downloads_analyzes_and_merges_upload(
     uploaded = body["fetched"][0]
     assert uploaded["name"] == "사업자등록증.pdf"
     assert uploaded["source_ref"] == "g2b_attachment"
-    assert uploaded["item_id"] == "business_registration"
+    assert uploaded["item_id"] is None
+    assert uploaded["detected_item_id"] == "business_registration"
     assert uploaded["analysis_summary"]
 
     with sqlite_engine.begin() as conn:
@@ -107,7 +108,7 @@ def test_fetch_g2b_attachment_downloads_analyzes_and_merges_upload(
     business_registration = next(
         item for item in docs["checklist"] if item["id"] == "business_registration"
     )
-    assert business_registration["status"] == "ready"
+    assert business_registration["status"] == "needed"
     assert job["status"] == "completed"
     assert file_result["status"] == "success"
     assert file_result["upload_id"] == uploaded["id"]

@@ -293,6 +293,14 @@ def get_proposal_coverage(notice_no: str) -> ProposalCoverageResponse:
     return ProposalCoverageResponse(notice_no=notice_no, readiness_score=score, items=items)
 
 
+@router.get("/{notice_no}/sections", response_model=ProposalGenerateResponse)
+def get_proposal_sections(notice_no: str) -> ProposalGenerateResponse:
+    with require_engine().begin() as conn:
+        _load_notice(conn, notice_no)
+        sections = _list_sections(conn, notice_no)
+    return ProposalGenerateResponse(notice_no=notice_no, sections=sections)
+
+
 def _load_notice(conn, notice_no: str) -> dict[str, Any]:
     row = conn.execute(
         select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)

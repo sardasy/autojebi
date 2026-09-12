@@ -49,6 +49,14 @@ def test_validate_extension_rejects_missing():
     assert e.value.status_code == 415
 
 
+def test_unsupported_extension_has_localized_guidance_without_filename():
+    with pytest.raises(UploadError) as caught:
+        validate_extension("private-customer-name.txt")
+    assert "TXT 파일은 지원되지 않습니다" in caught.value.detail
+    assert "PDF" in caught.value.detail
+    assert "private-customer-name" not in caught.value.detail
+
+
 def test_save_stream_writes_and_hashes():
     payload = b"hello-bid-document"
     saved = save_stream(
@@ -85,7 +93,7 @@ def test_build_metadata_fills_mime_from_extension_when_missing():
     assert meta.size == 3
 
 
-def test_merge_into_document_automation_promotes_mapped_item_to_ready():
+def test_merge_into_document_automation_never_approves_linked_item():
     docs = {
         "checklist": [
             {"id": "business_registration", "name": "사업자등록증", "type": "company_common",
@@ -102,8 +110,8 @@ def test_merge_into_document_automation_promotes_mapped_item_to_ready():
     updated = merge_into_document_automation(docs, meta)
     assert len(updated["uploads"]) == 1
     bizn = next(i for i in updated["checklist"] if i["id"] == "business_registration")
-    assert bizn["status"] == "ready"
-    assert "upload" in bizn["source"]
+    assert bizn["status"] == "needed"
+    assert bizn["source"] == "rule"
     # 다른 항목은 변경 없음
     bid = next(i for i in updated["checklist"] if i["id"] == "bid_form")
     assert bid["status"] == "needed"

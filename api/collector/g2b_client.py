@@ -15,9 +15,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from urllib.parse import unquote, urlencode
+from xml.etree import ElementTree
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from api.config import settings
 
@@ -54,6 +55,7 @@ def _normalize_service_key(raw: str) -> str:
     urlencode가 자동으로 다시 인코딩하므로 raw('/', '+', '=' 포함) 형태가 정상 입력이다.
     디코딩 후에도 '%'가 남아 있으면 비정상으로 보고 원본 반환.
     """
+    raw = raw.strip()
     if "%" not in raw:
         return raw
     decoded = unquote(raw)
@@ -182,7 +184,8 @@ class RawBid:
 class G2BClient:
     def __init__(self, api_key: str | None = None) -> None:
         self._key = _normalize_service_key(api_key or settings.data_go_kr_api_key)
-        self._client = httpx.AsyncClient(timeout=30)
+        self._base = str(httpx.URL(_BASE).copy_with(scheme=settings.g2b_api_scheme))
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(30, connect=8))
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -226,6 +229,8 @@ class G2BClient:
 
         동일 (bid_no, bid_seq) 쌍은 함수 내부에서 dedup.
         """
+        if not self._key.strip():
+            raise ValueError("G2B_KEY_MISSING")
         t0 = time.monotonic()
         items: list[RawBid] = []
         queries = keyword_queries(keyword)
@@ -265,7 +270,7 @@ class G2BClient:
             page += 1
         return items
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), reraise=True, retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)))
     async def _fetch_page(
         self,
         path: str,
@@ -276,7 +281,7 @@ class G2BClient:
         page: int,
     ) -> list[RawBid]:
         params: dict[str, str | int] = {
-            "serviceKey": self._key,
+            "ServiceKey": self._key,
             "numOfRows": _PAGE_SIZE,
             "pageNo": page,
             "type": "json",
@@ -286,10 +291,35 @@ class G2BClient:
         }
         if keyword:
             params["bidNtceNm"] = keyword
-        url = _BASE + path + "?" + urlencode(params)
+        url = self._base + path + "?" + urlencode(params)
         resp = await self._client.get(url)
         resp.raise_for_status()
-        body = json.loads(resp.content.decode("utf-8-sig"))
+        payload = resp.content.decode("utf-8-sig").strip()
+        if payload.startswith("<"):
+            root = ElementTree.fromstring(payload)
+            code = root.findtext(".//returnReasonCode") or root.findtext(".//resultCode")
+            if code in {"22", "23"}:
+                raise ValueError("G2B_RATE_LIMITED")
+            if code == "05":
+                raise ValueError("G2B_UPSTREAM_TIMEOUT")
+            if code == "29":
+                raise ValueError("G2B_IP_BLOCKED")
+            if code in {"20", "21", "30", "31", "32"}:
+                raise PermissionError("G2B_AUTH_FAILED")
+            raise ValueError("G2B_UPSTREAM_ERROR")
+        body = json.loads(payload)
+        header = body.get("response", {}).get("header", {})
+        code = str(header.get("resultCode", "00"))
+        if code not in {"00", "0", "0000"}:
+            if code in {"22", "23"}:
+                raise ValueError("G2B_RATE_LIMITED")
+            if code == "05":
+                raise ValueError("G2B_UPSTREAM_TIMEOUT")
+            if code == "29":
+                raise ValueError("G2B_IP_BLOCKED")
+            if code in {"20", "21", "30", "31", "32"}:
+                raise PermissionError("G2B_AUTH_FAILED")
+            raise ValueError("G2B_UPSTREAM_ERROR")
         return self._parse(body, bid_type)
 
     @staticmethod
@@ -329,7 +359,7 @@ class G2BClient:
                     bid_type=bid_type,
                     org_code=str(it.get("dminsttCd", "")).strip(),
                     org_name=str(it.get("ntceInsttNm", "")).strip(),
-                    base_price=it.get("presmptPrce") or it.get("asignBdgtAmt"),
+                    base_price=it.get("bssamt"),
                     open_date=it.get("bidNtceDt"),
                     close_date=it.get("bidClseDt"),
                     detail_url=it.get("bidNtceUrl"),
@@ -353,7 +383,7 @@ class G2BClient:
             lic_items = await self._fetch_qual_endpoint(_LICENSE_LIMIT_PATH, bid_no, bid_seq)
             rgn_items = await self._fetch_qual_endpoint(_PRTCPT_PSBL_RGN_PATH, bid_no, bid_seq)
         except Exception as exc:  # noqa: BLE001
-            log.warning("[G2B] fetch_qualifications 실패 %s-%s: %s", bid_no, bid_seq, exc)
+            log.warning("[G2B] fetch_qualifications 실패 %s-%s: %s", bid_no, bid_seq, type(exc).__name__)
             return QualificationInfo(bid_no=bid_no, bid_seq=bid_seq, error=str(exc)[:200])
 
         licenses: list[str] = []
@@ -385,7 +415,7 @@ class G2BClient:
         self, path: str, bid_no: str, bid_seq: str
     ) -> list[dict]:
         params = {
-            "serviceKey": self._key,
+            "ServiceKey": self._key,
             "numOfRows": 100,
             "pageNo": 1,
             "type": "json",
@@ -393,7 +423,7 @@ class G2BClient:
             "bidNtceNo": bid_no,
             "bidNtceOrd": bid_seq,
         }
-        url = _BASE + path + "?" + urlencode(params)
+        url = self._base + path + "?" + urlencode(params)
         resp = await self._client.get(url)
         resp.raise_for_status()
         body = resp.json()
