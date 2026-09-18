@@ -1,0 +1,186 @@
+# autojebi 전체 리팩토링 계획 — 10단계 파이프라인
+
+> 상태: **초안** (2026-09-18). 1단계 페르소나·문제 문장, 3단계 기준선 측정 방식은 사용자 확정 대기.
+> 9단계 ADR: [docs/adr/0001-v2-module-boundaries.md](../adr/0001-v2-module-boundaries.md). 지표 측정: `python tools/change_amplification.py`.
+
+## Context
+v2 검토 작업대는 구현은 되어 있지만 운영 전환이 막혀 있다(실공고 3~5건 대조, HWP 실검증 등 — AGENTS.md §1). 남은 전환 작업을 하려면 v2 코드를 계속 고쳐야 하는데, 지금 구조에서는 한 번 고칠 때마다 건드려야 하는 곳이 너무 많다.
+- 백엔드: `api/routers/notices.py`(3,454줄)가 공용 DB 테이블 18개를 소유하고 있고 v2 전체가 여기에 의존한다. `workspace/execution.py`(933), `service.py`(794), `routers/workspace.py`(774)는 HTTP·SQL·도메인 로직이 한곳에 섞여 있고, 함수 안에서만 하는 import가 64개다. PDF·HWPX 파싱 경로는 4~5중으로 중복돼 있다.
+- 프론트: `WorkspaceClient.tsx`(63KB)에 useState 27개와 인라인 API 호출이 몰려 있다. API를 부르는 방식이 세 가지이고, 타입은 백엔드에서 손으로 복제했다. 아무도 쓰지 않는 컴포넌트가 9개(약 1,400줄) 있다.
+
+사용자 지시에 따라 리팩토링 자체를 10단계 파이프라인으로 설계한다. v1 API와 화면은 **동작을 그대로 두고 구조만 정리한다**. 착수 전에 **현재 미커밋 변경을 먼저 커밋한다**.
+
+산출 문서: `docs/refactor/2026-09-18-refactor-pipeline.md`(1~8단계, 10단계), `docs/adr/0001-v2-module-boundaries.md`(9단계).
+
+---
+
+## 0. 기준선 확보 (선행)
+- 미커밋 변경을 커밋한다. 수정 파일 40여 개와 신규 모듈 `identity`, `output_plan`, `requirement_candidates`, `runtime_version` 및 그 테스트가 대상이다. 커밋 메시지는 `v2: identity·output_plan·requirement_candidates·runtime_version` 기준으로 쓰고, 성격이 다른 변경이 섞여 있으면 커밋을 나눈다.
+- 기준값을 기록한다: `ruff check .`, `pytest -q` 통과 수, `npm run typecheck`, `npm test`, mock e2e 통과 수.
+
+**기준값 기록 (2026-09-18, 브랜치 `refactor/v2-boundaries`, 커밋 `23196ad`)**
+| 항목 | 결과 |
+|---|---|
+| `ruff check .` | 통과 |
+| `pytest` | **1,740 passed, 17 skipped** (86s). 외부 플러그인을 끄고 돌릴 때는 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p asyncio`로 실행해야 한다. `-p asyncio`를 빼면 `test_fetch_qualifications.py`의 4건이 실패한다 |
+| `npm run typecheck`, `npm run lint` | 0 errors |
+| Vitest | **41 files / 281 tests passed** |
+| mock e2e | 미측정. R1 전에 dev 서버를 띄우고 측정한다 |
+| 변경 증폭 (`tools/change_amplification.py`) | v2 기능 커밋 3건, 중앙값 18파일. **표본 부족으로 판단 보류.** 기존 이력이 squash 커밋이라 결합도보다 커밋 크기를 재는 상태다(3단계 참고) |
+
+## 1. 문제
+| 항목 | 내용 |
+|---|---|
+| 페르소나 | **"박정비"**(가칭, 1단계 완료 시 확정). 미림씨스콘 사내 개발자 겸 운영자. 혼자서 v2 운영 전환 잔여 조건을 처리한다 |
+| 불편 | 작업대 기능 하나를 고치려면 v1 라우터, service, execution, router, WorkspaceClient를 동시에 건드려야 한다. 순환 import를 피하려고 함수 안에서 import한다 |
+| 손실 | 전환 작업이 늦어진다. 파싱 경로가 중복돼 같은 버그를 여러 곳에서 고쳐야 하고, 회귀 위험이 크다 |
+| 현재 대안과 한계 | 파일 단위 땜질과 테스트 추가뿐이다. 경계 규칙이 없어서 결합도가 계속 늘어난다 |
+| 문제 문장 | "박정비는 v2 작업대 동선을 고칠 때마다 v1 라우터와 거대 모듈을 함께 수정해야 해서, 운영 전환 잔여 조건을 안전하고 빠르게 처리하지 못한다." |
+
+완료 조건: 페르소나 이름과 문제 문장을 사용자가 확정한다.
+
+## 2. 가치·지불
+- 가치 문장: "v2 핵심 동선(공고 찾기 → 서류 검토 → 비교·작성 → 서류 확인)의 변경이 한 모듈 경계 안에서 끝나게 해서, 전환 잔여 조건 처리 속도와 안전성을 높인다."
+- 지불 주체: 미림씨스콘 내부. 비용은 개발 시간뿐이다.
+- 과금 가설: 리팩토링에 약 2~3주를 타임박스로 쓴다. 이후 전환 작업 1건당 수정 범위가 줄어드는 것으로 회수된다고 본다. 타임박스를 넘으면 10단계 판단 매트릭스로 넘어간다.
+
+완료 조건: 가치 문장 확정.
+
+## 3. 지표
+- **핵심 지표(1개)**: v2 슬라이스 변경의 **변경 증폭**. v2 기능 커밋 1건당 수정되는 `api/`·`frontend/src` 모듈(파일) 수의 중앙값이다.
+- 기준선: 최근 v2 커밋(`47a12ab` 이후와 0단계 커밋)을 `git log --stat`으로 측정한다. 측정 스크립트는 `tools/change_amplification.py`로 새로 만든다.
+- 귀속 기간: 리팩토링 완료 후 4주 동안의 v2 기능 커밋.
+- 확정 조건: 표본 커밋이 10건 이상이고 중앙값이 기준선보다 30% 이상 줄었을 때.
+- 제외 조건: 문서 전용 커밋, 테스트 전용 커밋, 마이그레이션 전용 커밋, 리팩토링 커밋 자체.
+- 판단 보류 기준: 표본이 10건 미만이면 판단을 보류하고 귀속 기간을 연장한다.
+- 가드레일(핵심 지표 아님): pytest와 vitest 통과 수가 줄지 않을 것, v2 OpenAPI 스냅샷에 차이가 없을 것, mock e2e가 통과할 것.
+
+## 4. 데이터·운영
+- 최소 데이터: git 이력, import 그래프(`import-linter`), 파일 줄 수, `/openapi.json` 스냅샷, 기존 테스트 결과.
+- 입력 방식: CI에서 자동 수집한다(ruff, pytest, import-linter, vitest, eslint 규칙).
+- 법적·개인정보 조건: 테스트 fixture에 `COMPANY_*` PII, 사업자번호, 실제 토큰, identity registry를 넣지 않는다(AGENTS.md §7). 실공고 데이터는 공개 G2B 데이터만 쓴다. `.env`는 커밋하지 않는다.
+
+## 5. MVP 경계
+**포함** (기준: 6단계 슬라이스가 지나가는 코드이면서 v1 동작을 바꾸지 않는 것)
+1. 공용 테이블을 `routers/notices.py`에서 `api/db/tables.py`(신규)로 옮긴다. 기존 이름은 re-export로 호환을 유지한다.
+2. v2 도메인 예외를 둔다: `service.fail` → `WorkspaceError(code, message)`로 바꾸고, 라우터의 exception handler가 같은 `{code,message}` 응답을 내도록 매핑한다.
+3. `routers/workspace.py`에 있는 SQL을 service 함수로 이동한다(`apply_job`, `save_requirement` 등).
+4. `workspace/execution.py`를 작업 종류별 `executors/`로 분할한다: fetch, extract, analyze, hwp, excel, package.
+5. 공용 파서를 만든다: `api/parsing/{pdf,hwpx,text,llm_json}.py`. 기준 구현은 `workspace/pdf_text.py`와 `attachment_text.py`이고, v2 경로의 중복만 대체한다.
+6. 프론트: `WorkspaceClient`를 분해한다. `useWorkspace` 훅(reload·polling·mutate·run), 순수 함수 `nextStep`, 탭 3개 컴포넌트, `JobHistory`로 나눈다.
+7. 프론트: v2 API 호출을 `workspaceApi`로 일원화한다(ETag·If-Match 지원 추가). `SpecificationWorkbench`의 직접 fetch를 제거한다.
+8. 사용처가 없는 컴포넌트 9개와 그 테스트를 삭제한다.
+9. 적합도 함수(FF)를 CI에 추가한다(9단계).
+
+**제외** (목록이 비어 있으면 안 됨)
+- v1 API와 화면의 동작 변경 및 퇴역(proposals, document_automation, `/search`, `/reviews`)
+- `notices.py`의 라우트 분할. 테이블을 빼낸 뒤 2차로 진행한다
+- v1의 `anthropic.Anthropic` 직접 호출 5곳 교체. FF 허용목록으로 격리만 한다
+- OpenAPI 타입 자동 생성, Tailwind 색상과 버튼 통일
+- DB 스키마 변경과 alembic 마이그레이션
+- 테스트 fixture 통합. 중복 fixture 18곳은 슬라이스에 닿는 파일만 정리한다
+
+**수동 처리**: 실공고 3건으로 리팩토링 전후를 대조하는 작업(HWP Worker 실연동)은 담당자가 수동으로 확인한다. 페르소나와 지표 확정도 사용자가 한다.
+
+## 6. Vertical slice
+- 시나리오 문장: "박정비가 `/workspace`에서 공고 1건을 등록하고, 원문 수집·추출 → 요구사항 확인 → 원본 서식 작성·검토 → 산출물 선택 → 검토 패키지 zip 다운로드까지 한 번에 통과시킨다."
+- 실연동과 스텁 구분:
+  - 실연동: DB(SQLite, 가능하면 Postgres 게이트 테스트), 파일 저장소, worker 큐
+  - 스텁: G2B(fixture 첨부), LLM(`providers` fake), HWP Worker(mock agent)
+- 시작 조건: 등록된 적 없는 fixture 공고 번호.
+- 종료 조건: `run_package`가 끝나고 zip readback 검증이 통과하며 `ws.ready`가 판정된 상태.
+- 기존 자산 재사용: `frontend/e2e/sample-document-loop.spec.ts`, `document-writing-mock.spec.ts`, `tests/test_workspace_*`. 리팩토링의 각 PR은 이 슬라이스 테스트를 통과해야 머지한다.
+
+## 7. 흐름 (현재 위치 → 목표 모듈)
+| # | 사용자 행동 | 시스템 처리 | 현재 코드 | 목표 모듈 | 예외 흐름 |
+|---|---|---|---|---|---|
+| 1 | 공고 검색·등록 | G2B 검색, upsert | `routers/workspace.py`에서 v1 `search_notices_endpoint`, `upsert_notice` 직접 호출 | `workspace/intake.py`(v1 함수를 어댑터로 감쌈) | G2B 장애 시 오류 표시 후 재시도 버튼 |
+| 2 | 원문 수집 | `fetch_sources` 작업 enqueue → worker 다운로드 | `execution.py:348-521` | `executors/fetch.py` + `api/net/download.py` | 다운로드 실패 시 작업 실패로 보존, 미확인 첨부는 차단 |
+| 3 | 추출 | PDF, HWPX, 아카이브, OCR | `execution.extract`, `pdf_text`, `attachment_text` | `executors/extract.py` + `api/parsing/*` | 형식 미지원이나 OCR 실패 시 수동 변환본 연결 |
+| 4 | 요구사항 확인 | 분석(LLM), 후보 제시, 검토 | `execution.analyze`, `requirement_candidates`, `routers/workspace.save_requirement` | `executors/analyze.py`, `service/requirements.py` | LLM 장애는 **미평가**로 처리, 인용 실패는 `quote_diagnostics` |
+| 5 | 비교·작성 | 초안 저장, 서식 채움 | `notice_forms.py`(파싱, 도메인, 스키마 혼재) | `forms/{hwpx_io,filling,schemas}.py` | 버전 충돌 시 409 / If-Match 불일치 경고 |
+| 6 | 산출물 선택·패키지 | `output_plan`, `run_hwp`/`run_excel`/`run_package` | `output_plan.py`(지연 import), `execution.py` | `service/output_plan.py`, `executors/{hwp,excel,package}.py` | HWP 타임아웃 시 차단 유지, 마감 경과 시 ready 거부 |
+| 7 | 서류 확인 | `blockers`, `ready` 판정 | `service.blockers:316` | `service/readiness.py` | 미해결 `source_needs`가 있으면 차단 |
+
+## 8. 화면 (프론트 분해 기준)
+| 화면 | 정보 우선순위 | 주요 버튼(1개) | 제외 요소(이 화면에서 뺄 것) |
+|---|---|---|---|
+| `/workspace` | 검색 결과, 등록 여부, 마감 | **등록** | v1 `NoticeSearchItem` 타입 의존 → v2 타입으로 교체 |
+| `/workspace/[no]` 공통 셸 | 다음 단계(`nextStep`), 작업 상태 | **다음 단계 버튼**(`nextStep.action`) | 인라인 API 호출 |
+| 탭 "2. 공고 서류 검토" → `SourceReviewTab` | 원문 목록, 추출 상태, 요구사항 | **원문 수집·추출** | `ExtractionPages`·`ArchiveMembers`는 하위 파일로 분리 |
+| 탭 "3. 비교·작성" → `WritingTab` | 초안, 원본 서식 | **저장** | `ReferenceWriter`(기존 방식)는 별도 파일로 격리 |
+| 탭 "4. 서류 확인" → `ReviewTab` | 차단 사유, 산출물, 패키지 | **패키지 생성** | 작업 이력은 `JobHistory`로 분리 |
+
+폼 컴포넌트(`RequirementForm`, `CommercialForm`, `DocumentRow`)는 각자 파일로 옮긴다. 작업 종류와 상태 문자열은 `lib/workspace.ts` 상수로 모은다.
+
+## 9. 구조
+**모듈 경계와 의존 방향** (위 → 아래로만 의존한다)
+```
+routers/workspace.py (HTTP, 예외 매핑)
+   → workspace/service/* (도메인: inputs, requirements, readiness, output_plan, audit)
+   → workspace/executors/* (작업 실행)
+   → api/parsing/*, api/net/*, workspace/providers.py (순수 어댑터)
+   → api/db/tables.py (스키마)
+routers/notices.py (v1) → api/db/tables.py   # v2는 routers.* import 금지
+```
+
+**적합도 함수(FF)**: CI에 추가한다.
+- import-linter 계약 3가지:
+  1. `api.workspace` ↛ `api.routers`
+  2. `api.parsing` ↛ `api.workspace`
+  3. service ↛ fastapi. `HTTPException`은 라우터에서만 쓴다
+- 함수 안 import 0개(허용목록 제외)를 확인하는 테스트: `tests/test_architecture.py`
+- `anthropic.Anthropic(` 호출은 `providers.py`와 v1 허용목록 5곳에서만 허용하는 grep 테스트
+- 파일 크기 상한: py 600줄, tsx 300줄. 신규와 변경 파일만 검사한다
+- ESLint `no-restricted-globals`: `components/Workspace*`에서 `fetch` 직접 호출 금지
+
+**설계안 3개 비교**
+| 안 | 내용 | 장점 | 단점 |
+|---|---|---|---|
+| A. 계층 정리 | 테이블만 분리하고 큰 파일을 같은 계층 안에서 쪼갬 | 가장 빠르고 위험이 낮음 | HTTP와 도메인 혼재, 순환 import가 남음 |
+| **B. 슬라이스 경계 + 포트/어댑터 (권장)** | 흐름 단계별 service/executor 모듈, 공용 어댑터, FF로 방향 강제 | 핵심 지표(변경 증폭)에 직접 작용, 점진 적용 가능 | 초기 이동량이 큼(2~3주) |
+| C. v2 별도 패키지(strangler) | v2를 독립 패키지로 떼고 v1과는 ACL로만 통신 | 경계가 가장 명확 | 공용 테이블과 v1 핸들러 재사용 때문에 비용이 과다하고, 운영 전환을 지연시킴 |
+
+ADR 초안은 `docs/adr/0001-v2-module-boundaries.md`에 쓴다. B안을 채택하는 근거, 기각한 A·C안, FF 목록, re-export 호환 기간(v1 테스트가 새 경로로 옮겨질 때까지)을 담는다.
+
+## 10. 완료·판단
+- 검증 가설: "B안 경계를 적용하면 v2 기능 커밋의 변경 증폭 중앙값이 30% 이상 줄고, 슬라이스 회귀는 0건이다."
+- 완료 조건:
+  - MVP 포함 항목 9개를 머지한다.
+  - FF가 CI에서 그린이다.
+  - 가드레일 3개를 유지한다.
+  - 실공고 1건으로 수동 대조를 통과한다.
+- **판단 매트릭스**
+| 핵심 지표 (4주 후) | 가드레일 | 판단 |
+|---|---|---|
+| −30% 이상 | 유지 | **확장**: `notices.py` 라우트 분할, v1 LLM 경로를 providers로, OpenAPI 타입 생성 |
+| −10~30% | 유지 | **수정**: 변경이 몰리는 모듈을 재분석한 뒤 경계를 조정 |
+| −10% 미만 | 유지 | **중단**: FF만 유지하고 추가 이동은 멈춘 뒤 전환 작업에 집중 |
+| 무관 | 회귀 발생 | **중단 후 롤백**: 해당 PR을 revert하고 슬라이스 테스트를 보강 |
+| 표본 10건 미만 | — | **보류**: 귀속 기간 연장 |
+
+---
+
+## 실행 순서 (PR 슬라이스, 각 PR마다 슬라이스 테스트 그린)
+- **R0**: 미커밋 변경 커밋, 기준값 기록, `tools/change_amplification.py`
+- **R1**: 테이블을 `api/db/tables.py`로 이동하고 re-export. 대상은 v2, `alembic/env.py`, `tests/conftest.py`의 import 경로. import-linter 계약 1을 도입한다
+- **R2**: `WorkspaceError`와 exception handler를 추가하고, 라우터의 SQL을 service로 옮긴다. 계약 3 도입
+- **R3**: `execution.py`를 `executors/*`로 분할하고 함수 안 import를 제거한다
+- **R4**: `api/parsing/*`, `api/net/download.py`를 만들고 v2 중복 경로를 대체한다. `notice_forms`를 분할한다. 계약 2 도입
+- **R5**: 프론트 `workspaceApi`를 일원화하고 사용처 없는 컴포넌트를 삭제한다
+- **R6**: `WorkspaceClient`를 분해한다(`useWorkspace`, `nextStep`, 탭 3개, `JobHistory`)
+- **R7**: 나머지 FF(파일 크기, anthropic grep, ESLint fetch 금지)와 ADR을 확정하고 문서를 갱신한다(AGENTS.md §3·§8의 5층 동기화 경로)
+
+## 재사용할 기존 코드
+- `api/workspace/pdf_text.py`, `api/workspace/attachment_text.py`: 파서 기준 구현
+- `api/services/claude_analyzer.py:35` `safe_parse_json_object`: `llm_json` 기준
+- `api/workspace/providers.py`: LLM 단일 경로
+- `frontend/src/lib/workspace.ts` `workspaceApi`: v2 클라이언트 기준
+- `tests/conftest.py` `sqlite_engine`/`client`, `e2e/helpers.ts`
+
+## 검증
+- 매 PR: `ruff check .`, `pytest -q`(통과 수가 기준선 이상), `lint-imports`, `cd frontend && npm run lint && npm run typecheck && npm test`
+- v2 API 무변경 확인: `/openapi.json` 스냅샷 diff 테스트(`tests/test_openapi_snapshot.py`)
+- 슬라이스: `npm run e2e -- sample-document-loop document-writing-mock workspace-v2` (mock 경로)
+- v1 무변경 확인: `tests/test_notices_*`, `test_documents_*` 전체 통과, `/notices/[no]` 수동 스모크 1회
+- R7 이후: 실공고 1건 수동 대조, `tools/change_amplification.py`로 4주 후 판단 매트릭스 적용
