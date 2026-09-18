@@ -16,7 +16,7 @@
 routers/workspace.py            HTTP 계층. WorkspaceError → {code,message} 응답으로 매핑
   → workspace/service/*         도메인: inputs, requirements, readiness, output_plan, audit
   → workspace/executors/*       작업 실행: fetch, extract, analyze, hwp, excel, package
-  → api/parsing/*, api/net/*, workspace/providers.py   순수 어댑터
+  → api/parsing/*, workspace/providers.py              순수 어댑터 (파서·검증, LLM 공급자)
   → api/db/tables.py            SQLAlchemy 스키마(단일 metadata)
 routers/notices.py (v1)  → api/db/tables.py
 ```
@@ -25,8 +25,8 @@ routers/notices.py (v1)  → api/db/tables.py
 - v2가 v1 기능을 써야 하면 `workspace/intake.py` 같은 어댑터 한 곳에서만 부른다.
 
 ## 적합도 함수 (CI 강제)
-1. import-linter: `api.workspace` ↛ `api.routers`, `api.parsing` ↛ `api.workspace`, `api.workspace.service` ↛ `fastapi`
-2. `tests/test_architecture.py`: `api/workspace` 안의 함수 안 import는 0개여야 한다(허용목록 제외).
+1. import-linter(구현됨): `api.workspace` ↛ `api.routers`; `api.workspace` ↛ fastapi 직접 import(예외: `errors` 과도기, `identity` HTTP 어댑터); `api.parsing` ↛ `api.workspace`·`api.routers`·fastapi(간접 포함)
+2. `tests/test_architecture.py`(구현됨): `api/workspace`의 함수 안 `api.*` import는 파일별 예산을 넘을 수 없고, 예산은 감소 방향으로만 바꾼다(R3 기준 31 → R4 29).
 3. `anthropic.Anthropic(` 호출은 `workspace/providers.py`와 v1 허용목록 5곳에서만 허용한다.
 4. 파일 크기 상한은 py 600줄, tsx 300줄이다. 신규 파일과 변경 파일에만 적용한다.
 5. ESLint: `components/Workspace*`에서 `fetch`를 직접 호출하면 안 된다. `workspaceApi`를 사용한다.
@@ -36,6 +36,10 @@ routers/notices.py (v1)  → api/db/tables.py
 |---|---|
 | A. 계층 정리(파일만 분할) | HTTP와 도메인이 계속 섞이고 순환 import가 남는다. 변경 증폭이 거의 줄지 않는다 |
 | C. v2 별도 패키지(strangler) | 공용 테이블과 v1 핸들러 재사용 때문에 ACL 비용이 과다하다. 운영 전환 잔여 작업이 늦어진다 |
+
+## 구현 중 조정 (2026-09-18)
+- `api/net/*`, `parsing/text`, `parsing/llm_json`은 만들지 않았다. v2에는 중복이 없고, 중복은 모두 v1에 있다(v1 동작 유지 결정으로 범위 밖). v1을 정리할 때 다시 검토한다.
+- HWPX 경로 3개(원문 추출·양식 편집·산출물 검증)는 한도·예외·엄격도가 다르므로 하나의 파서로 합치지 않는다.
 
 ## 결과
 - 장점: 흐름 단계 하나를 바꿀 때 service나 executor 모듈 하나 안에서 끝나게 된다. FF가 있어서 경계가 다시 무너지지 않는다.
