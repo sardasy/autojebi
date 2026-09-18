@@ -50,6 +50,12 @@ jobs:
       - name: install
         run: npm ci --no-audit --no-fund --legacy-peer-deps
 
+      - name: lint (includes ADR 0001 fetch rule)
+        run: npm run lint
+
+      - name: typecheck
+        run: npm run typecheck
+
       - name: vitest
         run: npm test
 

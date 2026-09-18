@@ -1,6 +1,6 @@
 # ADR 0001 — v2 작업대 모듈 경계와 의존 방향
 
-- 상태: **제안(초안)** — 2026-09-18
+- 상태: **채택** — 2026-09-18 (R1~R7 구현, 브랜치 `refactor/v2-boundaries`)
 - 관련: [리팩토링 파이프라인](../refactor/2026-09-18-refactor-pipeline.md) 9단계
 
 ## 맥락
@@ -14,7 +14,7 @@
 
 ```
 routers/workspace.py            HTTP 계층. WorkspaceError → {code,message} 응답으로 매핑
-  → workspace/service/*         도메인: inputs, requirements, readiness, output_plan, audit
+  → workspace/service.py, apply, queries, forms/*   도메인 (service 내부 분할은 보류, 10단계 판단)
   → workspace/executors/*       작업 실행: fetch, extract, analyze, hwp, excel, package
   → api/parsing/*, workspace/providers.py              순수 어댑터 (파서·검증, LLM 공급자)
   → api/db/tables.py            SQLAlchemy 스키마(단일 metadata)
@@ -22,14 +22,14 @@ routers/notices.py (v1)  → api/db/tables.py
 ```
 
 - v1 API와 화면의 동작은 바꾸지 않는다. `api.routers.notices`는 테이블 이름을 re-export해서 호환을 유지한다.
-- v2가 v1 기능을 써야 하면 `workspace/intake.py` 같은 어댑터 한 곳에서만 부른다.
+- v2 라우터는 v1 핸들러(`search_notices_endpoint`, `upsert_notice`)를 아직 직접 호출한다(라우터 → 라우터이므로 계약 위반은 아니다). `workspace/intake.py` 어댑터는 만들지 않았다.
 
 ## 적합도 함수 (CI 강제)
 1. import-linter(구현됨): `api.workspace` ↛ `api.routers`; `api.workspace` ↛ fastapi 직접 import(예외: `errors` 과도기, `identity` HTTP 어댑터); `api.parsing` ↛ `api.workspace`·`api.routers`·fastapi(간접 포함)
 2. `tests/test_architecture.py`(구현됨): `api/workspace`의 함수 안 `api.*` import는 파일별 예산을 넘을 수 없고, 예산은 감소 방향으로만 바꾼다(R3 기준 31 → R4 29).
-3. `anthropic.Anthropic(` 호출은 `workspace/providers.py`와 v1 허용목록 5곳에서만 허용한다.
-4. 파일 크기 상한은 py 600줄, tsx 300줄이다. 신규 파일과 변경 파일에만 적용한다.
-5. ESLint: `components/Workspace*`에서 `fetch`를 직접 호출하면 안 된다. `workspaceApi`를 사용한다.
+3. `tests/test_architecture.py`(구현됨): Anthropic 클라이언트 생성은 `workspace/anthropic_client.py`(providers 경유)와 동결된 v1 5곳에서만 허용하며, 허용목록은 정확히 일치해야 한다.
+4. `tests/test_architecture.py`(구현됨): py 600줄, ts/tsx 300줄·24KB. 긴 JSX 줄 때문에 바이트 상한을 추가했다. 기존 초과 파일 14개는 현재 크기가 예산이며 감소만 허용한다.
+5. ESLint(구현됨): `src/components/**`·`src/app/**`(서버 라우트 `app/api/**` 제외)에서 `fetch` 직접 사용을 금지한다. `lib/workspace`의 `workspaceFetch`/`workspaceApi`/`workspaceSessionFetch`를 쓴다. CI 프론트 잡에 lint·typecheck를 추가했다.
 
 ## 검토한 대안
 | 안 | 기각 사유 |
@@ -44,4 +44,4 @@ routers/notices.py (v1)  → api/db/tables.py
 ## 결과
 - 장점: 흐름 단계 하나를 바꿀 때 service나 executor 모듈 하나 안에서 끝나게 된다. FF가 있어서 경계가 다시 무너지지 않는다.
 - 비용: 모듈을 대량으로 옮겨야 한다(PR R1~R7). re-export는 v1 테스트 import가 새 경로로 옮겨질 때까지 유지한다.
-- 재평가: 파이프라인 10단계의 판단 매트릭스를 따른다(4주 후).
+- 재평가(R7, 2026-09-18): 사전 등록 지표(필수 수정 파일 중앙값)는 2 → 2로 변화가 없었다. 매트릭스상 **중단**이다. 경계와 FF는 유지하고 추가 이동은 하지 않는다. 한 번 변경할 때 읽을 코드량은 51~73% 줄었다(보조 관찰). 상세는 파이프라인 문서 10단계.
