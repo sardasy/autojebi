@@ -96,15 +96,48 @@ export interface SourceNeed {
   linked_document_id: string; note: string; resolution_quote: string;
   mentions: {document_id: string; quote: string; start: number}[];
 }
-export async function workspaceApi<T>(path: string, body?: unknown, method?: "POST" | "PUT"): Promise<T> {
+export interface WorkspaceFetchInit {
+  method?: "GET" | "POST" | "PUT";
+  body?: unknown;
+  /** Optimistic concurrency token (ETag) for conditional writes. */
+  ifMatch?: string;
+  signal?: AbortSignal;
+}
+
+/** The single place that builds `/api/v2` requests. Returns the raw Response; callers decide how to treat its status. */
+export function workspaceFetch(path: string, {method, body, ifMatch, signal}: WorkspaceFetchInit = {}): Promise<Response> {
   const form = body instanceof FormData;
-  const response = await fetch(`/api/v2${path}`, {method: body === undefined ? "GET" : method || "POST",
-    headers: body === undefined || form ? undefined : {"Content-Type": "application/json"},
-    body: body === undefined ? undefined : form ? body : JSON.stringify(body), cache: "no-store"});
-  if (!response.ok) {
-    const json = await response.json().catch(() => ({}));
-    const detail = json.detail;
-    throw new Error(typeof detail === "object" && !Array.isArray(detail) ? `${detail.message || "요청 실패"} ${detail.next_action || ""}` : typeof detail === "string" ? detail : "입력값을 확인하세요.");
-  }
+  const headers: Record<string, string> = {};
+  if (body !== undefined && !form) headers["Content-Type"] = "application/json";
+  if (ifMatch) headers["If-Match"] = ifMatch;
+  return fetch(`/api/v2${path}`, {
+    method: method || (body === undefined ? "GET" : "POST"),
+    headers: Object.keys(headers).length ? headers : undefined,
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+    cache: "no-store",
+    ...(signal ? {signal} : {}),
+  });
+}
+
+/** Human-readable message from a v2 error body (`{detail: {message, next_action}}` or a string). */
+export function workspaceErrorMessage(json: {detail?: unknown}): string {
+  const detail = json.detail as {message?: string; next_action?: string} | string | unknown[] | undefined;
+  return typeof detail === "object" && detail !== null && !Array.isArray(detail)
+    ? `${detail.message || "요청 실패"} ${detail.next_action || ""}`
+    : typeof detail === "string" ? detail : "입력값을 확인하세요.";
+}
+
+export async function workspaceApi<T>(path: string, body?: unknown, method?: "POST" | "PUT"): Promise<T> {
+  const response = await workspaceFetch(path, {body, method: body === undefined ? "GET" : method || "POST"});
+  if (!response.ok) throw new Error(workspaceErrorMessage(await response.json().catch(() => ({}))));
   return response.json() as Promise<T>;
+}
+
+/** Personal session requests go to the Next route `/api/workspace-session` (not the v2 proxy). */
+export function workspaceSessionFetch(method: "GET" | "POST" | "DELETE" = "GET", body?: unknown): Promise<Response> {
+  return fetch("/api/workspace-session", {
+    method,
+    ...(method === "GET" ? {cache: "no-store" as const} : {}),
+    ...(body === undefined ? {} : {headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}),
+  });
 }

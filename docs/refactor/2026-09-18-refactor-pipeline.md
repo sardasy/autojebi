@@ -1,6 +1,6 @@
 # autojebi 전체 리팩토링 계획 — 10단계 파이프라인
 
-> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0~R4 완료.
+> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0~R5 완료.
 > 9단계 ADR: [docs/adr/0001-v2-module-boundaries.md](../adr/0001-v2-module-boundaries.md). 지표 측정: `python tools/change_amplification.py`.
 
 ## Context
@@ -25,7 +25,7 @@ v2 검토 작업대는 구현은 되어 있지만 운영 전환이 막혀 있다
 | `pytest` | **1,740 passed, 17 skipped** (86s). 외부 플러그인을 끄고 돌릴 때는 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p asyncio`로 실행해야 한다. `-p asyncio`를 빼면 `test_fetch_qualifications.py`의 4건이 실패한다 |
 | `npm run typecheck`, `npm run lint` | 0 errors |
 | Vitest | **41 files / 281 tests passed** |
-| mock e2e | 미측정. R1 전에 dev 서버를 띄우고 측정한다 |
+| mock e2e (`--project=workbench-mock`) | **17 passed, 2 skipped** (R5 착수 전 `next dev -p 3002`로 측정). skip 2건은 라이브 백엔드가 필요한 `workbench-mock.spec` |
 | 변경 증폭 | 시나리오 기준 **필수 수정 중앙값 4파일**, 접점 중앙값 10파일 (3단계 표). 커밋 기반은 3건·중앙값 18파일로 보조 관찰만 한다 |
 
 ## 1. 문제
@@ -199,6 +199,12 @@ ADR 초안은 `docs/adr/0001-v2-module-boundaries.md`에 쓴다. B안을 채택�
     - 1st-party 함수 안 import: 31 → 29. pytest 1,746 passed. OpenAPI 스냅샷 동일. 계약 3개 유지.
     - 3단계 S1(새 첨부 형식) 기준으로는 `parsing/attachment_text`(형식 파서)와 `executors/extract`(분기) 두 곳만 고치면 된다. 업로드 허용 목록(`assets`)은 형식에 따라 추가로 바뀐다. 최종 판단은 R7에서 재측정한다.
 - **R5**: 프론트 `workspaceApi`를 일원화하고 사용처 없는 컴포넌트를 삭제한다
+  - **완료 (2026-09-18)**:
+    - `lib/workspace.ts`에 `workspaceFetch`를 추가했다. `/api/v2` 요청을 만드는 유일한 곳이며 `ifMatch`·`signal`을 지원하고 원 Response를 돌려준다. `workspaceErrorMessage`와 `workspaceSessionFetch`도 함께 추가했다. `workspaceApi`는 시그니처와 오류 문구를 그대로 두고 `workspaceFetch` 위에서 동작한다.
+    - `SpecificationWorkbench`의 직접 `fetch` 5곳, `WorkspaceDocumentViewer`의 1곳, `WorkspaceIdentity`와 로그인 페이지의 세션 요청을 모두 옮겼다. 409/412 충돌 처리와 컴포넌트 문구는 유지했다. 컴포넌트와 페이지의 직접 `fetch`는 0이 됐다(남은 것은 서버 측 proxy·session과 lib 클라이언트, v1 `lib/api.ts`).
+    - 사용처 없는 컴포넌트 10개를 삭제했다(계획의 9개 + `WorkbenchTable` 삭제로 고아가 된 `ScoreBadge`). 테스트 7개 파일, 45건도 함께 삭제했고 이전 코드에서 정확히 45건임을 확인했다. 17개 파일, 2,262줄이 줄었다.
+    - typecheck·lint 0 errors. Vitest 34 files / 236 tests(= 281 − 삭제 45). mock e2e 17 passed / 2 skipped(기준선과 동일, ETag·412 흐름 포함). `next build` 성공.
+  - **잔여**: 삭제한 컴포넌트만 쓰던 v1 `lib/actions.ts` export가 남았을 수 있다. v1 범위라 손대지 않았다
 - **R6**: `WorkspaceClient`를 분해한다(`useWorkspace`, `nextStep`, 탭 3개, `JobHistory`)
 - **R7**: 나머지 FF(파일 크기, anthropic grep, ESLint fetch 금지)와 ADR을 확정하고 문서를 갱신한다(AGENTS.md §3·§8의 5층 동기화 경로)
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {useEffect, useState} from "react";
+import {workspaceSessionFetch} from "@/lib/workspace";
 import type {WorkspaceIdentity as Identity} from "@/lib/workspace-session";
 
 const roles = {viewer: "조회자", writer: "작성자", reviewer: "검토자", approver: "최종 승인자"};
@@ -12,7 +13,7 @@ export default function WorkspaceIdentity() {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    fetch("/api/workspace-session", {cache: "no-store"}).then(async response => {
+    workspaceSessionFetch().then(async response => {
       if (!active) return;
       if (!response.ok) {setStatus(response.status === 401 ? "로그인이 필요합니다." : "개인 인증 연결을 확인하세요."); return;}
       const value = await response.json() as Identity;
@@ -25,7 +26,7 @@ export default function WorkspaceIdentity() {
       <button type="button" disabled={busy} className="border rounded px-3 py-1 disabled:opacity-40" onClick={async () => {
         setBusy(true);
         try {
-          const response = await fetch("/api/workspace-session", {method: "DELETE"});
+          const response = await workspaceSessionFetch("DELETE");
           if (!response.ok) throw new Error();
           window.location.assign("/workspace/login");
         } catch {setStatus("로그아웃하지 못했습니다. 다시 시도하세요."); setBusy(false);}

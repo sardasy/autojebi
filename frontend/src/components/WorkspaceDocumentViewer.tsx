@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
-import { SourceDocument } from "@/lib/workspace";
+import { SourceDocument, workspaceFetch } from "@/lib/workspace";
 
 export default function WorkspaceDocumentViewer({documents, prefix}: {documents: SourceDocument[]; prefix: string}) {
   const [selected, setSelected] = useState(documents[0]?.id || "");
@@ -17,7 +17,7 @@ export default function WorkspaceDocumentViewer({documents, prefix}: {documents:
     const controller = new AbortController();
     let objectUrl = "";
     setImage(""); setError("");
-    void fetch(`/api/v2${prefix}/documents/${encodeURIComponent(document.id)}/preview?page=${page}`, {signal: controller.signal}).then(async response => {
+    void workspaceFetch(`${prefix}/documents/${encodeURIComponent(document.id)}/preview?page=${page}`, {signal: controller.signal}).then(async response => {
       if (!response.ok) throw new Error("PDF 미리보기 실패 · 추출 본문 또는 원본 다운로드로 확인하세요.");
       const blob = await response.blob();
       if (controller.signal.aborted) return;

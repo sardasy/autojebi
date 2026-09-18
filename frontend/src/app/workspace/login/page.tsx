@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {useState} from "react";
+import {workspaceSessionFetch} from "@/lib/workspace";
 
 export default function WorkspaceLogin() {
   const [token, setToken] = useState("");
@@ -14,7 +15,7 @@ export default function WorkspaceLogin() {
       event.preventDefault(); if (!token || pending) return;
       setPending(true); setStatus("");
       try {
-        const response = await fetch("/api/workspace-session", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({token})});
+        const response = await workspaceSessionFetch("POST", {token});
         setToken("");
         if (!response.ok) {
           const body = await response.json();

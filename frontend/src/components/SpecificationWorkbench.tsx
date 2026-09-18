@@ -2,6 +2,7 @@
 
 import {FormEvent, useEffect, useId, useRef, useState} from "react";
 import {ChevronDown, ChevronRight, Database, FilePlus, Pencil, RefreshCw, Save, Search, X} from "lucide-react";
+import {workspaceFetch} from "@/lib/workspace";
 
 export interface SpecificationEvidenceSelection {
   document_id: string;
@@ -147,7 +148,7 @@ export default function SpecificationWorkbench(props: SpecificationWorkbenchProp
 }
 
 function Workbench({noticeNo, version, onChanged, onChooseEvidence}: SpecificationWorkbenchProps) {
-  const prefix = `/api/v2/notices/${encodeURIComponent(noticeNo)}`;
+  const prefix = `/notices/${encodeURIComponent(noticeNo)}`;
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const [reload, setReload] = useState(0);
@@ -172,7 +173,7 @@ function Workbench({noticeNo, version, onChanged, onChooseEvidence}: Specificati
     const controller = new AbortController();
     setLoading(true);
     setResults(null);
-    fetch(`${prefix}/specifications`, {cache: "no-store", signal: controller.signal})
+    workspaceFetch(`${prefix}/specifications`, {signal: controller.signal})
       .then(readList)
       .then(result => {if (!controller.signal.aborted) {setData(result); setError("");}})
       .catch(() => {if (!controller.signal.aborted) {setData(null); setError("사양 목록을 불러오지 못했습니다. 다시 조회하세요.");}})
@@ -181,7 +182,7 @@ function Workbench({noticeNo, version, onChanged, onChooseEvidence}: Specificati
   }, [open, prefix, version, reload]);
 
   async function getItem(id: string) {
-    const response = await fetch(`${prefix}/specifications/${encodeURIComponent(id)}`, {cache: "no-store"});
+    const response = await workspaceFetch(`${prefix}/specifications/${encodeURIComponent(id)}`);
     if (!response.ok) throw new Error("item unavailable");
     const item: SpecificationItem = await response.json();
     return {...item, etag: response.headers.get("ETag") || item.etag};
@@ -209,9 +210,9 @@ function Workbench({noticeNo, version, onChanged, onChooseEvidence}: Specificati
     if (!edit || busy || edit.conflicted || stale || edit.version !== version || !edit.note.trim()) return;
     setBusy(true); setError(""); setMessage("사양 저장 중");
     try {
-      const response = await fetch(`${prefix}/specifications/${encodeURIComponent(edit.item.id)}`, {
-        method: "PUT", headers: {"Content-Type": "application/json", "If-Match": edit.item.etag},
-        body: JSON.stringify({version: edit.version, payload: edit.payload, note: edit.note}),
+      const response = await workspaceFetch(`${prefix}/specifications/${encodeURIComponent(edit.item.id)}`, {
+        method: "PUT", ifMatch: edit.item.etag,
+        body: {version: edit.version, payload: edit.payload, note: edit.note},
       });
       if (response.status === 412 || response.status === 409) {
         setEdit(current => current ? {...current, conflicted: true} : current);
@@ -235,9 +236,8 @@ function Workbench({noticeNo, version, onChanged, onChooseEvidence}: Specificati
     const requestGeneration = generation.current;
     setBusy(true); setError(""); setMessage("근거 검색 중"); setResults(null); setPickedResult(null);
     try {
-      const response = await fetch(`${prefix}/spec-search`, {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({...(requirement ? {requirement_id: requirement} : {}), query, limit: 5}),
+      const response = await workspaceFetch(`${prefix}/spec-search`, {
+        method: "POST", body: {...(requirement ? {requirement_id: requirement} : {}), query, limit: 5},
       });
       if (!response.ok) throw new Error("search unavailable");
       const result: SearchResults = await response.json();
@@ -252,9 +252,8 @@ function Workbench({noticeNo, version, onChanged, onChooseEvidence}: Specificati
     if (busy || stale || !data?.enabled) return;
     setBusy(true); setError(""); setMessage("색인 작업 접수 중");
     try {
-      const response = await fetch(`${prefix}/jobs`, {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({kind: "spec_index", input_version: data.input_version, idempotency_key: crypto.randomUUID()}),
+      const response = await workspaceFetch(`${prefix}/jobs`, {
+        method: "POST", body: {kind: "spec_index", input_version: data.input_version, idempotency_key: crypto.randomUUID()},
       });
       if (!response.ok) throw new Error("index unavailable");
       await notifyChanged("색인 작업 접수 완료 · 완료 여부는 작업 상태에서 확인할 수 있습니다.");
