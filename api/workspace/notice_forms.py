@@ -56,6 +56,57 @@ class FormFillingRequest(VersionRequest):
     note: str = Field(min_length=1, max_length=2000)
 
 
+class FormReviewRequest(VersionRequest):
+    output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approved: bool
+    source_checked: bool = False
+    content_checked: bool = False
+    layout_checked: bool = False
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class FormReviewTarget(StrictModel):
+    version: int
+    output_sha256: str
+    unfilled_count: int
+    review_status: str
+
+
+def review_basis(inputs: dict) -> str:
+    """Review-only actions may advance the version without changing reviewed content."""
+    content = copy.deepcopy(inputs)
+    content.pop("source_reviewed", None)
+    for filling in content.get("form_fillings", []):
+        for key in ("review", "review_status", "save_key", "save_hash", "input_version", "note"):
+            filling.pop(key, None)
+    for section in content.get("proposal_sections", []):
+        section.pop("review_status", None)
+    return service.digest(content)
+
+
+def review_filling(conn: Any, notice_no: str, document_id: str, body: FormReviewRequest) -> None:
+    ws = service.load(conn, notice_no)
+    service.assert_source_current(conn, ws)
+    if ws["version"] != body.version:
+        service.fail("version_conflict", "입력이 변경되었습니다. 작성본을 다시 확인하세요.")
+    _, _, report = export_filling(ws["inputs"], document_id)
+    if report["output_sha256"] != body.output_sha256:
+        service.fail("form_output_changed", "검토한 작성본과 현재 파일이 다릅니다. 다시 다운로드하세요.")
+    if body.approved:
+        if not all((body.source_checked, body.content_checked, body.layout_checked)):
+            service.fail("form_review_incomplete", "원본·작성 내용과 근거·실제 한글 배치를 모두 확인하세요.", status=422)
+        if report["unfilled_count"]:
+            service.fail("form_unfilled", "미작성 항목을 채운 뒤 작성본을 다시 검토하세요.")
+    inputs = copy.deepcopy(ws["inputs"])
+    filling = next(f for f in inputs["form_fillings"] if f["document_id"] == document_id)
+    filling["review_status"] = "approved" if body.approved else "rejected"
+    filling["review"] = {**body.model_dump(exclude={"version"}),
+                         "input_version": ws["version"] + 1,
+                         "basis_sha256": review_basis(inputs),
+                         "reviewed_at": service.now().isoformat()}
+    service.change(conn, ws, inputs, "notice_form_review", body.note)
+
+
 def _etree():
     try:
         from lxml import etree
@@ -392,11 +443,15 @@ def _validate_filling(inputs: dict, filling: dict) -> tuple[dict, dict]:
 def filling_issues(inputs: dict) -> list[str]:
     issues = []
     for filling in inputs.get("form_fillings", []):
+        if filling.get("review_status") != "approved":
+            issues.append("원본 양식 작성값·근거 및 한글 배치 검토 필요")
+            continue
         try:
-            _validate_filling(inputs, filling)
-        except (HTTPException, ValueError, KeyError):
+            _, _, report = export_filling(inputs, filling["document_id"])
+            if report["review_status"] != "approved" or report["unfilled_count"]:
+                issues.append("원본 양식 작성 사본의 실제 배치·내용 재검토 필요")
+        except (HTTPException, ValueError, KeyError, OSError):
             issues.append("원본 양식 작성 근거 또는 위치 재검토 필요")
-        issues.append("원본 양식 작성 사본의 실제 배치·내용 검토 미완료")
     return list(dict.fromkeys(issues))
 
 
@@ -501,4 +556,14 @@ def export_filling(inputs: dict, document_id: str) -> tuple[bytes, str, dict]:
               "unfilled_count": len(source["fields"]) - filled, "review_status": "pending",
               "readback_verified": True, "layout_verified": False, "preview_invalidated": True,
               "warnings": WARNINGS}
+    review = filling.get("review") or {}
+    current = (review.get("basis_sha256") == review_basis(inputs)
+               and review.get("output_sha256") == report["output_sha256"])
+    if current:
+        report["review_status"] = filling.get("review_status", "pending")
+        report["layout_verified"] = bool(review.get("approved") and review.get("layout_checked"))
+        report["review"] = review
+        if report["review_status"] == "approved" and report["layout_verified"] and not report["unfilled_count"]:
+            report["warnings"] = []
+            report["notices"] = ["동일 파일의 사람 검토를 기록했습니다. 자격증빙·제출 준비 승인은 별도입니다."]
     return result, filename, report

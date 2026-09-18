@@ -6,6 +6,7 @@ import io
 import json
 import stat
 import zipfile
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import PurePosixPath
 
@@ -28,6 +29,8 @@ MAX_TEXT = 200_000
 MAX_CELLS = 100_000
 MAX_TABLES = 100
 MAX_TABLE_METADATA = 2_000_000
+MAX_ARCHIVE_DEPTH = 2
+MAX_ARCHIVE_HWP = 10
 HEADERS = {
     "item": {"품명", "품목", "품목명", "물품명", "item"},
     "specification": {"규격", "사양", "specification"},
@@ -40,6 +43,10 @@ HEADERS = {
 
 class ExtractionError(ValueError):
     pass
+
+
+class ArchiveMemberError(ValueError):
+    """A recoverable member failure; only explicit codes enter extraction metadata."""
 
 
 class TableCollector:
@@ -160,7 +167,8 @@ def _xlsx_structure(sheet: object, merges: list[str], values: list[tuple], locat
         book.close()
 
 
-def checked_archive(content: bytes, budget: list[int] | None = None) -> zipfile.ZipFile:
+def checked_archive(content: bytes, budget: list[int] | None = None,
+                    entry_budget: list[int] | None = None) -> zipfile.ZipFile:
     if len(content) > MAX_BYTES:
         raise ExtractionError("archive_size_limit")
     archive = zipfile.ZipFile(io.BytesIO(content))
@@ -168,6 +176,10 @@ def checked_archive(content: bytes, budget: list[int] | None = None) -> zipfile.
         entries = archive.infolist()
         if len(entries) > MAX_ENTRIES or sum(e.file_size for e in entries) > MAX_BYTES:
             raise ExtractionError("archive_size_limit")
+        if entry_budget is not None:
+            entry_budget[0] -= len(entries)
+            if entry_budget[0] < 0:
+                raise ExtractionError("archive_entry_limit")
         if budget is not None:
             budget[0] -= sum(e.file_size for e in entries)
             if budget[0] < 0:
@@ -201,10 +213,11 @@ def _value(value: object) -> str | int | float | bool | None:
 
 
 def extract_xlsx(content: bytes, *, expansion_budget: list[int] | None = None,
+                 entry_budget: list[int] | None = None,
                  locator: str | None = None) -> dict:
     locator = locator or f"sha256:{hashlib.sha256(content).hexdigest()}/xlsx"
     merge_parts: dict[str, list[str]] = {}
-    with checked_archive(content, expansion_budget) as archive:
+    with checked_archive(content, expansion_budget, entry_budget) as archive:
         if "xl/workbook.xml" not in archive.namelist():
             raise ExtractionError("invalid_spreadsheet")
         for entry in archive.infolist():
@@ -293,12 +306,14 @@ def extract_xlsx(content: bytes, *, expansion_budget: list[int] | None = None,
             cached.close()
 
 
-def extract_hwpx(content: bytes, *, locator: str | None = None) -> dict:
+def extract_hwpx(content: bytes, *, locator: str | None = None,
+                 expansion_budget: list[int] | None = None,
+                 entry_budget: list[int] | None = None) -> dict:
     """Keep legacy itertext order exactly; attach XML-addressed tables separately."""
     locator = locator or f"sha256:{hashlib.sha256(content).hexdigest()}/hwpx"
     texts, length = [], 0
     tables = TableCollector()
-    with checked_archive(content) as archive:
+    with checked_archive(content, expansion_budget, entry_budget) as archive:
         entries = [e for e in archive.infolist()
                    if e.filename.startswith("Contents/section") and e.filename.endswith(".xml")]
         for entry in entries:
@@ -328,17 +343,33 @@ def extract_hwpx(content: bytes, *, locator: str | None = None) -> dict:
     }}
 
 
-def extract_zip(content: bytes, *, ocr_budget: list[int] | None = None) -> dict:
+def extract_zip(content: bytes, *, ocr_budget: list[int] | None = None,
+                hwp_extractor: Callable[[bytes, str], dict] | None = None,
+                hwp_budget: list[int] | None = None) -> dict:
+    """Read archives in memory with shared limits across all nested containers.
+
+    HWP members use an injected authenticated Worker adapter; their original names
+    never become filesystem paths. Nested member hashes and locators retain the
+    complete container chain, and any unread member keeps the source incomplete.
+    """
+    return _extract_zip(content, ocr_budget=[10] if ocr_budget is None else ocr_budget,
+                        hwp_extractor=hwp_extractor,
+                        hwp_budget=[MAX_ARCHIVE_HWP] if hwp_budget is None else hwp_budget,
+                        expansion_budget=[MAX_BYTES], entry_budget=[MAX_ENTRIES], depth=0,
+                        locator=f"sha256:{hashlib.sha256(content).hexdigest()}/zip")
+
+
+def _extract_zip(content: bytes, *, ocr_budget: list[int],
+                 hwp_extractor: Callable[[bytes, str], dict] | None,
+                 hwp_budget: list[int], expansion_budget: list[int], entry_budget: list[int],
+                 depth: int, locator: str) -> dict:
     from urllib.parse import quote
 
     from api.workspace.pdf_text import extract_pdf
 
     members, texts, total = [], [], 0
-    expansion_budget = [MAX_BYTES]
-    ocr_budget = [10] if ocr_budget is None else ocr_budget
     tables = TableCollector()
-    base = f"sha256:{hashlib.sha256(content).hexdigest()}/zip"
-    with checked_archive(content, expansion_budget) as archive:
+    with checked_archive(content, expansion_budget, entry_budget) as archive:
         for entry in archive.infolist():
             if entry.is_dir():
                 continue
@@ -346,15 +377,36 @@ def extract_zip(content: bytes, *, ocr_budget: list[int] | None = None) -> dict:
             member = {"name": entry.filename, "sha256": hashlib.sha256(data).hexdigest(),
                       "size": len(data), "status": "unsupported", "complete": False}
             suffix = PurePosixPath(entry.filename).suffix.lower()
+            member_locator = f"{locator}/{quote(entry.filename, safe='')}"
             try:
                 if suffix == ".xlsx" and data.startswith(b"PK"):
                     result = extract_xlsx(data, expansion_budget=expansion_budget,
-                                          locator=f"{base}/{quote(entry.filename, safe='')}")
+                                          entry_budget=entry_budget, locator=member_locator)
+                elif suffix == ".hwpx" and data.startswith(b"PK"):
+                    result = extract_hwpx(data, expansion_budget=expansion_budget,
+                                          entry_budget=entry_budget, locator=member_locator)
                 elif suffix == ".pdf" and data.startswith(b"%PDF"):
                     result = extract_pdf(data, ocr_budget=ocr_budget,
-                                         locator=f"{base}/{quote(entry.filename, safe='')}")
+                                         locator=member_locator)
+                elif suffix == ".hwp" and data.startswith(bytes.fromhex("d0cf11e0a1b11ae1")):
+                    if hwp_extractor is None:
+                        raise ArchiveMemberError("hwp_worker_required")
+                    if hwp_budget[0] <= 0:
+                        raise ArchiveMemberError("hwp_member_limit")
+                    hwp_budget[0] -= 1
+                    result = hwp_extractor(data, member_locator)
+                elif suffix == ".zip" and data.startswith(b"PK"):
+                    if depth >= MAX_ARCHIVE_DEPTH:
+                        raise ArchiveMemberError("archive_depth_limit")
+                    result = _extract_zip(data, ocr_budget=ocr_budget,
+                        hwp_extractor=hwp_extractor, hwp_budget=hwp_budget,
+                        expansion_budget=expansion_budget, entry_budget=entry_budget,
+                        depth=depth + 1, locator=f"{member_locator}/zip")
                 else:
                     tables.unknown = True
+                    member["error_code"] = ("member_format_mismatch" if suffix in {
+                        ".xlsx", ".hwpx", ".hwp", ".pdf", ".zip"
+                    } else "unsupported_member_format")
                     members.append(member)
                     continue
                 member.update(status="extracted" if result["text"].strip() else "unread",
@@ -377,6 +429,9 @@ def extract_zip(content: bytes, *, ocr_budget: list[int] | None = None) -> dict:
                     texts.append(block)
             except ExtractionError:
                 raise
+            except ArchiveMemberError as exc:
+                tables.unknown = True
+                member.update(status="blocked", error_code=str(exc))
             except Exception:
                 tables.unknown = True
                 member.update(status="failed", error_code="member_extraction_failed")

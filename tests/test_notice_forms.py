@@ -9,6 +9,7 @@ from lxml import etree
 from sqlalchemy import update
 
 from api.workspace import notice_forms as forms
+from api.workspace import service
 from api.workspace.tables import workspaces
 
 XML = '''<?xml version="1.0" encoding="UTF-8"?>
@@ -72,6 +73,100 @@ def request_for(client, doc):
             "fields": [{"field_id": field["id"], "value": "첫째 줄\n둘째 줄" if field["kind"] == "paragraph" else "미림씨스콘",
                         "reference": {"document_id": "company", "quote": "미림씨스콘은 전력전자 유통 회사입니다."}}
                        for field in fields if field["kind"] != "choice"]}
+
+
+def review_request(client, doc, complete=True):
+    body = request_for(client, doc)
+    if complete:
+        fields = client.get("/v2/notices/FORM-TEST/form-fields").json()["documents"][0]["fields"]
+        choice = next(f for f in fields if f["kind"] == "choice")
+        body["fields"].append({"field_id": choice["id"], "value": "법인(●), 개인( )",
+                               "reference": body["fields"][0]["reference"]})
+    assert client.post("/v2/notices/FORM-TEST/form-fillings", json=body).status_code == 200
+    target = client.get("/v2/notices/FORM-TEST/form-fillings/form/review").json()
+    assert target["version"] == 2 and target["review_status"] == "pending"
+    assert target["unfilled_count"] == (0 if complete else 1)
+    return {"version": target["version"], "output_sha256": target["output_sha256"],
+            "approved": True, "source_checked": True, "content_checked": True,
+            "layout_checked": True, "note": "원본·근거·한글 배치 대조 완료"}
+
+
+def test_form_review_records_exact_output_and_rejection_without_approving_evidence(client, form_workspace):
+    _, doc = form_workspace
+    body = review_request(client, doc)
+    path = "/v2/notices/FORM-TEST/form-fillings/form"
+    downloaded = client.get(path + "/download", params={"version": 2, "output_sha256": body["output_sha256"]})
+    assert hashlib.sha256(downloaded.content).hexdigest() == body["output_sha256"]
+    result = client.post(path + "/review", json=body)
+    assert result.status_code == 200, result.text
+    state = result.json()
+    filling = state["inputs"]["form_fillings"][0]
+    assert state["version"] == 3 and filling["review_status"] == "approved"
+    assert filling["review"]["output_sha256"] == body["output_sha256"]
+    assert filling["review"]["input_version"] == 3 and filling["review"]["note"] == body["note"]
+    assert any(r["action"] == "notice_form_review" for r in state["reviews"])
+    assert not any("원본 양식" in issue for issue in state["blockers"])
+    assert not state["ready"] and state["decision"] == "pending"
+    assert state["inputs"]["documents"][1]["role"] == "company_reference"
+    assert not state["inputs"]["documents"][1]["confirmed"]
+    assert client.get(path + "/download").content == downloaded.content
+    assert client.get(path + "/download").headers["x-form-review"].startswith("approved;")
+    assert client.post(path + "/review", json=body).status_code == 409
+    assert client.get(path + "/download", params={"version": 2}).status_code == 409
+    assert client.get(path + "/download", params={"output_sha256": "0" * 64}).status_code == 409
+    rejected = client.post(path + "/review", json={**body, "version": 3, "approved": False}).json()
+    assert rejected["inputs"]["form_fillings"][0]["review_status"] == "rejected"
+    assert any("원본 양식" in issue for issue in rejected["blockers"])
+
+
+@pytest.mark.parametrize("patch,code", [
+    ({"layout_checked": False}, 422), ({"content_checked": False}, 422),
+    ({"source_checked": False}, 422), ({"note": " "}, 422),
+    ({"version": 1}, 409), ({"output_sha256": "0" * 64}, 409),
+])
+def test_form_approval_guards(client, form_workspace, patch, code):
+    _, doc = form_workspace
+    body = review_request(client, doc)
+    response = client.post("/v2/notices/FORM-TEST/form-fillings/form/review", json={**body, **patch})
+    assert response.status_code == code, response.text
+    assert client.get("/v2/notices/FORM-TEST/workspace").json()["version"] == 2
+
+
+def test_unfilled_form_can_be_rejected_but_not_approved(client, form_workspace):
+    _, doc = form_workspace
+    body = review_request(client, doc, complete=False)
+    path = "/v2/notices/FORM-TEST/form-fillings/form/review"
+    assert client.post(path, json=body).json()["detail"]["code"] == "form_unfilled"
+    assert client.post(path, json={**body, "approved": False}).status_code == 200
+
+
+@pytest.mark.parametrize("mutation", ["company", "reference", "value", "disk", "mapping"])
+def test_form_review_becomes_invalid_when_inputs_or_files_change(client, form_workspace, sqlite_engine, mutation):
+    _, doc = form_workspace
+    body = review_request(client, doc)
+    path = "/v2/notices/FORM-TEST/form-fillings/form/review"
+    assert client.post(path, json=body).status_code == 200
+    with sqlite_engine.begin() as conn:
+        ws = service.load(conn, "FORM-TEST")
+        changed = copy.deepcopy(ws["inputs"])
+        if mutation == "company":
+            changed["company"]["name"] = "변경 회사"
+        elif mutation == "reference":
+            changed["documents"][1]["text"] += " 변경"
+        elif mutation == "value":
+            changed["form_fillings"][0]["fields"][0]["value"] += " 변경"
+        elif mutation == "mapping":
+            changed["form_fillings"][0]["mapping_sha256"] = "0" * 64
+        else:
+            from pathlib import Path
+            Path(doc["storage_path"]).write_bytes(b"changed file")
+        if mutation != "disk":
+            updated = service.change(conn, ws, changed, "test_change", "자료 변경")
+            assert updated["inputs"]["form_fillings"][0]["review_status"] == "pending"
+            assert updated["inputs"]["form_fillings"][0]["review"] == ws["inputs"]["form_fillings"][0]["review"]
+    state = client.get("/v2/notices/FORM-TEST/workspace").json()
+    assert not state["ready"] and any("원본 양식" in issue for issue in state["blockers"])
+    assert client.post(path, json=body).status_code == 409
 
 
 def test_actual_format_copy_preserves_geometry_and_exact_readback(client, form_workspace):

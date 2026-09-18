@@ -91,19 +91,28 @@ def ocr_page(page: Any) -> dict:
         image = page.to_image(resolution=min(200, 2400 * 72 / max(page.width, page.height)))
         image.original.save(root / "page.png")
         try:
-            result = subprocess.run(
-                [executable, str(root / "page.png"), str(root / "result"), "-l", languages, "tsv"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=20, check=False, shell=False,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
+            with (root / "diagnostic.log").open("wb") as diagnostic:
+                result = subprocess.run(
+                    [executable, str(root / "page.png"), str(root / "result"), "-l", languages, "tsv"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=diagnostic,
+                    timeout=20, check=False, shell=False,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
         except subprocess.TimeoutExpired:
             return {"text": "", "code": "ocr_timeout"}
         except OSError:
             return {"text": "", "code": "ocr_engine_unavailable"}
+        with (root / "diagnostic.log").open("rb") as diagnostic:
+            # Tesseract may exit successfully after silently dropping a requested
+            # language or a model dependency. Keep partial text for review, while
+            # surfacing the actual setup problem instead of a high-confidence pass.
+            message = diagnostic.read(100_000).decode("utf-8", errors="replace")
+        missing = sorted(set(re.findall(r"Failed loading language '([a-zA-Z0-9_]{1,80})'", message)))
+        language_issue = {"missing_languages": missing} if missing else {}
         output = root / "result.tsv"
         if result.returncode != 0 or not output.is_file():
-            return {"text": "", "code": "ocr_failed"}
+            return {"text": "", "code": "ocr_language_missing" if missing else "ocr_failed",
+                    **language_issue}
         if output.stat().st_size > 5_000_000:
             return {"text": "", "code": "ocr_output_limit"}
         lines, confidences, previous = [], [], None
@@ -123,7 +132,8 @@ def ocr_page(page: Any) -> dict:
         text = "\n".join(" ".join(line) for line in lines)
         if len(text) > MAX_TEXT:
             return {"text": "", "code": "ocr_output_limit"}
-        return {"text": text, "code": "ocr_review_required", "engine": "tesseract",
+        return {"text": text, "code": "ocr_language_missing" if missing else "ocr_review_required",
+                "engine": "tesseract", **language_issue,
                 "languages": languages, "confidence": round(sum(confidences) / len(confidences), 2) if confidences else None}
 
 

@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, computed_field, field_validator
 
+from api.models.notices import NoticeUpsertRequest
+
 JobKind = Literal[
     "fetch",
     "analyze",
@@ -25,6 +27,18 @@ class StrictModel(BaseModel):
 
 class VersionRequest(StrictModel):
     version: int = Field(ge=1)
+
+
+class WorkspaceNoticeRequest(NoticeUpsertRequest):
+    org_name: str | None = Field(default=None, max_length=500)
+    close_date: datetime | None = None
+
+    @field_validator("close_date")
+    @classmethod
+    def aware_deadline(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("마감일시는 시간대와 함께 입력하세요.")
+        return value
 
 
 class JobRequest(StrictModel):
@@ -131,6 +145,13 @@ class ReviewRequest(VersionRequest):
     job_id: str
     note: str = Field(min_length=1, max_length=2000)
     expected_review_id: str | None = None
+    output_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    layout_confirmed: bool = False
+
+
+class OutputPlanRequest(VersionRequest):
+    template_keys: list[str] = Field(min_length=1, max_length=20)
+    note: str = Field(min_length=1, max_length=2000)
 
 
 class RecoveryRequest(VersionRequest):

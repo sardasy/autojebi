@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from openpyxl import Workbook
-
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.util import load_python_file
+from openpyxl import Workbook
+
 from api.workspace import asset_policy, service
 from api.workspace.assets import AssetDetails
 from api.workspace.tables import company_asset_events, company_assets, workspaces

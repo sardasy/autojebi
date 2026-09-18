@@ -94,7 +94,7 @@ def test_zip_rejects_unsafe_paths(name):
         extract_zip(archive_bytes([(entry, b"x")]))
 
 
-def test_zip_rejects_symlinks_duplicates_and_nested_archives():
+def test_zip_rejects_symlinks_duplicates_and_keeps_unsupported_nested_members():
     link = zipfile.ZipInfo("linked.xlsx")
     link.external_attr = (stat.S_IFLNK | 0o777) << 16
     with pytest.raises(ExtractionError):
@@ -104,6 +104,8 @@ def test_zip_rejects_symlinks_duplicates_and_nested_archives():
     result = extract_zip(archive_bytes([("nested.zip", archive_bytes([("a.txt", b"x")]))]))
     assert result["text"] == ""
     assert not result["extraction"]["complete"]
+    nested = result["extraction"]["members"][0]["extraction"]["members"][0]
+    assert nested["name"] == "a.txt" and nested["status"] == "unsupported"
 
 
 def test_archive_size_limit_applies_before_member_read(monkeypatch):
@@ -167,6 +169,88 @@ def test_zip_exposes_tables_at_top_level_with_distinct_member_sources():
     assert tables[0]["source"]["locator"] != tables[1]["source"]["locator"]
     assert "/first.xlsx#" in tables[0]["source"]["locator"]
     assert tables[0] == result["extraction"]["members"][0]["extraction"]["tables"][0]
+
+
+def test_nested_zip_reads_hwpx_and_keeps_container_chain_and_hashes():
+    hwpx = hwpx_table_bytes()
+    nested = archive_bytes([("spec.hwpx", hwpx)])
+    result = extract_zip(archive_bytes([("bundle.zip", nested), ("spec.hwpx", hwpx)]))
+    assert result["extraction"]["complete"]
+    members = result["extraction"]["members"]
+    assert members[0]["sha256"] == hashlib.sha256(nested).hexdigest()
+    assert members[0]["extraction"]["members"][0]["sha256"] == hashlib.sha256(hwpx).hexdigest()
+    assert result["text"].count("Specification Voltage 400 V") == 2
+    assert "[ZIP 파일 bundle.zip]\n[ZIP 파일 spec.hwpx]" in result["text"]
+    tables = result["extraction"]["tables"]
+    assert len(tables) == 2 and tables[0]["source"] != tables[1]["source"]
+    assert "/bundle.zip/zip/spec.hwpx/Contents/section0.xml" in tables[0]["source"]["locator"]
+    assert tables[0] == members[0]["extraction"]["members"][0]["extraction"]["tables"][0]
+
+
+def test_nested_archive_depth_limit_keeps_other_sources_and_blocks_completeness():
+    deepest = archive_bytes([("spec.hwpx", hwpx_table_bytes())])
+    for _ in range(3):
+        deepest = archive_bytes([("nested.zip", deepest)])
+    result = extract_zip(archive_bytes([("too-deep.zip", deepest), ("readable.hwpx", hwpx_table_bytes())]))
+    assert "Specification Voltage 400 V" in result["text"]
+    assert not result["extraction"]["complete"]
+    member = result["extraction"]["members"][0]
+    for _ in range(2):
+        member = member["extraction"]["members"][0]
+    assert member["status"] == "blocked" and member["error_code"] == "archive_depth_limit"
+
+
+def test_nested_archive_rechecks_unsafe_paths_before_member_processing():
+    content = archive_bytes([("nested.zip", archive_bytes([("../escape.hwpx", hwpx_table_bytes())]))])
+    with pytest.raises(ExtractionError, match="unsafe_archive_entry"):
+        extract_zip(content)
+
+
+def test_archive_office_members_share_expansion_and_entry_limits(monkeypatch):
+    content = archive_bytes([("first.hwpx", hwpx_table_bytes()), ("second.hwpx", hwpx_table_bytes())])
+    monkeypatch.setattr("api.workspace.attachment_text.MAX_BYTES", len(content) + 10)
+    with pytest.raises(ExtractionError, match="archive_size_limit"):
+        extract_zip(content)
+    monkeypatch.setattr("api.workspace.attachment_text.MAX_BYTES", 50_000_000)
+    monkeypatch.setattr("api.workspace.attachment_text.MAX_ENTRIES", 3)
+    with pytest.raises(ExtractionError, match="archive_entry_limit"):
+        extract_zip(content)
+
+
+def test_nested_zip_shares_pdf_ocr_budget(monkeypatch):
+    budgets = []
+    def pdf(content, *, ocr_budget, locator):
+        budgets.append(ocr_budget[0])
+        ocr_budget[0] -= 1
+        return {"text": "recognized", "extraction": {"complete": False,
+            **text_only_table_metadata(locator=locator)}}
+    monkeypatch.setattr("api.workspace.pdf_text.extract_pdf", pdf)
+    result = extract_zip(archive_bytes([("a.pdf", b"%PDF first"),
+        ("nested.zip", archive_bytes([("b.pdf", b"%PDF second")]))]), ocr_budget=[2])
+    assert budgets == [2, 1] and not result["extraction"]["complete"]
+
+
+def test_zip_hwp_requires_worker_and_shares_call_budget_across_nesting():
+    hwp = bytes.fromhex("d0cf11e0a1b11ae1") + b"inert fixture"
+    content = archive_bytes([("a.hwp", hwp), ("nested.zip", archive_bytes([("b.hwp", hwp)]))])
+    missing = extract_zip(content)
+    assert missing["extraction"]["members"][0]["error_code"] == "hwp_worker_required"
+    seen = []
+    def worker(data, locator):
+        seen.append((data, locator))
+        return {"text": "HWP body", "extraction": {"version": 1, "complete": True,
+            **text_only_table_metadata(locator=locator)}}
+    result = extract_zip(content, hwp_extractor=worker, hwp_budget=[1])
+    assert len(seen) == 1 and seen[0][0] == hwp
+    assert "HWP body" in result["text"] and not result["extraction"]["complete"]
+    nested = result["extraction"]["members"][1]["extraction"]["members"][0]
+    assert nested["error_code"] == "hwp_member_limit"
+
+
+def test_zip_matching_extension_requires_matching_content():
+    result = extract_zip(archive_bytes([("document.hwpx", b"not an archive")]))
+    assert result["extraction"]["members"][0]["error_code"] == "member_format_mismatch"
+    assert result["text"] == "" and not result["extraction"]["complete"]
 
 
 def hwpx_table_bytes(span=1):
@@ -270,6 +354,64 @@ def test_execution_cached_hwp_retains_metadata_and_does_not_reopen_worker(tmp_pa
     assert result["extraction"]["custom"] == ["keep"]
     assert result["extraction"]["table_structure"]["status"] == "unknown"
     assert not result["extraction"]["table_structure"]["needs_review"]
+
+
+def test_execution_zip_hwp_uses_authenticated_worker_with_immutable_digest_source(tmp_path, monkeypatch):
+    from api.workspace import execution
+
+    monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("HWP_AGENT_TOKEN", "test-only-token")
+    hwp = bytes.fromhex("d0cf11e0a1b11ae1") + b"inert fixture"
+    content = archive_bytes([("folder/Korean source.hwp", hwp)])
+    path = tmp_path / "sources.zip"
+    path.write_bytes(content)
+    opened = []
+    class Worker:
+        def analyze_document(self, source):
+            source = execution.Path(source)
+            assert source.parent == tmp_path / "uploads" / "archive-members"
+            assert source.name == hashlib.sha256(hwp).hexdigest() + ".hwp"
+            assert source.read_bytes() == hwp
+            opened.append(source)
+            return {"text": "Actual Worker body", "table_count": 1}
+    monkeypatch.setattr(execution, "HwpAgentClient", lambda **_: Worker())
+    doc = {"id": "zip", "name": path.name, "storage_path": str(path),
+           "sha256": hashlib.sha256(content).hexdigest()}
+    result = execution.extract({"snapshot": {"documents": [doc]}})["documents"][0]
+    assert "Actual Worker body" in result["text"] and result["extraction"]["complete"]
+    assert opened[0].is_file()  # Preserve the source even if the Worker later needs recovery.
+    member = result["extraction"]["members"][0]
+    assert member["sha256"] == hashlib.sha256(hwp).hexdigest()
+    assert member["extraction"]["table_structure"]["status"] == "needs_review"
+    assert not member["extraction"]["table_structure"]["structure_trustworthy"]
+    assert "%2F" in member["extraction"]["table_structure"]["issues"][0]["source"]["locator"]
+
+
+def test_archive_hwp_refuses_changed_retained_source_without_calling_worker(tmp_path, monkeypatch):
+    from api.workspace import execution
+    from api.workspace.attachment_text import ArchiveMemberError
+
+    monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("HWP_AGENT_TOKEN", "test-only-token")
+    content = bytes.fromhex("d0cf11e0a1b11ae1") + b"original"
+    folder = tmp_path / "uploads" / "archive-members"
+    folder.mkdir(parents=True)
+    (folder / (hashlib.sha256(content).hexdigest() + ".hwp")).write_bytes(b"changed")
+    monkeypatch.setattr(execution, "HwpAgentClient", lambda **_: pytest.fail("changed source"))
+    with pytest.raises(ArchiveMemberError, match="hwp_member_source_changed"):
+        execution.extract_archive_hwp(content, "test:member")
+
+
+def test_archive_hwp_missing_auth_is_an_explicit_incomplete_member(tmp_path, monkeypatch):
+    from api.workspace.execution import extract_archive_hwp
+
+    monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("HWP_AGENT_TOKEN", raising=False)
+    hwp = bytes.fromhex("d0cf11e0a1b11ae1") + b"inert fixture"
+    result = extract_zip(archive_bytes([("source.hwp", hwp)]), hwp_extractor=extract_archive_hwp)
+    assert not result["extraction"]["complete"]
+    assert result["extraction"]["members"][0]["error_code"] == "hwp_worker_auth_missing"
+    assert not (tmp_path / "uploads").exists()
 
 
 def test_execution_cached_pdf_only_enriches_structure_keys(tmp_path, monkeypatch):

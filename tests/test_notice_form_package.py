@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from sqlalchemy import select, update
 
 from api.workspace import service
 from api.workspace.execution import run_package
-from api.workspace.tables import reviews, workspaces
+from api.workspace.tables import jobs, reviews, workspaces
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 XML = f"""<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="{HP}">
@@ -190,3 +191,97 @@ def test_package_includes_verified_original_form_without_mutating_sources_or_app
     assert persisted["decision"] == state["decision"]
     response = client.get(f"/v2/notices/{state['notice_no']}/workspace")
     assert response.status_code == 200 and response.json()["ready"] is False
+
+
+def test_package_preserves_reviewed_bytes_and_does_not_restore_resolved_form_warnings(
+    client, sqlite_engine, tmp_path, saved_form_package,
+):
+    state, _, _ = saved_form_package
+    prefix = f"/v2/notices/{state['notice_no']}/form-fillings/original"
+    target = client.get(prefix + "/review").json()
+    downloaded = client.get(prefix + "/download").content
+    result = client.post(prefix + "/review", json={
+        "version": target["version"], "output_sha256": target["output_sha256"],
+        "approved": True, "source_checked": True, "content_checked": True,
+        "layout_checked": True, "note": "합성 양식 검토 회귀",
+    })
+    assert result.status_code == 200, result.text
+    with sqlite_engine.connect() as conn:
+        state = service.load(conn, state["notice_no"])
+    folder = tmp_path / "approved-package"
+    folder.mkdir()
+    result = run_package(sqlite_engine, {"notice_no": state["notice_no"],
+        "input_version": state["version"], "snapshot": state["inputs"]}, folder)
+    assert result["warnings"]  # Missing required evidence/other outputs remain blockers.
+    assert not any("양식" in warning or "한글에서" in warning for warning in result["warnings"])
+    with zipfile.ZipFile(result["artifact"]) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        entry = next(f for f in manifest["files"] if "original_form" in f)
+        assert archive.read(entry["name"]) == downloaded
+        assert entry["original_form"]["review_status"] == "approved"
+        assert entry["original_form"]["layout_verified"] is True
+        assert entry["original_form"]["review"]["output_sha256"] == target["output_sha256"]
+
+
+def test_reviewed_original_form_can_reach_ready_with_all_other_reviews_complete(
+    client, sqlite_engine, tmp_path, saved_form_package,
+):
+    """Synthetic artifacts exercise readiness; this is not a live HWP acceptance test."""
+    state, source, _ = saved_form_package
+    inputs = copy.deepcopy(state["inputs"])
+    inputs["notice"]["close_date"] = (service.now() + timedelta(days=30)).isoformat()
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text("합성 검증 증빙", encoding="utf-8")
+    inputs["documents"].append({"id": "evidence", "name": "합성 검증 증빙", "role": "company_evidence",
+        "confirmed": True, "text": "합성 검증 증빙", "storage_path": str(evidence),
+        "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(), "item_id": "manufacturer"})
+    inputs["source_reviewed"] = True
+    inputs["requirements"] = [{"id": "req", "text": "상호명", "document_id": "original",
+        "quote": "상호명", "locator": "서식 2", "mandatory": True, "review_status": "accepted",
+        "compliance": "meets", "evidence_id": "evidence", "evidence_quote": "합성 검증 증빙",
+        "evidence_locator": "본문", "proposed_value": "합성 검증 증빙"}]
+    inputs["proposal_sections"] = [{"id": "section", "text": "합성 검증 제안 내용",
+        "review_status": "approved", "requirement_ids": ["req"], "evidence_ids": ["evidence"]}]
+    with sqlite_engine.begin() as conn:
+        conn.execute(update(workspaces).where(workspaces.c.notice_no == state["notice_no"])
+                     .values(inputs=inputs, decision="participate"))
+    prefix = f"/v2/notices/{state['notice_no']}"
+    target = client.get(prefix + "/form-fillings/original/review").json()
+    approved = client.post(prefix + "/form-fillings/original/review", json={
+        "version": target["version"], "output_sha256": target["output_sha256"], "approved": True,
+        "source_checked": True, "content_checked": True, "layout_checked": True, "note": "합성 검토",
+    })
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["blockers"] == []
+    assert not approved.json()["ready"]
+    with sqlite_engine.begin() as conn:
+        state = service.load(conn, state["notice_no"])
+        for kind, template in [("excel", None), ("hwp", "bid_form"), ("hwp", "proposal")]:
+            path = tmp_path / f"synthetic-{kind}-{template}.bin"
+            path.write_bytes(b"synthetic reviewed output")
+            job_id = service.uid()
+            conn.execute(jobs.insert().values(id=job_id, notice_no=state["notice_no"], kind=kind,
+                input_version=state["version"], idempotency_key=job_id, status="succeeded",
+                snapshot=state["inputs"], parameters={"template_key": template}, created_at=service.now(),
+                result={"artifact": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "warnings": [], "verified": True}))
+            service.audit(conn, state, "approved", "합성 생성물 검토",
+                          {"sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                           "layout_confirmed": True}, job_id)
+    folder = tmp_path / "ready-package"
+    folder.mkdir()
+    result = run_package(sqlite_engine, {"notice_no": state["notice_no"],
+        "input_version": state["version"], "snapshot": state["inputs"]}, folder)
+    assert result["warnings"] == []
+    package_id = service.uid()
+    with sqlite_engine.begin() as conn:
+        conn.execute(jobs.insert().values(id=package_id, notice_no=state["notice_no"], kind="package",
+            input_version=state["version"], idempotency_key=package_id, status="succeeded",
+            snapshot=state["inputs"], parameters={}, result=result, created_at=service.now()))
+    ready = client.post(prefix + "/reviews", json={"version": state["version"],
+        "job_id": package_id, "action": "ready", "note": "합성 패키지 최종 검토"})
+    assert ready.status_code == 200, ready.text
+    assert client.get(prefix + "/workspace").json()["ready"] is True
+    source.write_bytes(b"changed after final review")
+    assert client.get(prefix + "/workspace").json()["ready"] is False
+    assert Path(result["artifact"]).is_file()

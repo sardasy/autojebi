@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from api.workspace.runtime_version import PROCESS_VERSION, CodeVersion
+
 
 def data_root() -> Path:
     return Path(os.getenv("WORKSPACE_DATA_DIR", "data/workspace")).resolve()
@@ -133,6 +135,7 @@ class Health(BaseModel):
         "starting", "idle", "recovering", "executing", "persisting", "retrying", "stopped"
     ]
     last_failure: Failure | None = None
+    code_version: CodeVersion | None = None
 
 
 def read_health(lane: str = "all") -> dict | None:
@@ -156,6 +159,7 @@ class RuntimeHealth:
             heartbeat_at=datetime.now(UTC),
             state="starting",
             last_failure=previous.get("last_failure") if previous else None,
+            code_version=PROCESS_VERSION.report(),
         )
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -164,6 +168,7 @@ class RuntimeHealth:
     def record(self, state: str | None = None, failure: FailureCode | None = None) -> None:
         with self._lock:
             self.value.heartbeat_at = datetime.now(UTC)
+            self.value.code_version = PROCESS_VERSION.report()
             if state is not None:
                 self.value.state = state
             if failure:

@@ -12,13 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.pool import StaticPool
 
 # api.ontology.tables를 import해야 metadata에 ontology 테이블이 등록된다
 import api.ontology.tables  # noqa: F401
-from alembic.config import Config
-from alembic.script import ScriptDirectory
 from api.routers.notices import metadata
 
 

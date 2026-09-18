@@ -21,8 +21,9 @@ pytestmark = pytest.mark.skipif(os.getenv("SPEC_LIVE_TEST") != "true", reason="i
 
 
 def test_fresh_postgres_migration_and_real_lexical(tmp_path):
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
     url = os.environ["SPEC_TEST_DATABASE_URL"]
     engine = create_engine(url)
     assert engine.url.database == "spec_validation" and engine.url.port == 15433

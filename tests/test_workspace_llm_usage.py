@@ -5,6 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.util import load_python_file
 from fastapi import HTTPException
 from sqlalchemy import (
     Column,
@@ -18,9 +21,6 @@ from sqlalchemy import (
     update,
 )
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
-from alembic.util import load_python_file
 from api.config import settings
 from api.workspace import anthropic_client, execution, llm_usage, proposal, service
 from api.workspace.tables import budgets, jobs, reviews, workspaces

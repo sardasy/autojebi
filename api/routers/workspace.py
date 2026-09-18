@@ -17,11 +17,13 @@ from api.models.notices import NoticeSearchRequest, NoticeSearchResponse, Notice
 from api.routers.company_assets import router as company_assets_router
 from api.routers.notice_forms import router as notice_forms_router
 from api.routers.notices import bid_pipeline, search_notices_endpoint, upsert_notice
+from api.routers.requirement_candidates import router as requirement_candidates_router
 from api.routers.specifications import router as specifications_router
 from api.services.uploads import build_metadata, save_stream
 from api.workspace import service
 from api.workspace.assets import AssetLink
 from api.workspace.execution import hwp_preview, source_path, storage_root
+from api.workspace.identity import router as identity_router
 from api.workspace.models import (
     AdoptRequirements,
     CommercialRequest,
@@ -30,6 +32,7 @@ from api.workspace.models import (
     DocumentReview,
     JobRecord,
     JobRequest,
+    OutputPlanRequest,
     RecoveryRequest,
     ReferenceDraft,
     RequirementRequest,
@@ -39,6 +42,7 @@ from api.workspace.models import (
     SourceNeedsRequest,
     TextRequest,
     VersionRequest,
+    WorkspaceNoticeRequest,
     WorkspaceRecord,
     WritingPlanRequest,
 )
@@ -62,6 +66,8 @@ router.include_router(company_assets_router)
 router.include_router(notice_forms_router)
 
 router.include_router(specifications_router)
+router.include_router(identity_router)
+router.include_router(requirement_candidates_router)
 
 
 @router.post("/notices/{notice_no}/company-assets/{asset_id}", response_model=WorkspaceRecord)
@@ -130,7 +136,7 @@ def list_workspaces(q: str = Query("", max_length=200), page: int = Query(1, ge=
 
 
 @router.post("/notices")
-def register_notice(body: NoticeUpsertRequest) -> dict:
+def register_notice(body: WorkspaceNoticeRequest) -> dict:
     if not body.notice_no.strip():
         service.fail("notice_required", "공고번호를 입력하세요.", status=422)
     with require_engine().connect() as conn:
@@ -138,7 +144,13 @@ def register_notice(body: NoticeUpsertRequest) -> dict:
             select(bid_pipeline.c.notice_no).where(bid_pipeline.c.notice_no == body.notice_no)
         ).first():
             return {"notice_no": body.notice_no, "already_exists": True}
-    row = upsert_notice(body)
+    raw = dict(body.raw or {})
+    if body.org_name is not None:
+        raw["ntceInsttNm"] = body.org_name
+    if body.close_date is not None:
+        raw["bidClseDt"] = body.close_date.isoformat()
+    row = upsert_notice(NoticeUpsertRequest(notice_no=body.notice_no, title=body.title,
+                                          source=body.source, raw=raw))
     return {"notice_no": row.notice_no}
 
 
@@ -414,6 +426,15 @@ def download_document_draft(notice_no: str, draft_id: str) -> Response:
 @router.put("/notices/{notice_no}/writing-plan", response_model=WorkspaceRecord)
 def review_writing_plan(notice_no: str, body: WritingPlanRequest) -> WorkspaceRecord:
     from api.workspace.writing_plan import save
+
+    with require_engine().begin() as conn:
+        save(conn, notice_no, body)
+        return service.view(conn, notice_no)
+
+
+@router.put("/notices/{notice_no}/output-plan", response_model=WorkspaceRecord)
+def review_output_plan(notice_no: str, body: OutputPlanRequest) -> WorkspaceRecord:
+    from api.workspace.output_plan import save
 
     with require_engine().begin() as conn:
         save(conn, notice_no, body)
@@ -726,6 +747,12 @@ def workspace_settings() -> dict:
 
 @router.get("/worker/health")
 def worker_health() -> dict:
+    from api.workspace.runtime_version import with_runtime_health
+
+    return with_runtime_health(_worker_health_snapshot())
+
+
+def _worker_health_snapshot() -> dict:
     from api.workspace.receipts import read_health
 
     lane_values = {}

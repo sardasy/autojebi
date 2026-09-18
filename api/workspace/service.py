@@ -158,6 +158,8 @@ def assert_source_current(conn: Any, workspace: dict) -> None:
 def audit(
     conn: Any, ws: dict, action: str, note: str, details: dict, job_id: str | None = None
 ) -> None:
+    from api.workspace.identity import audit_details
+
     if not note.strip():
         fail("note_required", "검토 의견을 입력하세요.", status=422)
     conn.execute(
@@ -168,7 +170,7 @@ def audit(
             job_id=job_id,
             action=action,
             note=note.strip(),
-            details=details,
+            details=audit_details(details),
             created_at=now(),
         )
     )
@@ -181,10 +183,17 @@ def change(conn: Any, ws: dict, inputs: dict, action: str, note: str, **extra: A
     if action == "decision" and extra.get("decision") == ws["decision"] and inputs == ws["inputs"]:
         return ws
     invalidate_document_dependents(ws["inputs"], inputs)
-    if action not in {"decision", "source_review", "section_review", "extract_result", "reference_upload", "reference_text", "reference_draft"}:
+    if action not in {"decision", "source_review", "section_review", "notice_form_review", "extract_result", "reference_upload", "reference_text", "reference_draft", "output_plan"}:
         for section in inputs.get("proposal_sections") or []:
             if section.get("review_status") != "rejected":
                 section["review_status"] = "pending"
+    if inputs.get("form_fillings"):
+        from api.workspace.notice_forms import review_basis
+        basis = review_basis(inputs)
+        for filling in inputs["form_fillings"]:
+            if (filling.get("review_status") == "approved"
+                    and (filling.get("review") or {}).get("basis_sha256") != basis):
+                filling["review_status"] = "pending"
     updated = {"inputs": inputs, "version": ws["version"] + 1, "updated_at": now(), **extra}
     count = conn.execute(
         update(workspaces)
@@ -263,6 +272,8 @@ def initialize(conn: Any, notice_no: str, version: int | None = None) -> dict:
             for r in ws["inputs"]["requirements"]
         ]
         inputs["proposal_sections"] = copy.deepcopy(ws["inputs"].get("proposal_sections") or [])
+        if "output_plan" in ws["inputs"]:
+            inputs["output_plan"] = copy.deepcopy(ws["inputs"]["output_plan"])
         if "form_fillings" in ws["inputs"]:
             inputs["form_fillings"] = copy.deepcopy(ws["inputs"]["form_fillings"])
         if "commercial" in ws["inputs"]:
@@ -307,9 +318,10 @@ def blockers(inputs: dict) -> list[str]:
     from api.workspace.source_needs import issues as source_need_issues
     issues = source_inventory_issues(inputs)
     issues.extend(source_need_issues(inputs))
-    for filling in inputs.get("form_fillings") or []:
-        name = filling.get("name") or "첨부 양식"
-        issues.append(f"원본 양식 작성값·근거 및 한글 배치 검토 필요: {name}")
+    from api.workspace.notice_forms import filling_issues
+    issues.extend(filling_issues(inputs))
+    from api.workspace.output_plan import writing_output_issues
+    issues.extend(writing_output_issues(inputs))
     from api.specifications.service import enabled, summary
     if inputs.get("specifications") or enabled():
         if summary(inputs)["spec_compliance"] != "충족":
@@ -382,7 +394,7 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
     _, signature = source_data(conn, notice_no)
     records = (
         conn.execute(
-            select(jobs).where(jobs.c.notice_no == notice_no).order_by(jobs.c.created_at.desc())
+            select(jobs).where(jobs.c.notice_no == notice_no).order_by(jobs.c.created_at.desc(), jobs.c.id.desc())
         )
         .mappings()
         .all()
@@ -391,7 +403,7 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
         conn.execute(
             select(reviews)
             .where(reviews.c.notice_no == notice_no)
-            .order_by(reviews.c.created_at.desc())
+            .order_by(reviews.c.created_at.desc(), reviews.c.id.desc())
         )
         .mappings()
         .all()
@@ -414,15 +426,7 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
                 and job["kind"] == "package"
                 and job["status"] == "succeeded"
             ):
-                included = result.get("included_jobs") or []
-                ready = bool(included) and all(
-                    latest_reviews.get(key) == "approved" for key in included
-                )
-                if ready:
-                    path = Path(result["artifact"])
-                    ready = path.is_file() and hashlib.sha256(
-                        path.read_bytes()
-                    ).hexdigest() == result.get("sha256")
+                ready = not result.get("warnings") and package_current(conn, ws, job)
                 if ready:
                     break
     public_inputs = copy.deepcopy(ws["inputs"])
@@ -445,10 +449,13 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
         decision=ws["decision"],
         inputs=public_inputs,
         blockers=issues,
-        next_action=issues[0] if issues else "생성물 검토 및 제출 준비 확인",
+        next_action=issues[0] if issues else "제출 준비 확인 완료 · 최종 패키지를 다운로드하세요" if ready else "생성물 검토 및 제출 준비 확인",
         jobs=[JobRecord(**r) for r in records],
         reviews=[
-            {k: r[k] for k in ("id", "job_id", "action", "note", "input_version", "created_at")}
+            {**{k: r[k] for k in ("id", "job_id", "action", "note", "input_version", "created_at")},
+             "actor": (r["details"] or {}).get("actor"),
+             "output_sha256": (r["details"] or {}).get("sha256"),
+             "layout_confirmed": bool((r["details"] or {}).get("layout_confirmed"))}
             for r in history
         ],
         source_changed=ws["source_hash"] != signature,
@@ -490,6 +497,31 @@ def latest_review(conn: Any, job_id: str) -> dict | None:
         .first()
     )
     return dict(row) if row else None
+
+
+def package_current(conn: Any, ws: dict, package: dict) -> bool:
+    from api.workspace.output_plan import review_matches, selected_artifacts, template_keys
+
+    if not artifact_healthy(package):
+        return False
+    records = list(conn.execute(select(jobs).where(
+        jobs.c.notice_no == ws["notice_no"], jobs.c.input_version == ws["version"],
+        jobs.c.kind.in_(["excel", "hwp"])
+    ).order_by(jobs.c.created_at.desc(), jobs.c.id.desc())).mappings())
+    keys = set(template_keys(ws["inputs"]))
+    if any(j["status"] in {"queued", "running"} and
+           (j["kind"] == "excel" or j["parameters"].get("template_key") in keys) for j in records):
+        return False
+    selected = selected_artifacts(records, ws["inputs"])
+    included = (package.get("result") or {}).get("included_jobs") or []
+    if not included or set(included) != {j["id"] for j in selected}:
+        return False
+    if not any(j["kind"] == "excel" for j in selected) or keys != {
+        j["parameters"].get("template_key") for j in selected if j["kind"] == "hwp"
+    }:
+        return False
+    return all(artifact_healthy(j) and review_matches(j, latest_review(conn, j["id"]))
+               for j in selected)
 
 
 def create_job_record(conn: Any, ws: dict, kind: str, key: str, params: dict) -> dict:
@@ -718,6 +750,16 @@ def review_artifact(conn: Any, notice_no: str, body: Any) -> None:
             "sha256"
         ):
             fail("file_changed", "생성 파일이 없어졌거나 변경되었습니다.")
+        if body.output_sha256 is not None and body.output_sha256 != result.get("sha256"):
+            fail("file_changed", "화면에서 검토한 파일과 현재 파일이 다릅니다.")
+        if job["kind"] == "hwp":
+            from api.workspace.output_plan import hwp_review_issues
+
+            issues = hwp_review_issues(result)
+            if issues:
+                fail("hwp_review_blocked", issues[0])
+            if not body.layout_confirmed or body.output_sha256 != result.get("sha256"):
+                fail("layout_review_required", "생성 HWP를 열어 본문·표·페이지 배치를 확인하세요.")
     if body.action == "ready":
         deadline_errors = deadline_issues(ws["inputs"])
         if deadline_errors:
@@ -734,16 +776,19 @@ def review_artifact(conn: Any, notice_no: str, body: Any) -> None:
             latest = conn.execute(
                 select(reviews.c.action)
                 .where(reviews.c.job_id == included, reviews.c.input_version == ws["version"])
-                .order_by(reviews.c.created_at.desc())
+                .order_by(reviews.c.created_at.desc(), reviews.c.id.desc())
                 .limit(1)
             ).scalar()
             if latest != "approved":
                 fail("artifact_review_changed", "패키지에 포함된 생성물의 승인이 변경되었습니다.")
+        if not package_current(conn, ws, job):
+            fail("package_changed", "최신 승인 파일로 패키지를 다시 생성하고 확인하세요.")
     audit(
         conn,
         ws,
         body.action,
         body.note,
-        {"sha256": result.get("sha256"), "previous_review_id": body.expected_review_id},
+        {"sha256": result.get("sha256"), "previous_review_id": body.expected_review_id,
+         "layout_confirmed": body.layout_confirmed if job["kind"] == "hwp" else False},
         body.job_id,
     )

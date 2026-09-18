@@ -56,6 +56,55 @@ def source_path(doc: dict) -> Path:
     return path
 
 
+def extract_archive_hwp(content: bytes, locator: str) -> dict:
+    """Keep an immutable, digest-named member in the Worker's allowed source root."""
+    from api.workspace.attachment_text import (
+        MAX_BYTES,
+        MAX_TEXT,
+        ArchiveMemberError,
+        ExtractionError,
+        text_only_table_metadata,
+    )
+
+    if not os.getenv("HWP_AGENT_TOKEN", "").strip():
+        raise ArchiveMemberError("hwp_worker_auth_missing")
+    if not content or len(content) > MAX_BYTES:
+        raise ExtractionError("archive_size_limit")
+    root = storage_root()
+    folder = (root / "uploads" / "archive-members").resolve()
+    if not folder.is_relative_to(root):
+        raise ArchiveMemberError("hwp_member_storage_unsafe")
+    folder.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256(content).hexdigest()
+    path = folder / f"{digest}.hwp"
+    try:
+        with path.open("xb") as target:
+            target.write(content)
+    except FileExistsError:
+        pass
+    try:
+        if hashlib.sha256(read_hwp_output(path)).hexdigest() != digest:
+            raise ArchiveMemberError("hwp_member_source_changed")
+    except HwpValidationError:
+        raise ArchiveMemberError("hwp_member_source_changed") from None
+    try:
+        body = HwpAgentClient(retries=1).analyze_document(str(path))
+    except HwpAgentError:
+        raise ArchiveMemberError("hwp_worker_unavailable") from None
+    try:
+        if hashlib.sha256(read_hwp_output(path)).hexdigest() != digest:
+            raise ArchiveMemberError("hwp_member_source_changed")
+    except HwpValidationError:
+        raise ArchiveMemberError("hwp_member_source_changed") from None
+    text = str(body.get("text") or body.get("extracted_text") or "")
+    if len(text) > MAX_TEXT:
+        raise ExtractionError("extracted_text_limit")
+    return {"text": text, "format": "hwp_ole", "extraction": {
+        "version": 1, "complete": bool(text.strip()),
+        **text_only_table_metadata(locator=locator, table_count=body.get("table_count")),
+    }}
+
+
 def artifact(path: Path, warnings: list[str], **extra: Any) -> dict:
     if not path.is_file() or path.stat().st_size == 0:
         fail("file_missing", "생성 파일을 확인할 수 없습니다.")
@@ -197,6 +246,7 @@ def extract(job: dict) -> dict:
         )
     texts, warnings = [], []
     ocr_budget = [10]
+    hwp_budget = [10]
     for doc in job["snapshot"]["documents"]:
         if doc.get("text_origin") == "manual_confirmed":
             item = {"id": doc["id"], "text": doc["text"], "format": "manual_confirmed"}
@@ -240,7 +290,10 @@ def extract(job: dict) -> dict:
             if suffix in {".xlsx", ".zip"} and Path(doc.get("name") or path.name).suffix.lower() == suffix and header.startswith(b"PK"):
                 from api.workspace.attachment_text import extract_xlsx, extract_zip
 
-                extracted = extract_xlsx(path.read_bytes()) if suffix == ".xlsx" else extract_zip(path.read_bytes(), ocr_budget=ocr_budget)
+                extracted = extract_xlsx(path.read_bytes()) if suffix == ".xlsx" else extract_zip(
+                    path.read_bytes(), ocr_budget=ocr_budget,
+                    hwp_extractor=extract_archive_hwp, hwp_budget=hwp_budget,
+                )
                 texts.append({"id": doc["id"], **extracted})
                 if not extracted["extraction"]["complete"]:
                     warnings.append(f"{display_name}: 일부 본문 또는 수식 값 확인이 필요합니다. 추출 내역을 확인하세요.")
@@ -724,7 +777,7 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
                     jobs.c.kind.in_(["excel", "hwp"]),
                     jobs.c.status == "succeeded",
                 )
-                .order_by(jobs.c.created_at.desc())
+                .order_by(jobs.c.created_at.desc(), jobs.c.id.desc())
             )
             .mappings()
             .all()
@@ -735,16 +788,16 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
                 select(reviews).where(reviews.c.notice_no == job["notice_no"])
             ).mappings()
         ]
-    latest_artifacts = {}
-    for item in artifacts:
-        slot = (
-            item["kind"],
-            item["parameters"].get("template_key") if item["kind"] == "hwp" else None,
-        )
-        latest_artifacts.setdefault(slot, item)
-    artifacts = list(latest_artifacts.values())
+    from api.workspace.output_plan import (
+        LAYOUT_WARNING,
+        review_matches,
+        selected_artifacts,
+        template_keys,
+    )
+
+    artifacts = selected_artifacts(artifacts, job["snapshot"])
     warnings = blockers(job["snapshot"])
-    for template_key in ("bid_form", "proposal"):
+    for template_key in template_keys(job["snapshot"]):
         if not any(
             a["kind"] == "hwp" and a["parameters"].get("template_key") == template_key
             for a in artifacts
@@ -763,29 +816,38 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for doc in job["snapshot"]["documents"]:
             path = source_path(doc)
+            content = path.read_bytes()
+            checksum = hashlib.sha256(content).hexdigest()
+            if doc.get("sha256") and checksum != doc["sha256"]:
+                fail("source_file_changed", "원본 파일 내용이 변경되었습니다.",
+                     "새 버전으로 다시 등록하세요.")
             name = f"sources/{doc['id']}{path.suffix}"
-            archive.write(path, name)
+            archive.writestr(name, content)
             manifest["files"].append(
-                {"name": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                {"name": name, "sha256": checksum}
             )
         for item in artifacts:
             result = item["result"]
             path = Path(result["artifact"])
-            if hashlib.sha256(path.read_bytes()).hexdigest() != result["sha256"]:
+            content = path.read_bytes()
+            checksum = hashlib.sha256(content).hexdigest()
+            if checksum != result["sha256"]:
                 fail("artifact_changed", "이전 생성물이 변경되어 패키지에 포함할 수 없습니다.")
-            archive.write(path, f"outputs/{item['id']}{path.suffix}")
+            archive.writestr(f"outputs/{item['id']}{path.suffix}", content)
             latest_review = next(
                 (
                     r
-                    for r in sorted(history, key=lambda r: r["created_at"], reverse=True)
+                    for r in sorted(history, key=lambda r: (r["created_at"], r["id"]), reverse=True)
                     if r["job_id"] == item["id"] and r["input_version"] == job["input_version"]
                 ),
                 None,
             )
-            if not latest_review or latest_review["action"] not in {"approved", "ready"}:
+            approved = review_matches(item, latest_review)
+            if not approved:
                 warnings.append(f"생성물 검토 승인 필요: {item['id']}")
-            warnings.extend(result.get("warnings") or [])
-            manifest["files"].append({"job_id": item["id"], "sha256": result["sha256"]})
+            warnings.extend(w for w in result.get("warnings") or []
+                            if not (approved and item["kind"] == "hwp" and w == LAYOUT_WARNING))
+            manifest["files"].append({"job_id": item["id"], "sha256": checksum})
         from api.workspace.notice_forms import export_filling
 
         for filling in job["snapshot"].get("form_fillings") or []:

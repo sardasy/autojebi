@@ -76,6 +76,26 @@ def test_tesseract_is_local_bounded_and_returns_word_confidence(monkeypatch, tim
         assert result["text"] == "Test Only" and result["confidence"] == 95.0
 
 
+def test_tesseract_success_with_missing_language_keeps_text_and_reports_configuration(monkeypatch):
+    monkeypatch.setenv("TESSERACT_CMD", "test-tesseract")
+    monkeypatch.setenv("WORKSPACE_OCR_ENABLED", "true")
+    monkeypatch.setenv("WORKSPACE_OCR_LANGUAGES", "kor+eng")
+    class Image:
+        def save(self, path):
+            path.write_bytes(b"inert fixture")
+    source = SimpleNamespace(width=600, height=800, to_image=lambda **_: SimpleNamespace(original=Image()))
+    def run(args, **kwargs):
+        kwargs["stderr"].write(b"Private local path must not leak\nFailed loading language 'kor'\n")
+        Path(args[2] + ".tsv").write_text("level\tblock_num\tpar_num\tline_num\tconf\ttext\n5\t1\t1\t1\t99\tPartial\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(pdf_text.subprocess, "run", run)
+    result = pdf_text.ocr_page(source)
+    assert result["text"] == "Partial" and result["confidence"] == 99.0
+    assert result["code"] == "ocr_language_missing"
+    assert result["missing_languages"] == ["kor"]
+    assert "Private local path" not in json.dumps(result)
+
+
 def table_page(number=1, *, matching_geometry=True):
     matrix = [["Item", "Voltage (V)"], ["Module", "400"], [None, ""]]
     layout = SimpleNamespace(
