@@ -1,6 +1,6 @@
 # autojebi 전체 리팩토링 계획 — 10단계 파이프라인
 
-> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0~R5 완료.
+> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0~R6 완료.
 > 9단계 ADR: [docs/adr/0001-v2-module-boundaries.md](../adr/0001-v2-module-boundaries.md). 지표 측정: `python tools/change_amplification.py`.
 
 ## Context
@@ -206,6 +206,17 @@ ADR 초안은 `docs/adr/0001-v2-module-boundaries.md`에 쓴다. B안을 채택�
     - typecheck·lint 0 errors. Vitest 34 files / 236 tests(= 281 − 삭제 45). mock e2e 17 passed / 2 skipped(기준선과 동일, ETag·412 흐름 포함). `next build` 성공.
   - **잔여**: 삭제한 컴포넌트만 쓰던 v1 `lib/actions.ts` export가 남았을 수 있다. v1 범위라 손대지 않았다
 - **R6**: `WorkspaceClient`를 분해한다(`useWorkspace`, `nextStep`, 탭 3개, `JobHistory`)
+  - **완료 (2026-09-18)**:
+    - `WorkspaceClient.tsx`를 63KB(496줄)에서 10.9KB(130줄) 셸로 줄였다. `components/workspace/`에 13개 파일을 만들었다.
+      - `useWorkspace`: 조회·폴링·mutate·run·작업 추적
+      - `derive.ts`: 순수 함수 `deriveWorkspace`·`nextStep`·`layoutReviewed`. `nextStep`은 클로저 대신 `NextAction` 데이터를 반환한다.
+      - `ui.ts`: 공용 클래스·라벨
+      - 탭 3개(`SourceReviewTab`·`WritingTab`·`ReviewTab`)와 `JobHistory`
+      - `DocumentRow`·`RequirementForm`·`CommercialForm`·`ReferenceWriter`·`SourceInventory`·`ExtractionDetails`
+    - JSX는 원본에서 줄 범위로 그대로 잘라 옮겼다. props 이름도 원래 로컬 변수명을 유지했다.
+    - 동등성 검증: 원본 컴포넌트와 새 컴포넌트를 같은 데이터(4가지)로 렌더링해 3개 탭 전부 DOM이 같음을 확인했다(React 자동 id만 정규화). 라벨을 일부러 바꾸면 불일치가 검출됨도 확인했다. 임시 테스트와 원본 사본은 삭제했다.
+    - `nextStep` 우선순위와 `layoutReviewed`에 단위 테스트 10건을 추가했다.
+    - typecheck·lint 0. Vitest 35 files / 246 tests. mock e2e 17 passed / 2 skipped(기준선 동일). `next build` 성공. `/workspace/[noticeNo]` first load는 42.3 → 43.6 kB(모듈 경계로 +1.3 kB).
 - **R7**: 나머지 FF(파일 크기, anthropic grep, ESLint fetch 금지)와 ADR을 확정하고 문서를 갱신한다(AGENTS.md §3·§8의 5층 동기화 경로)
 
 ## 재사용할 기존 코드
