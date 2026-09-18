@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select, update
 
-from api.routers.notices import (
+from api.db.tables import (
     bid_pipeline,
     company_profiles,
     document_field_mappings,

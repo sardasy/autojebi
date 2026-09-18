@@ -26,6 +26,9 @@ jobs:
       - name: ruff
         run: ruff check .
 
+      - name: import boundaries (ADR 0001)
+        run: lint-imports
+
       - name: pytest
         run: python -m pytest -q
 

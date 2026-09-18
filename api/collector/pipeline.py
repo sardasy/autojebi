@@ -23,8 +23,8 @@ from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert
 
 from api.collector.g2b_client import G2BClient, RawBid
+from api.db.tables import bid_pipeline
 from api.models.notices import NoticeSearchItem, NoticeSearchResponse
-from api.routers.notices import bid_pipeline
 from api.services.notice_facts import normalize_notice_facts
 
 log = logging.getLogger(__name__)

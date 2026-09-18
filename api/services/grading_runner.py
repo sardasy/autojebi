@@ -116,7 +116,7 @@ def grade_notice_impl(
     status 변동 없음. grade는 analyzed 이후 어디서든 재호출 가능.
     HTTP 비종속 — 도메인 예외(GradeError 계열)만 던진다.
     """
-    from api.routers.notices import bid_pipeline  # 순환 의존 방지
+    from api.db.tables import bid_pipeline
 
     with engine.begin() as conn:
         row = conn.execute(

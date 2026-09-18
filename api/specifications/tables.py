@@ -12,7 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
-from api.routers.notices import metadata
+from api.db.tables import metadata
 
 specifications = Table(
     "workspace_specifications", metadata,

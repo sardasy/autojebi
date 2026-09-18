@@ -7,8 +7,8 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from api.db import require_engine
+from api.db.tables import document_field_mappings, hwp_templates
 from api.hwp_worker.layout import Block, Layout, Run
-from api.routers.notices import document_field_mappings, hwp_templates
 from api.services.hwp_agent_client import HwpAgentClient
 from api.workspace.hwp_layout import validate_created
 

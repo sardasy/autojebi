@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from api.routers.notices import hwp_templates
+from api.db.tables import hwp_templates
 
 LAYOUT_WARNING = "한글 페이지 배치는 담당자 검토가 필요합니다."
 

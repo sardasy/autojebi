@@ -8,6 +8,12 @@ from sqlalchemy import func, or_, select, update
 
 from api.auth import verify_api_key
 from api.db import require_engine
+from api.db.tables import (
+    bid_pipeline,
+    document_field_mappings,
+    hwp_generation_jobs,
+    hwp_templates,
+)
 from api.models.notices import (
     CommonUploadListResponse,
     CommonUploadResponse,
@@ -27,10 +33,6 @@ from api.routers.notices import (
     _hwp_job_to_model,
     _load_company_profile,
     _lookup_export_by_id,
-    bid_pipeline,
-    document_field_mappings,
-    hwp_generation_jobs,
-    hwp_templates,
 )
 from api.services.hwp_agent_client import HwpAgentClient
 from api.services.uploads import (

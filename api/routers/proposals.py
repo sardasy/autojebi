@@ -9,6 +9,16 @@ from sqlalchemy import delete, select, update
 
 from api.auth import verify_api_key
 from api.db import require_engine
+from api.db.tables import (
+    bid_pipeline,
+    document_chunks,
+    notice_requirements,
+    notice_spec_items,
+    project_performances,
+    proposal_documents,
+    proposal_sections,
+    requirement_evidences,
+)
 from api.models.proposals import (
     ProjectPerformanceCreate,
     ProjectPerformanceRecord,
@@ -19,16 +29,6 @@ from api.models.proposals import (
     ProposalGenerateResponse,
     ProposalRetrieveResponse,
     ProposalVerifyResponse,
-)
-from api.routers.notices import (
-    bid_pipeline,
-    document_chunks,
-    notice_requirements,
-    notice_spec_items,
-    project_performances,
-    proposal_documents,
-    proposal_sections,
-    requirement_evidences,
 )
 from api.services.proposal_agent import (
     SECTION_BY_TYPE,

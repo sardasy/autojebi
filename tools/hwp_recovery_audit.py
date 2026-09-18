@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
 
-from api.routers.notices import document_field_mappings, hwp_templates
+from api.db.tables import document_field_mappings, hwp_templates
 from api.services.hwp_agent_client import HwpAgentClient
 from api.workspace.tables import jobs
 

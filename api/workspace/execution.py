@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from api.config import settings
-from api.routers.notices import document_field_mappings, hwp_templates
+from api.db.tables import document_field_mappings, hwp_templates
 from api.services.hwp_agent_client import (
     HwpAgentClient,
     HwpAgentError,

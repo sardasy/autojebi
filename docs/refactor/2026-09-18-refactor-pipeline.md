@@ -1,6 +1,6 @@
 # autojebi 전체 리팩토링 계획 — 10단계 파이프라인
 
-> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0 완료.
+> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0·R1 완료.
 > 9단계 ADR: [docs/adr/0001-v2-module-boundaries.md](../adr/0001-v2-module-boundaries.md). 지표 측정: `python tools/change_amplification.py`.
 
 ## Context
@@ -175,6 +175,7 @@ ADR 초안은 `docs/adr/0001-v2-module-boundaries.md`에 쓴다. B안을 채택�
 ## 실행 순서 (PR 슬라이스, 각 PR마다 슬라이스 테스트 그린)
 - **R0**: 미커밋 변경 커밋, 기준값 기록, `tools/change_amplification.py`
 - **R1**: 테이블을 `api/db/tables.py`로 이동하고 re-export. 대상은 v2, `alembic/env.py`, `tests/conftest.py`의 import 경로. import-linter 계약 1을 도입한다
+  - **완료 (2026-09-18)**: 17개 테이블과 `metadata`를 이동했다(`api/db.py` → `api/db/__init__.py` 패키지화). `api/` 비라우터 모듈 전체, `routers/{documents,proposals,workspace}`, alembic, conftest, tools를 새 경로로 바꿨다. 계약 1은 CI `lint-imports`에 넣었고 위반 주입 테스트에서 BROKEN을 확인했다. alembic 대상 테이블 28개는 변경 전후 동일하고, OpenAPI는 이동 전 코드 기준 스냅샷과 동일하다(`tests/test_openapi_snapshot.py`). pytest 1,741 passed / 17 skipped(+1은 스냅샷 테스트). 테스트 144곳의 `api.routers.notices` import는 re-export로 유지한다
 - **R2**: `WorkspaceError`와 exception handler를 추가하고, 라우터의 SQL을 service로 옮긴다. 계약 3 도입
 - **R3**: `execution.py`를 `executors/*`로 분할하고 함수 안 import를 제거한다
 - **R4**: `api/parsing/*`, `api/net/download.py`를 만들고 v2 중복 경로를 대체한다. `notice_forms`를 분할한다. 계약 2 도입

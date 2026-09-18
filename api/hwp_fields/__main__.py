@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from api.db import require_engine
-from api.routers.notices import company_profiles, document_field_mappings, hwp_templates
+from api.db.tables import company_profiles, document_field_mappings, hwp_templates
 from api.services.hwp_fields import ALLOWED_TRANSFORMS
 
 DEFAULT_TEMPLATES = [

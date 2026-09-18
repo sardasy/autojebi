@@ -110,7 +110,8 @@ docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.yml 
 ```
 autojebi/
 ├── api/                # FastAPI 코어 (Python 3.11)
-│   ├── main.py · config.py · auth.py · db.py
+│   ├── main.py · config.py · auth.py
+│   ├── db/             # 엔진(__init__) · tables.py(공용 Table·단일 metadata — ADR 0001)
 │   ├── routers/        # notices.py 등 (수집·분석·서류·내보내기 엔드포인트)
 │   ├── services/       # claude_analyzer · attachments · document_automation
 │   │                   # uploads · exporters · notifications · hwp_agent_client · routing · status
@@ -155,6 +156,7 @@ PR 머지 전 다음이 모두 그린이어야 한다:
 - **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml))
   - 백엔드 잡: ruff + pytest, Python 3.11.
   - 프론트 잡: vitest + `next build`, Node 20, `npm ci`.
+- **모듈 경계**: `lint-imports` — ADR 0001 계약(`api.workspace` ↛ `api.routers`). API 스키마 변경 시 `UPDATE_OPENAPI_SNAPSHOT=1 pytest tests/test_openapi_snapshot.py` 후 diff 검토.
 - **DB 변경 시**: alembic 마이그레이션 동반 + `alembic upgrade head` 후 `pytest tests/test_alembic_metadata.py`.
 
 ---
@@ -236,7 +238,7 @@ PR 머지 전 다음이 모두 그린이어야 한다:
 ## 8. 작업 방식 가이드
 
 - **변경 단위**: 한 PR = 한 마일스톤 슬라이스. 커밋·PR 제목은 `M14: ...` 같은 prefix로 통일.
-- **DB 스키마 5층 동기화**: SQLAlchemy `Table` ([api/routers/notices.py](api/routers/notices.py) `bid_pipeline`) → Pydantic `NoticeRecord` ([api/models/notices.py](api/models/notices.py)) → `_row_to_record` 매퍼 → 프론트 `NoticeRecord` 타입 ([frontend/src/lib/api.ts](frontend/src/lib/api.ts)) → 컴포넌트. 한 층만 빠지면 응답에서 키가 사라지거나 TS 컴파일 실패.
+- **DB 스키마 5층 동기화**: SQLAlchemy `Table` ([api/db/tables.py](api/db/tables.py) `bid_pipeline`; `api.routers.notices`는 호환용 re-export) → Pydantic `NoticeRecord` ([api/models/notices.py](api/models/notices.py)) → `_row_to_record` 매퍼 → 프론트 `NoticeRecord` 타입 ([frontend/src/lib/api.ts](frontend/src/lib/api.ts)) → 컴포넌트. 한 층만 빠지면 응답에서 키가 사라지거나 TS 컴파일 실패.
 - **새 status 추가**: [api/services/status.py](api/services/status.py) `can_transition` 화이트리스트 갱신 + 상태 전이 테스트 추가.
 - **새 ingest 경로**: 항상 `ON CONFLICT (notice_no) DO UPDATE`. 기존 status가 `analyzed` 이상이면 다운그레이드 금지.
 - **외부 API 실패**: 한 건 실패가 배치 전체를 막지 않도록 item 단위 처리. 502는 HTTPException으로 분류해 상위에 전파.

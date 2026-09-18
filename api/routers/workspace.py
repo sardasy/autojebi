@@ -13,10 +13,11 @@ from sqlalchemy import select, update
 
 from api.auth import verify_api_key
 from api.db import require_engine
+from api.db.tables import bid_pipeline
 from api.models.notices import NoticeSearchRequest, NoticeSearchResponse, NoticeUpsertRequest
 from api.routers.company_assets import router as company_assets_router
 from api.routers.notice_forms import router as notice_forms_router
-from api.routers.notices import bid_pipeline, search_notices_endpoint, upsert_notice
+from api.routers.notices import search_notices_endpoint, upsert_notice
 from api.routers.requirement_candidates import router as requirement_candidates_router
 from api.routers.specifications import router as specifications_router
 from api.services.uploads import build_metadata, save_stream

@@ -50,6 +50,7 @@ dev = [
   "pytest-asyncio>=0.23",
   "ruff>=0.4",
   "black>=24.0",
+  "import-linter>=2.0",
 ]
 
 [tool.black]
@@ -72,3 +73,13 @@ ignore = ["E501", "B008", "B904"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+# ADR 0001 fitness functions. Run: `lint-imports`
+[tool.importlinter]
+root_package = "api"
+
+[[tool.importlinter.contracts]]
+name = "v2 workspace must not depend on HTTP routers"
+type = "forbidden"
+source_modules = ["api.workspace"]
+forbidden_modules = ["api.routers"]
