@@ -7,9 +7,10 @@ import pytest
 from lxml import etree
 from sqlalchemy import update
 
-from api.workspace import notice_forms as forms
 from api.workspace import service
 from api.workspace.errors import WorkspaceError
+from api.workspace.forms import filling as forms
+from api.workspace.forms import hwpx_io
 from api.workspace.tables import workspaces
 
 XML = '''<?xml version="1.0" encoding="UTF-8"?>
@@ -194,11 +195,11 @@ def test_actual_format_copy_preserves_geometry_and_exact_readback(client, form_w
         original = etree.fromstring(before.read("Contents/section0.xml"))
         assert root.nsmap == original.nsmap
         for tag in ("tbl", "cellAddr", "cellSpan", "sz"):
-            assert [n.attrib for n in root.findall(f".//hp:{tag}", forms.NS)] == [
-                n.attrib for n in original.findall(f".//hp:{tag}", forms.NS)]
-        assert "미림씨스콘" in forms._readback(root)
-        assert "법인( ), 개인( ) [확인 필요]" in forms._readback(root)
-        assert len(root.findall(".//hp:lineBreak", forms.NS)) == 1
+            assert [n.attrib for n in root.findall(f".//hp:{tag}", hwpx_io.NS)] == [
+                n.attrib for n in original.findall(f".//hp:{tag}", hwpx_io.NS)]
+        assert "미림씨스콘" in hwpx_io._readback(root)
+        assert "법인( ), 개인( ) [확인 필요]" in hwpx_io._readback(root)
+        assert len(root.findall(".//hp:lineBreak", hwpx_io.NS)) == 1
     download = client.get("/v2/notices/FORM-TEST/form-fillings/form/download")
     assert download.status_code == 200
     assert "layout-review-required" in download.headers["x-form-review"]
@@ -264,9 +265,9 @@ def test_no_marker_hwp_pdf_protected_slots_and_bad_choice(client, form_workspace
     assert not any("주민" in f["label"] for f in fields)
     assert not forms.inspect_document({**doc, "name": "original.hwp"})["supported"]
     assert not forms.inspect_document({**doc, "name": "original.pdf"})["supported"]
-    archive, roots = forms._archive(hwpx(XML.replace("&lt;서식 1&gt;", "서식 1 참고").replace("&lt;서식 2&gt;", "서식 2 참고")))
+    archive, roots = hwpx_io._archive(hwpx(XML.replace("&lt;서식 1&gt;", "서식 1 참고").replace("&lt;서식 2&gt;", "서식 2 참고")))
     with archive:
-        assert forms._fields(roots, doc["sha256"]) == []
+        assert hwpx_io._fields(roots, doc["sha256"]) == []
     choice = next(f for f in fields if f["kind"] == "choice")
     body = request_for(client, doc)
     body["fields"] = [{"field_id": choice["id"], "value": "법인입니다",
@@ -290,7 +291,7 @@ def cost_xml(title="산출내역서"):
                          f'<hp:cellAddr rowAddr="{ri}" colAddr="{ci}"/>'
                          '<hp:cellSpan rowSpan="1" colSpan="1"/></hp:tc>')
         body.append("<hp:tr>" + "".join(cells) + "</hp:tr>")
-    return (f'<hs:sec xmlns:hs="urn:section" xmlns:hp="{forms.HP}">'
+    return (f'<hs:sec xmlns:hs="urn:section" xmlns:hp="{hwpx_io.HP}">'
             f'<hp:p><hp:run><hp:t>{title}</hp:t></hp:run></hp:p>'
             '<hp:p><hp:run><hp:tbl rowCnt="5" colCnt="4">' + "".join(body)
             + '</hp:tbl></hp:run></hp:p></hs:sec>')
@@ -328,12 +329,12 @@ def test_cost_sheet_only_exposes_prices_preserves_quantity_and_never_calculates(
     assert report["filled_count"] == 1 and report["unfilled_count"] == 4
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         root = etree.fromstring(archive.read("Contents/section0.xml"))
-        assert "10,000" in forms._readback(root)
-        rows = root.findall(".//hp:tbl/hp:tr", forms.NS)
-        cells = rows[1].findall("hp:tc", forms.NS)
-        assert forms._readback(cells[0]) == "시험 장치"
-        assert forms._readback(cells[1]) == "2"
-        assert forms._readback(cells[3]) == "[확인 필요]"  # not inferred as 20,000
-    archive, roots = forms._archive(hwpx(cost_xml("장비 사양서")))
+        assert "10,000" in hwpx_io._readback(root)
+        rows = root.findall(".//hp:tbl/hp:tr", hwpx_io.NS)
+        cells = rows[1].findall("hp:tc", hwpx_io.NS)
+        assert hwpx_io._readback(cells[0]) == "시험 장치"
+        assert hwpx_io._readback(cells[1]) == "2"
+        assert hwpx_io._readback(cells[3]) == "[확인 필요]"  # not inferred as 20,000
+    archive, roots = hwpx_io._archive(hwpx(cost_xml("장비 사양서")))
     with archive:
-        assert forms._fields(roots, doc["sha256"]) == []
+        assert hwpx_io._fields(roots, doc["sha256"]) == []

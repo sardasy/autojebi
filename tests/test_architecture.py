@@ -22,11 +22,10 @@ LOCAL_IMPORT_BUDGET = {
     "api/workspace/executors/__init__.py": 2,  # optional spec-search extra, heavy grading stack
     "api/workspace/hwp_layout.py": 1,
     "api/workspace/models.py": 2,
-    "api/workspace/notice_forms.py": 1,
     "api/workspace/output_plan.py": 2,
     "api/workspace/quote_recovery.py": 2,
     "api/workspace/receipts.py": 3,
-    "api/workspace/service.py": 7,  # notice_forms / source_needs / specifications cycles
+    "api/workspace/service.py": 7,  # forms.filling / source_needs / specifications cycles
     "api/workspace/supervisor.py": 1,
     "api/workspace/worker.py": 1,
     "api/workspace/writing_plan.py": 1,

@@ -8,7 +8,8 @@ import zipfile
 import pytest
 from sqlalchemy import update
 
-from api.workspace import notice_forms, service
+from api.workspace import service
+from api.workspace.forms import filling as notice_forms
 from api.workspace.output_plan import writing_output_issues
 from api.workspace.tables import workspaces
 

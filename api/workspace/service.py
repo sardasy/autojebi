@@ -180,7 +180,7 @@ def change(conn: Any, ws: dict, inputs: dict, action: str, note: str, **extra: A
             if section.get("review_status") != "rejected":
                 section["review_status"] = "pending"
     if inputs.get("form_fillings"):
-        from api.workspace.notice_forms import review_basis
+        from api.workspace.forms.filling import review_basis
         basis = review_basis(inputs)
         for filling in inputs["form_fillings"]:
             if (filling.get("review_status") == "approved"
@@ -309,7 +309,7 @@ def blockers(inputs: dict) -> list[str]:
     from api.workspace.source_needs import issues as source_need_issues
     issues = source_inventory_issues(inputs)
     issues.extend(source_need_issues(inputs))
-    from api.workspace.notice_forms import filling_issues
+    from api.workspace.forms.filling import filling_issues
     issues.extend(filling_issues(inputs))
     issues.extend(output_plan.writing_output_issues(inputs))
     from api.specifications.service import enabled, summary

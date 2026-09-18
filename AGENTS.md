@@ -121,6 +121,7 @@ autojebi/
 │   ├── models/         # Pydantic 스키마 (notices.py, ontology.py)
 │   ├── ontology/ · sku/  # M14 ontology + Qdrant SKU 매칭
 │   ├── workspace/      # v2 작업대: service · executors/(작업 종류별) · storage · errors · worker · supervisor · providers(anthropic/gemini/openai) · hwp_* · llm_usage
+│   ├── parsing/        # 순수 파서·검증(PDF/HWPX/XLSX/ZIP 추출, HWP 산출물 검증) — workspace·routers import 금지
 │   ├── hwp_worker/     # Windows 한글 COM Worker (별도 FastAPI, 토큰 인증, 단일 COM 큐, recovery)
 │   ├── hwp_fields/     # HWP 템플릿/필드 매핑 CLI (prepare-template)
 │   ├── specifications/ # 규격 검증 + 하이브리드 검색 (opt-in: SPEC_SEARCH_ENABLED)
@@ -156,7 +157,7 @@ PR 머지 전 다음이 모두 그린이어야 한다:
 - **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml))
   - 백엔드 잡: ruff + pytest, Python 3.11.
   - 프론트 잡: vitest + `next build`, Node 20, `npm ci`.
-- **모듈 경계**: `lint-imports` — ADR 0001 계약(`api.workspace` ↛ `api.routers`, `api.workspace` ↛ fastapi 직접 import). `tests/test_architecture.py`는 함수 안 `api.*` import 예산을 감소 방향으로만 허용한다. 새 작업 종류는 `api/workspace/executors/<kind>.py` + 디스패처에 추가한다. API 스키마 변경 시 `UPDATE_OPENAPI_SNAPSHOT=1 pytest tests/test_openapi_snapshot.py` 후 diff 검토.
+- **모듈 경계**: `lint-imports` — ADR 0001 계약(`api.workspace` ↛ `api.routers`, `api.workspace` ↛ fastapi 직접 import, `api.parsing` ↛ workspace/routers/fastapi). `tests/test_architecture.py`는 함수 안 `api.*` import 예산을 감소 방향으로만 허용한다. 새 작업 종류는 `api/workspace/executors/<kind>.py` + 디스패처에 추가한다. API 스키마 변경 시 `UPDATE_OPENAPI_SNAPSHOT=1 pytest tests/test_openapi_snapshot.py` 후 diff 검토.
 - **DB 변경 시**: alembic 마이그레이션 동반 + `alembic upgrade head` 후 `pytest tests/test_alembic_metadata.py`.
 
 ---

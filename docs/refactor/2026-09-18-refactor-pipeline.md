@@ -1,6 +1,6 @@
 # autojebi 전체 리팩토링 계획 — 10단계 파이프라인
 
-> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0~R3 완료.
+> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0~R4 완료.
 > 9단계 ADR: [docs/adr/0001-v2-module-boundaries.md](../adr/0001-v2-module-boundaries.md). 지표 측정: `python tools/change_amplification.py`.
 
 ## Context
@@ -190,6 +190,14 @@ ADR 초안은 `docs/adr/0001-v2-module-boundaries.md`에 쓴다. B안을 채택�
     - 테스트 패치 대상 12곳을 코드가 실제로 있는 모듈로 바꿨다. 원래 지연 import였던 이름(`pdf_text.extract_pdf`, `attachment_text.*`, `uploads.*`)은 모듈 속성 접근으로 바꿔서, 호출 시점에 바인딩되는 의미를 유지했다. 대상을 일부러 틀리게 넣는 변이 검사로 패치가 실제로 효과가 있는지 확인했다.
     - pytest 1,746 passed / 17 skipped(+2 아키텍처 테스트). OpenAPI 스냅샷 동일. 계약 2개 유지.
 - **R4**: `api/parsing/*`, `api/net/download.py`를 만들고 v2 중복 경로를 대체한다. `notice_forms`를 분할한다. 계약 2 도입
+  - **완료 (2026-09-18), 범위 조정**: 코드를 읽어 본 결과 v2의 "PDF·HWPX 4~5중 중복"은 실제로는 목적이 다른 경로였다.
+    - 원문 추출(`attachment_text`: zip bomb·경로 검사), 양식 편집(`forms.hwpx_io`: lxml 접두사 보존), 생성물 구조 검증(`hwp_validation`)은 한도·예외·엄격도가 서로 다르다. 합치면 동작이 바뀌므로 합치지 않았다.
+    - `assets`의 PDF 처리는 열림 확인일 뿐이다.
+    - `net/download`, `parsing/text`, `llm_json`은 만들지 않았다. v2에는 중복이 없고, 중복은 모두 v1(제외 범위)에 있다. 사용처가 하나뿐인 추상화는 만들지 않는다.
+    - R4a: 순수 파서 4개(`attachment_text`, `pdf_text`, `hwp_validation`, `hwp_readback`)를 `api/parsing/`으로 `git mv`했다. 참조는 전부 갱신하고 shim은 두지 않았다. 계약 2(`api.parsing` ↛ workspace/routers/fastapi, 간접 포함)를 넣었다.
+    - R4b: `notice_forms.py`(568줄)를 `forms/{schemas(49), hwpx_io(244), filling(305)}.py`로 나눴다. 정의 34개가 원본과 AST 동일하다. `hwpx_io`는 `service`에 의존하지 않는다(`errors.fail` 사용).
+    - 1st-party 함수 안 import: 31 → 29. pytest 1,746 passed. OpenAPI 스냅샷 동일. 계약 3개 유지.
+    - 3단계 S1(새 첨부 형식) 기준으로는 `parsing/attachment_text`(형식 파서)와 `executors/extract`(분기) 두 곳만 고치면 된다. 업로드 허용 목록(`assets`)은 형식에 따라 추가로 바뀐다. 최종 판단은 R7에서 재측정한다.
 - **R5**: 프론트 `workspaceApi`를 일원화하고 사용처 없는 컴포넌트를 삭제한다
 - **R6**: `WorkspaceClient`를 분해한다(`useWorkspace`, `nextStep`, 탭 3개, `JobHistory`)
 - **R7**: 나머지 FF(파일 크기, anthropic grep, ESLint fetch 금지)와 ADR을 확정하고 문서를 갱신한다(AGENTS.md §3·§8의 5층 동기화 경로)
