@@ -1,6 +1,6 @@
-"""Measure change amplification of v2 feature commits (refactor pipeline, stage 3).
+"""Auxiliary: change amplification of v2 feature commits (refactor pipeline, stage 3).
 
-Core metric: median number of non-test source files under ``api/`` and ``frontend/src``
+Observed value: median number of non-test source files under ``api/`` and ``frontend/src``
 touched per v2 feature commit. See docs/refactor/2026-09-18-refactor-pipeline.md.
 
     python tools/change_amplification.py                  # whole history
