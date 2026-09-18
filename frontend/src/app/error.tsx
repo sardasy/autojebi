@@ -21,9 +21,9 @@ export default function GlobalError({
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="max-w-md rounded border border-red-700 bg-red-950/40 p-6 space-y-3 text-center">
-        <p className="text-lg font-semibold text-red-300">예기치 못한 오류</p>
-        <p className="text-sm text-slate-300">
+      <div className="max-w-md rounded border border-red-700 bg-red-50/40 p-6 space-y-3 text-center">
+        <p className="text-lg font-semibold text-red-700">예기치 못한 오류</p>
+        <p className="text-sm text-slate-700">
           페이지를 표시하던 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.
         </p>
         {error.digest ? (

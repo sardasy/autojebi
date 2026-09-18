@@ -3,15 +3,24 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from sqlalchemy import func, or_, select, update
 
 from api.auth import verify_api_key
 from api.db import require_engine
+from api.db.tables import (
+    bid_pipeline,
+    document_field_mappings,
+    hwp_generation_jobs,
+    hwp_templates,
+)
 from api.models.notices import (
     CommonUploadListResponse,
     CommonUploadResponse,
+    CompanyProfileRecord,
     HwpAgentHealthResponse,
+    HwpJobListItem,
+    HwpJobListResponse,
     HwpMappingUpdateRequest,
     HwpMappingUpsertRequest,
     HwpTemplateFieldMapping,
@@ -20,7 +29,11 @@ from api.models.notices import (
     HwpTemplateUpdateRequest,
     HwpTemplateUpsertRequest,
 )
-from api.routers.notices import document_field_mappings, hwp_templates
+from api.routers.notices import (
+    _hwp_job_to_model,
+    _load_company_profile,
+    _lookup_export_by_id,
+)
 from api.services.hwp_agent_client import HwpAgentClient
 from api.services.uploads import (
     analyze_upload,
@@ -35,6 +48,81 @@ router = APIRouter(
     tags=["documents"],
     dependencies=[Depends(verify_api_key)],
 )
+
+
+@router.get("/hwp-jobs", response_model=HwpJobListResponse)
+def list_hwp_jobs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    review_status: str | None = Query(None, pattern="^(pending|approved|rejected)$"),
+    status: str | None = Query(None, pattern="^(pending|running|completed|failed)$"),
+    q: str | None = Query(None, max_length=200),
+) -> HwpJobListResponse:
+    jobs = hwp_generation_jobs
+    source = jobs.join(bid_pipeline, jobs.c.notice_no == bid_pipeline.c.notice_no).outerjoin(
+        hwp_templates, jobs.c.template_id == hwp_templates.c.id
+    )
+    conditions = []
+    if review_status:
+        conditions.append(jobs.c.review_status == review_status)
+    if status:
+        conditions.append(jobs.c.status == status)
+    if q and q.strip():
+        term = q.strip()
+        conditions.append(
+            or_(
+                jobs.c.notice_no.contains(term, autoescape=True),
+                bid_pipeline.c.title.contains(term, autoescape=True),
+                hwp_templates.c.name.contains(term, autoescape=True),
+            )
+        )
+    with require_engine().begin() as conn:
+        total = conn.execute(
+            select(func.count()).select_from(source).where(*conditions)
+        ).scalar_one()
+        rows = (
+            conn.execute(
+                select(
+                    *jobs.c,
+                    bid_pipeline.c.title.label("notice_title"),
+                    hwp_templates.c.name.label("template_name"),
+                )
+                .select_from(source)
+                .where(*conditions)
+                .order_by(jobs.c.created_at.desc(), jobs.c.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+            .mappings()
+            .all()
+        )
+        items = [
+            HwpJobListItem(
+                job=_hwp_job_to_model(dict(row)),
+                title=row["notice_title"],
+                template_name=row["template_name"],
+                export=_lookup_export_by_id(conn, row["notice_no"], row["export_id"])
+                if row["export_id"]
+                else None,
+            )
+            for row in rows
+        ]
+    return HwpJobListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=(total + page_size - 1) // page_size,
+    )
+
+
+@router.get("/company-profile", response_model=CompanyProfileRecord)
+def get_company_profile() -> CompanyProfileRecord:
+    with require_engine().begin() as conn:
+        profile = _load_company_profile(
+            conn, dict.fromkeys(("notice_no", "title", "category", "assignee", "fit_score"), "")
+        )
+    return CompanyProfileRecord.model_validate(profile)
 
 
 @router.post("/common/uploads", response_model=CommonUploadResponse)
@@ -117,16 +205,12 @@ def upsert_hwp_template(body: HwpTemplateUpsertRequest) -> HwpTemplateRecord:
             select(hwp_templates.c.id).where(hwp_templates.c.template_key == body.template_key)
         ).scalar_one_or_none()
         if existing is None:
-            result = conn.execute(
-                hwp_templates.insert().values(**values, created_at=now)
-            )
+            result = conn.execute(hwp_templates.insert().values(**values, created_at=now))
             template_id = int(result.inserted_primary_key[0])
         else:
             template_id = int(existing)
             conn.execute(
-                update(hwp_templates)
-                .where(hwp_templates.c.id == template_id)
-                .values(**values)
+                update(hwp_templates).where(hwp_templates.c.id == template_id).values(**values)
             )
         return _load_hwp_template(conn, template_id, include_inactive_template=True)
 
@@ -143,9 +227,7 @@ def update_hwp_template(
     values["updated_at"] = datetime.now(tz=UTC)
     with engine.begin() as conn:
         result = conn.execute(
-            update(hwp_templates)
-            .where(hwp_templates.c.id == template_id)
-            .values(**values)
+            update(hwp_templates).where(hwp_templates.c.id == template_id).values(**values)
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="hwp template not found")
@@ -181,7 +263,9 @@ def upsert_hwp_mapping(
         return _load_hwp_template(conn, template_id, include_inactive_template=True)
 
 
-@router.patch("/hwp-templates/{template_id}/mappings/{mapping_id}", response_model=HwpTemplateRecord)
+@router.patch(
+    "/hwp-templates/{template_id}/mappings/{mapping_id}", response_model=HwpTemplateRecord
+)
 def update_hwp_mapping(
     template_id: int,
     mapping_id: int,
@@ -226,7 +310,9 @@ def _ensure_template_exists(conn, template_id: int) -> None:
         raise HTTPException(status_code=404, detail="hwp template not found")
 
 
-def _load_hwp_template(conn, template_id: int, *, include_inactive_template: bool = False) -> HwpTemplateRecord:
+def _load_hwp_template(
+    conn, template_id: int, *, include_inactive_template: bool = False
+) -> HwpTemplateRecord:
     conditions = [hwp_templates.c.id == template_id]
     if not include_inactive_template:
         conditions.append(hwp_templates.c.active.is_(True))
@@ -249,6 +335,7 @@ def _load_hwp_template(conn, template_id: int, *, include_inactive_template: boo
 
 def _template_record(template: dict[str, Any], mappings: list[dict[str, Any]]) -> HwpTemplateRecord:
     return HwpTemplateRecord(
+        render_mode=template.get("render_mode", "fields"),
         id=int(template["id"]),
         template_key=str(template["template_key"]),
         kind=template["kind"],

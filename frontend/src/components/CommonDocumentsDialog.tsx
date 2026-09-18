@@ -16,6 +16,7 @@ type Props = {
   onClose: () => void;
   noticeNo: string;
   checklist: DocumentChecklistItem[];
+  defaultItemId?: string;
 };
 
 export function CommonDocumentsDialog({
@@ -23,11 +24,12 @@ export function CommonDocumentsDialog({
   onClose,
   noticeNo,
   checklist,
+  defaultItemId,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<UploadedDocument[]>([]);
   const [file, setFile] = useState<File | null>(null);
-  const [itemId, setItemId] = useState("");
+  const [itemId, setItemId] = useState(defaultItemId || "");
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
@@ -43,8 +45,8 @@ export function CommonDocumentsDialog({
   };
 
   useEffect(() => {
-    if (open) refresh();
-  }, [open]);
+    if (open) { setItemId(defaultItemId || ""); refresh(); }
+  }, [open, defaultItemId]);
 
   const upload = () => {
     if (!file) {
@@ -67,7 +69,7 @@ export function CommonDocumentsDialog({
   const importItem = (uploadId: string, name: string) => {
     startTransition(async () => {
       try {
-        await actionImportCommonUpload(noticeNo, uploadId);
+        await actionImportCommonUpload(noticeNo, uploadId, defaultItemId);
         toast.push("success", `${name} 가져오기 완료`);
         onClose();
       } catch (e) {
@@ -79,8 +81,8 @@ export function CommonDocumentsDialog({
   return (
     <Modal open={open} onClose={onClose} title="공통 서류 가져오기" size="lg">
       <div className="space-y-4">
-        <div className="rounded border border-slate-800 bg-slate-900/40 p-3">
-          <div className="mb-2 text-xs font-semibold text-slate-300">
+        <div className="rounded border border-slate-200 bg-slate-50/40 p-3">
+          <div className="mb-2 text-xs font-semibold text-slate-700">
             공통 서류 등록
           </div>
           <div className="grid gap-2 md:grid-cols-[1fr_220px_auto]">
@@ -88,13 +90,13 @@ export function CommonDocumentsDialog({
               ref={inputRef}
               type="file"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 file:mr-3 file:rounded file:border-0 file:bg-brand-500 file:px-3 file:py-1 file:text-xs file:text-white"
+              className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 file:mr-3 file:rounded file:border-0 file:bg-brand-500 file:px-3 file:py-1 file:text-xs file:text-white"
               accept=".pdf,.hwp,.hwpx,.jpg,.jpeg,.png,.xlsx,.docx"
             />
             <select
               value={itemId}
               onChange={(e) => setItemId(e.target.value)}
-              className="rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
             >
               <option value="">자동 추천</option>
               {checklist.map((item) => (
@@ -107,16 +109,16 @@ export function CommonDocumentsDialog({
               type="button"
               onClick={upload}
               disabled={pending || !file}
-              className="rounded bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+              className="rounded bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-600"
             >
               등록
             </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded border border-slate-800">
+        <div className="overflow-x-auto rounded border border-slate-200">
           <table className="w-full text-sm">
-            <thead className="bg-slate-900/80 text-slate-300">
+            <thead className="bg-slate-50/80 text-slate-700">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">파일</th>
                 <th className="px-3 py-2 text-left font-medium">추천/연결</th>
@@ -127,18 +129,18 @@ export function CommonDocumentsDialog({
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-3 py-5 text-center text-slate-400">
+                  <td colSpan={4} className="px-3 py-5 text-center text-slate-600">
                     등록된 공통 서류가 없습니다.
                   </td>
                 </tr>
               ) : (
                 items.map((item) => (
-                  <tr key={item.id} className="border-t border-slate-800">
-                    <td className="px-3 py-2 text-slate-100">{item.name}</td>
-                    <td className="px-3 py-2 text-slate-300">
+                  <tr key={item.id} className="border-t border-slate-200">
+                    <td className="px-3 py-2 text-slate-900">{item.name}</td>
+                    <td className="px-3 py-2 text-slate-700">
                       {item.item_id || item.detected_item_id || "-"}
                     </td>
-                    <td className="max-w-md px-3 py-2 text-xs text-slate-400">
+                    <td className="max-w-md px-3 py-2 text-xs text-slate-600">
                       {item.analysis_summary || "-"}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -146,7 +148,7 @@ export function CommonDocumentsDialog({
                         type="button"
                         onClick={() => importItem(item.id, item.name)}
                         disabled={pending}
-                        className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-800 hover:bg-slate-100 disabled:opacity-50"
                       >
                         가져오기
                       </button>

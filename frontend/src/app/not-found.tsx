@@ -7,9 +7,9 @@ import Link from "next/link";
 export default function NotFound() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="max-w-md rounded border border-slate-800 bg-slate-900/40 p-6 space-y-3 text-center">
-        <p className="text-lg font-semibold text-slate-200">페이지를 찾을 수 없습니다</p>
-        <p className="text-sm text-slate-400">
+      <div className="max-w-md rounded border border-slate-200 bg-slate-50/40 p-6 space-y-3 text-center">
+        <p className="text-lg font-semibold text-slate-800">페이지를 찾을 수 없습니다</p>
+        <p className="text-sm text-slate-600">
           요청한 주소가 잘못됐거나 페이지가 이동·삭제된 것 같습니다.
         </p>
         <Link

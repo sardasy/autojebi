@@ -153,6 +153,7 @@ def test_hwp_context_templates_and_review_api(client, sqlite_engine, monkeypatch
 
     templates = client.get("/documents/hwp-templates")
     assert templates.status_code == 200
+    assert templates.json()["items"][0]["render_mode"] == "fields"
     assert templates.json()["items"][0]["mappings"][0]["hwp_field_name"] == "notice_no"
 
     preview = client.post("/notices/HWP-1/documents/hwp-context", json={"template_key": "bid_form"})
@@ -166,9 +167,15 @@ def test_hwp_context_templates_and_review_api(client, sqlite_engine, monkeypatch
     assert body["remaining_placeholders"] == ["address"]
     job_id = body["job"]["id"]
 
+    missing_note = client.post(
+        f"/notices/HWP-1/documents/hwp-jobs/{job_id}/review",
+        json={"review_status": "approved", "review_note": "  "},
+    )
+    assert missing_note.status_code == 422
+
     reviewed = client.post(
         f"/notices/HWP-1/documents/hwp-jobs/{job_id}/review",
-        json={"review_status": "approved", "reviewed_by": "tester"},
+        json={"review_status": "approved", "reviewed_by": "tester", "review_note": "주소를 수동 확인함"},
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["job"]["review_status"] == "approved"

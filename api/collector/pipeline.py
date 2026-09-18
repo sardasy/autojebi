@@ -23,8 +23,9 @@ from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert
 
 from api.collector.g2b_client import G2BClient, RawBid
+from api.db.tables import bid_pipeline
 from api.models.notices import NoticeSearchItem, NoticeSearchResponse
-from api.routers.notices import bid_pipeline
+from api.services.notice_facts import normalize_notice_facts
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +81,10 @@ def _upsert(conn: Any, raw: RawBid, now: datetime) -> str:
     open_dt = _parse_iso(G2BClient.parse_datetime(raw.open_date))
     close_dt = _parse_iso(G2BClient.parse_datetime(raw.close_date))
     base_price = G2BClient.parse_price(raw.base_price)
+    normalized = normalize_notice_facts(raw.raw)
+    open_dt = normalized.get("open_date", open_dt)
+    close_dt = normalized.get("close_date", close_dt)
+    base_price = normalized.get("base_price", base_price)
 
     stmt = insert(bid_pipeline).values(
         notice_no=notice_no,

@@ -10,7 +10,7 @@ const PALETTE: Record<string, string> = {
   form_filled: "bg-indigo-700 text-white",
   notified: "bg-emerald-600 text-white",
   digest_queued: "bg-amber-600 text-white",
-  archived_low: "bg-slate-800 text-slate-400",
+  archived_low: "bg-slate-100 text-slate-600",
 };
 
 const LABEL: Record<string, string> = {
@@ -27,7 +27,7 @@ const LABEL: Record<string, string> = {
 };
 
 export function StatusBadge({ value }: Props) {
-  const cls = PALETTE[value] || "bg-slate-700 text-slate-300";
+  const cls = PALETTE[value] || "bg-slate-200 text-slate-700";
   const label = LABEL[value] || value || "?";
   return (
     <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}>

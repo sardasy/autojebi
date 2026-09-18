@@ -1,36 +1,38 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { actionAnalyze } from "@/lib/actions";
 import type { NoticeRecord } from "@/lib/api";
 import { GradeDialog } from "./GradeDialog";
+import { NotifyDialog } from "./NotifyDialog";
 import { useToast } from "./Toast";
 
 type Props = { notice: NoticeRecord };
 
-type DialogKind = "grade" | null;
+type DialogKind = "grade" | "notify" | null;
 
 export function NoticeActionsBar({ notice }: Props) {
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
+  const router = useRouter();
 
   const analyzeDisabled = notice.status !== "collected" || pending;
   const gradeDisabled = notice.status === "collected" || pending;
+  const notifyDisabled = notice.status === "collected" || pending;
 
   const onAnalyze = () => {
-    setResultMessage(null);
+    setResultMessage("분석 중입니다.");
     startTransition(async () => {
       try {
         const r = await actionAnalyze(notice.notice_no);
         const message = `분석 완료 — 카테고리: ${r.category}, fit_score: ${r.fit_score}, 담당자: ${r.assignee}`;
         setResultMessage(message);
-        toast.push(
-          "success",
-          message,
-        );
+        toast.push("success", message);
+        router.refresh();
       } catch (e) {
         const message = `분석 실패: ${(e as Error).message}`;
         setResultMessage(message);
@@ -43,7 +45,7 @@ export function NoticeActionsBar({ notice }: Props) {
     <>
       <div className="flex flex-wrap gap-2">
         <ActionButton
-          label="분석"
+          label={pending ? "처리 중…" : "분석"}
           onClick={onAnalyze}
           disabled={analyzeDisabled}
           hint={notice.status !== "collected" ? "이미 분석됨" : undefined}
@@ -54,14 +56,25 @@ export function NoticeActionsBar({ notice }: Props) {
           disabled={gradeDisabled}
           hint={notice.status === "collected" ? "분석 후 가능" : undefined}
         />
+        <ActionButton
+          label="알림"
+          onClick={() => setOpenDialog("notify")}
+          disabled={notifyDisabled}
+          hint={notice.status === "collected" ? "분석 후 가능" : "Teams dry-run"}
+        />
       </div>
       {resultMessage ? (
-        <div role="status" className="mt-2 text-xs text-slate-300">
+        <div role="status" className="mt-2 text-xs text-slate-700">
           {resultMessage}
         </div>
       ) : null}
       <GradeDialog
         open={openDialog === "grade"}
+        onClose={() => setOpenDialog(null)}
+        noticeNo={notice.notice_no}
+      />
+      <NotifyDialog
+        open={openDialog === "notify"}
         onClose={() => setOpenDialog(null)}
         noticeNo={notice.notice_no}
       />
@@ -86,7 +99,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       title={hint}
-      className="rounded bg-brand-500 hover:bg-brand-600 px-3 py-1.5 text-sm font-medium text-white disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed"
+      className="rounded bg-brand-500 hover:bg-brand-600 px-3 py-1.5 text-sm font-medium text-white disabled:bg-slate-200 disabled:text-slate-600 disabled:cursor-not-allowed"
     >
       {label}
     </button>

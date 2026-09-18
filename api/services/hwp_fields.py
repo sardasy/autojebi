@@ -48,7 +48,7 @@ def build_hwp_context(
             "category": str(row["category"] or ""),
             "assignee": str(row["assignee"] or ""),
             "org_name": str(row.get("org_name") or raw.get("ntceInsttNm") or raw.get("dminsttNm") or ""),
-            "base_price": row.get("base_price") or raw.get("presmptPrce") or "",
+            "base_price": row.get("base_price") or "",
             "open_date": row.get("open_date") or raw.get("bidBeginDt") or "",
             "close_date": row.get("close_date") or raw.get("bidClseDt") or "",
             "raw": raw,

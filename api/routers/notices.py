@@ -8,24 +8,11 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import (
-    JSON,
-    Boolean,
-    CheckConstraint,
-    Column,
-    Date,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    MetaData,
-    Numeric,
     String,
-    Table,
-    Text,
-    UniqueConstraint,
     cast,
     delete,
     func,
@@ -39,6 +26,26 @@ from sqlalchemy.dialects.postgresql import insert
 from api.auth import verify_api_key
 from api.config import settings
 from api.db import require_engine
+from api.db.tables import (  # noqa: F401 - re-exported for compatibility
+    attachment_fetch_files,
+    attachment_fetch_jobs,
+    bid_pipeline,
+    company_profiles,
+    document_chunks,
+    document_field_mappings,
+    hwp_generation_jobs,
+    hwp_templates,
+    metadata,
+    notice_errors,
+    notice_exports,
+    notice_required_documents,
+    notice_requirements,
+    notice_spec_items,
+    project_performances,
+    proposal_documents,
+    proposal_sections,
+    requirement_evidences,
+)
 from api.llm.extractor import extract_pdf_pages
 from api.models.notices import (
     AttachmentFetchFileResult,
@@ -139,7 +146,7 @@ from api.services.spec_items import (
     spec_items_summary,
     spec_items_to_elec_spec,
 )
-from api.services.status import advance_status, can_transition, compute_notify_status
+from api.services.status import advance_status, can_transition
 from api.services.uploads import (
     analyze_upload,
     build_metadata,
@@ -157,417 +164,11 @@ router = APIRouter(
     dependencies=[Depends(verify_api_key)],
 )
 
-metadata = MetaData()
-
-bid_pipeline = Table(
-    "bid_pipeline",
-    metadata,
-    Column("notice_no", String, primary_key=True),
-    Column("title", String),
-    Column("source", String),
-    Column("raw", JSON),
-    Column("category", String),
-    Column("fit_score", Integer),
-    Column("assignee", String),
-    Column("analysis", JSON),
-    Column("status", String),
-    Column("created_at", DateTime(timezone=True)),
-    Column("updated_at", DateTime(timezone=True)),
-    # G2B 수집 컬럼 (db/migrations/0001_collect_columns.sql)
-    Column("bid_no", String),
-    Column("bid_seq", String),
-    Column("bid_type", String),
-    Column("org_code", String),
-    Column("org_name", String),
-    Column("base_price", Numeric(18, 2)),
-    Column("open_date", DateTime(timezone=True)),
-    Column("close_date", DateTime(timezone=True)),
-    Column("collected_at", DateTime(timezone=True)),
-    # M3 그레이딩 컬럼 (db/migrations/0002_grade_columns.sql)
-    Column("score_spec", Numeric(4, 3)),
-    Column("score_qual", Numeric(4, 3)),
-    Column("score_price", Numeric(4, 3)),
-    Column("score_total", Numeric(4, 3)),
-    Column("grade_reason", String),
-    Column("risk_note", String),
-    Column("top_sku", String),
-    Column("top_sku_name", String),
-    Column("sku_match_score", Numeric(4, 3)),
-    Column("graded_at", DateTime(timezone=True)),
-)
-
-notice_spec_items = Table(
-    "notice_spec_items",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("item_key", String, nullable=False),
-    Column("label", String, nullable=False),
-    Column("required_value", Text),
-    Column("proposed_value", Text),
-    Column("unit", String),
-    Column("category", String, nullable=False, default="technical"),
-    Column("source", String, nullable=False, default="rule"),
-    Column("confidence", Numeric(4, 3), nullable=False, default=0),
-    Column("evidence", JSON, nullable=False, default=dict),
-    Column("status", String, nullable=False, default="candidate"),
-    Column("sort_order", Integer, nullable=False, default=0),
-    Column("note", Text),
-    Column("reviewed_by", String),
-    Column("reviewed_at", DateTime(timezone=True)),
-    Column("locked_fields", JSON, nullable=False, default=list),
-    Column("source_text", Text),
-    Column("source_file_name", String),
-    Column("source_page", String),
-    Column("review_priority", String, nullable=False, default="normal"),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("notice_no", "item_key", name="notice_spec_items_notice_item_unique"),
-    CheckConstraint("status IN ('candidate','reviewed','matched','gap','ignored')"),
-    CheckConstraint("review_priority IN ('normal','high')"),
-    Index("notice_spec_items_notice_idx", "notice_no"),
-    Index("notice_spec_items_status_idx", "status"),
-)
-
-notice_exports = Table(
-    "notice_exports",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("kind", String, nullable=False),
-    Column("draft_id", String, nullable=False),
-    Column("output_path", Text, nullable=False),
-    Column("mime", String, nullable=False),
-    Column("notes", Text),
-    Column("version", String),
-    Column("template_version", String),
-    Column("validation_status", String, nullable=False, default="passed"),
-    Column("validation_errors", JSON, nullable=False, default=list),
-    Column("file_size", Integer),
-    Column("sha256", String),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("created_by", String),
-    Column("deleted_at", DateTime(timezone=True)),
-    CheckConstraint("kind IN ('excel','hwp','bid_form_hwp','proposal_hwp')"),
-    CheckConstraint("validation_status IN ('passed','warning','failed')"),
-    Index("notice_exports_notice_idx", "notice_no"),
-    Index("notice_exports_active_idx", "notice_no", "kind", "draft_id", "deleted_at"),
-)
-
-hwp_templates = Table(
-    "hwp_templates",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("template_key", String, nullable=False),
-    Column("kind", String, nullable=False),
-    Column("name", String, nullable=False),
-    Column("template_path", Text, nullable=False),
-    Column("template_version", String),
-    Column("active", Boolean, nullable=False, default=True),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("template_key", name="hwp_templates_template_key_unique"),
-    CheckConstraint("kind IN ('bid_form','proposal')"),
-    Index("hwp_templates_active_idx", "active"),
-)
-
-company_profiles = Table(
-    "company_profiles",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("profile_key", String, nullable=False),
-    Column("company_name", String, nullable=False),
-    Column("business_number", String),
-    Column("ceo_name", String),
-    Column("address", Text),
-    Column("profile_metadata", JSON, nullable=False, default=dict),
-    Column("active", Boolean, nullable=False, default=True),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("profile_key", name="company_profiles_profile_key_unique"),
-    Index("company_profiles_active_idx", "active"),
-)
-
-document_field_mappings = Table(
-    "document_field_mappings",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("template_id", Integer, ForeignKey("hwp_templates.id", ondelete="CASCADE"), nullable=False),
-    Column("hwp_field_name", String, nullable=False),
-    Column("context_path", String, nullable=False),
-    Column("value_type", String, nullable=False, default="string"),
-    Column("required", Boolean, nullable=False, default=False),
-    Column("default_value", Text),
-    Column("transform", String, nullable=False, default="none"),
-    Column("sort_order", Integer, nullable=False, default=0),
-    Column("active", Boolean, nullable=False, default=True),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint(
-        "template_id",
-        "hwp_field_name",
-        name="document_field_mappings_template_field_unique",
-    ),
-    CheckConstraint(
-        "transform IN ('none','date_yyyy_mm_dd','number_comma','business_number_dash','strip','truncate_1000')",
-        name="document_field_mappings_transform_check",
-    ),
-    Index("document_field_mappings_template_idx", "template_id", "active", "sort_order"),
-)
-
-hwp_generation_jobs = Table(
-    "hwp_generation_jobs",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("template_id", Integer, ForeignKey("hwp_templates.id", ondelete="SET NULL")),
-    Column("export_id", Integer, ForeignKey("notice_exports.id", ondelete="SET NULL")),
-    Column("status", String, nullable=False, default="pending"),
-    Column("context_json", JSON, nullable=False, default=dict),
-    Column("input_values", JSON, nullable=False, default=dict),
-    Column("replaced", JSON, nullable=False, default=list),
-    Column("missing", JSON, nullable=False, default=list),
-    Column("remaining_placeholders", JSON, nullable=False, default=list),
-    Column("worker_raw", JSON, nullable=False, default=dict),
-    Column("error_detail", Text),
-    Column("review_status", String, nullable=False, default="pending"),
-    Column("review_note", Text),
-    Column("reviewed_by", String),
-    Column("reviewed_at", DateTime(timezone=True)),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint("status IN ('pending','running','completed','failed')"),
-    CheckConstraint("review_status IN ('pending','approved','rejected')"),
-    Index("hwp_generation_jobs_notice_idx", "notice_no"),
-    Index("hwp_generation_jobs_review_idx", "review_status"),
-)
-
-proposal_documents = Table(
-    "proposal_documents",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("title", String(500), nullable=False),
-    Column("file_name", String(500)),
-    Column("file_path", Text),
-    Column("document_type", String(100)),
-    Column("category", String(100), nullable=False),
-    Column("project_name", String(500)),
-    Column("customer_name", String(300)),
-    Column("checksum", String(128)),
-    Column("indexing_status", String(50), nullable=False, default="pending"),
-    Column("document_metadata", JSON, nullable=False, default=dict),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint(
-        "category IN ('proposal','report','certificate','product','company','performance','other')",
-        name="proposal_documents_category_check",
-    ),
-    CheckConstraint(
-        "indexing_status IN ('pending','indexed','failed')",
-        name="proposal_documents_indexing_status_check",
-    ),
-    Index("proposal_documents_category_idx", "category"),
-    Index("proposal_documents_customer_idx", "customer_name"),
-    Index("proposal_documents_checksum_idx", "checksum"),
-)
-
-document_chunks = Table(
-    "document_chunks",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("document_id", String, ForeignKey("proposal_documents.id", ondelete="CASCADE"), nullable=False),
-    Column("chunk_index", Integer, nullable=False),
-    Column("page_number", Integer),
-    Column("heading", Text),
-    Column("content", Text, nullable=False),
-    Column("token_count", Integer, nullable=False, default=0),
-    Column("chunk_metadata", JSON, nullable=False, default=dict),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("document_id", "chunk_index", name="document_chunks_document_index_unique"),
-    Index("document_chunks_document_idx", "document_id"),
-)
-
-project_performances = Table(
-    "project_performances",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("project_name", String(500), nullable=False),
-    Column("customer_name", String(300)),
-    Column("contract_date", Date),
-    Column("completion_date", Date),
-    Column("contract_amount", Numeric(18, 2)),
-    Column("project_type", String(200)),
-    Column("technologies", JSON, nullable=False, default=list),
-    Column("products", JSON, nullable=False, default=list),
-    Column("description", Text),
-    Column("evidence_document_id", String, ForeignKey("proposal_documents.id", ondelete="SET NULL")),
-    Column("verified", Boolean, nullable=False, default=False),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Index("project_performances_verified_idx", "verified"),
-    Index("project_performances_customer_idx", "customer_name"),
-)
-
-notice_requirements = Table(
-    "notice_requirements",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("section", String(300), nullable=False),
-    Column("requirement_type", String(100), nullable=False),
-    Column("requirement_text", Text, nullable=False),
-    Column("mandatory", Boolean, nullable=False, default=True),
-    Column("evaluation_score", Numeric(6, 2)),
-    Column("source_page", Integer),
-    Column("extracted_data", JSON, nullable=False, default=dict),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint(
-        "notice_no",
-        "requirement_type",
-        "requirement_text",
-        name="notice_requirements_notice_type_text_unique",
-    ),
-    Index("notice_requirements_notice_idx", "notice_no"),
-    Index("notice_requirements_type_idx", "requirement_type"),
-)
-
-requirement_evidences = Table(
-    "requirement_evidences",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("requirement_id", String, ForeignKey("notice_requirements.id", ondelete="CASCADE"), nullable=False),
-    Column("document_id", String, ForeignKey("proposal_documents.id", ondelete="SET NULL")),
-    Column("chunk_id", String, ForeignKey("document_chunks.id", ondelete="SET NULL")),
-    Column("performance_id", String, ForeignKey("project_performances.id", ondelete="SET NULL")),
-    Column("evidence_type", String(100), nullable=False),
-    Column("relevance_score", Numeric(5, 4), nullable=False, default=0),
-    Column("confidence_score", Numeric(5, 4), nullable=False, default=0),
-    Column("quoted_text", Text, nullable=False),
-    Column("reasoning_summary", Text),
-    Column("approved", Boolean, nullable=False, default=False),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Index("requirement_evidences_requirement_idx", "requirement_id"),
-    Index("requirement_evidences_document_idx", "document_id"),
-)
-
-proposal_sections = Table(
-    "proposal_sections",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("template_key", String(200), nullable=False, default="proposal"),
-    Column("section_key", String(200), nullable=False),
-    Column("section_title", String(500), nullable=False),
-    Column("generated_content", Text, nullable=False),
-    Column("generation_status", String(50), nullable=False, default="draft"),
-    Column("evidence_ids", JSON, nullable=False, default=list),
-    Column("confidence_score", Numeric(5, 4), nullable=False, default=0),
-    Column("fact_check_status", String(50), nullable=False, default="pending"),
-    Column("fact_check_notes", JSON, nullable=False, default=list),
-    Column("human_approved", Boolean, nullable=False, default=False),
-    Column("version", Integer, nullable=False, default=1),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint(
-        "generation_status IN ('draft','verified','rejected','approved')",
-        name="proposal_sections_generation_status_check",
-    ),
-    CheckConstraint(
-        "fact_check_status IN ('pending','pass','warning','reject')",
-        name="proposal_sections_fact_check_status_check",
-    ),
-    UniqueConstraint(
-        "notice_no",
-        "section_key",
-        "version",
-        name="proposal_sections_notice_section_version_unique",
-    ),
-    Index("proposal_sections_notice_idx", "notice_no"),
-)
-
-notice_errors = Table(
-    "notice_errors",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("stage", String, nullable=False),
-    Column("severity", String, nullable=False, default="error"),
-    Column("source", String, nullable=False, default="system"),
-    Column("file_name", String),
-    Column("detail", Text, nullable=False),
-    Column("raw", JSON, nullable=False, default=dict),
-    Column("resolved_at", DateTime(timezone=True)),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint("severity IN ('info','warning','error')"),
-    Index("notice_errors_notice_idx", "notice_no"),
-    Index("notice_errors_unresolved_idx", "notice_no", "resolved_at"),
-)
-
-notice_required_documents = Table(
-    "notice_required_documents",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("doc_name", Text, nullable=False),
-    Column("requirement_type", String, nullable=False, default="required"),
-    Column("submit_stage", String, nullable=False, default="bid"),
-    Column("source_file", Text),
-    Column("evidence_text", Text),
-    Column("page_no", Integer),
-    Column("deadline", String),
-    Column("condition", Text),
-    Column("confidence", Numeric(4, 3), nullable=False, default=0),
-    Column("checked", Boolean, nullable=False, default=False),
-    Column("owner", String),
-    Column("note", Text),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("notice_no", "doc_name", "submit_stage", name="notice_required_documents_unique"),
-    CheckConstraint(
-        "requirement_type IN ('required','conditional','winner_only','contract_stage','reference')"
-    ),
-    CheckConstraint(
-        "submit_stage IN ('bid','proposal','price','post_award','contract','delivery','conditional')"
-    ),
-    Index("notice_required_documents_notice_idx", "notice_no"),
-    Index("notice_required_documents_stage_idx", "notice_no", "submit_stage"),
-)
-
-attachment_fetch_jobs = Table(
-    "attachment_fetch_jobs",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("status", String, nullable=False, default="pending"),
-    Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("finished_at", DateTime(timezone=True)),
-    Column("created_by", String),
-    CheckConstraint("status IN ('pending','running','completed','completed_with_errors')"),
-    Index("attachment_fetch_jobs_notice_idx", "notice_no"),
-)
-
-attachment_fetch_files = Table(
-    "attachment_fetch_files",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("job_id", Integer, ForeignKey("attachment_fetch_jobs.id", ondelete="CASCADE"), nullable=False),
-    Column("notice_no", String, ForeignKey("bid_pipeline.notice_no", ondelete="CASCADE"), nullable=False),
-    Column("filename", String, nullable=False),
-    Column("url", Text, nullable=False),
-    Column("status", String, nullable=False, default="pending"),
-    Column("upload_id", String),
-    Column("error", Text),
-    Column("source_ref", String, nullable=False, default="g2b_attachment"),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint("status IN ('pending','success','failed','skipped')"),
-    Index("attachment_fetch_files_job_idx", "job_id"),
-    Index("attachment_fetch_files_notice_idx", "notice_no"),
-)
-
 
 def _row_to_record(row: Any) -> NoticeRecord:
+    analysis = dict(row["analysis"] or {})
+    if isinstance(analysis.get("document_automation"), dict):
+        analysis["document_automation"] = validate_document_automation(analysis["document_automation"])
     return NoticeRecord(
         notice_no=row["notice_no"],
         title=row["title"],
@@ -576,7 +177,7 @@ def _row_to_record(row: Any) -> NoticeRecord:
         category=row["category"],
         fit_score=row["fit_score"],
         assignee=row["assignee"],
-        analysis=row["analysis"] or {},
+        analysis=analysis,
         status=row["status"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -602,6 +203,7 @@ def _row_to_record(row: Any) -> NoticeRecord:
         unresolved_error_count=int(row.get("unresolved_error_count") or 0),
         export_count=int(row.get("export_count") or 0),
         spec_item_count=int(row.get("spec_item_count") or 0),
+        spec_value_count=int(row.get("spec_value_count") or 0),
     )
 
 
@@ -634,6 +236,16 @@ def _notice_select_columns() -> list[Any]:
             .where(notice_spec_items.c.notice_no == bid_pipeline.c.notice_no)
             .scalar_subquery()
             .label("spec_item_count")
+        ),
+        (
+            select(func.count())
+            .select_from(notice_spec_items)
+            .where(
+                notice_spec_items.c.notice_no == bid_pipeline.c.notice_no,
+                func.length(func.trim(notice_spec_items.c.required_value)) > 0,
+            )
+            .scalar_subquery()
+            .label("spec_value_count")
         ),
     ]
 
@@ -753,7 +365,7 @@ def search_notices_endpoint(payload: NoticeSearchRequest) -> NoticeSearchRespons
 
     today = _date.today()
     start = payload.start_date.date() if payload.start_date else (today - _td(days=30))
-    end = payload.end_date.date() if payload.end_date else (today + _td(days=30))
+    end = payload.end_date.date() if payload.end_date else today
 
     if start > end:
         raise HTTPException(
@@ -777,14 +389,34 @@ def search_notices_endpoint(payload: NoticeSearchRequest) -> NoticeSearchRespons
     except HTTPException:
         raise
     except Exception as exc:
-        # G2B HTTP/네트워크/파싱 실패 → 외부 의존성 장애로 분류
-        raise HTTPException(status_code=502, detail=f"G2B search failed: {exc}")
+        if isinstance(exc, ValueError) and str(exc) == "G2B_KEY_MISSING":
+            detail = "G2B 검색 키가 설정되지 않았습니다. 관리자에서 연결 상태를 확인하세요."
+        elif isinstance(exc, PermissionError) or (isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {401, 403}):
+            detail = "G2B 인증에 실패했습니다. API 키와 서비스 이용 승인을 확인하세요."
+        elif isinstance(exc, httpx.ConnectTimeout):
+            detail = "G2B API 서버 연결 시간이 초과되었습니다. API 주소의 HTTP/HTTPS 설정과 방화벽·프록시 또는 서비스 상태를 확인하세요."
+        elif isinstance(exc, httpx.ConnectError):
+            detail = "G2B API 서버에 연결하지 못했습니다. DNS·네트워크·인증서 설정을 확인하세요."
+        elif isinstance(exc, ValueError) and str(exc) == "G2B_RATE_LIMITED":
+            detail = "G2B 호출 허용량을 초과했습니다. 공공데이터포털의 일일·초당 이용 한도를 확인한 뒤 다시 시도하세요."
+        elif isinstance(exc, ValueError) and str(exc) == "G2B_IP_BLOCKED":
+            detail = "G2B에서 현재 요청 IP를 차단했습니다. 공공데이터 활용지원센터에 확인하세요."
+        elif isinstance(exc, ValueError) and str(exc) == "G2B_UPSTREAM_TIMEOUT":
+            detail = "G2B 중계 서버가 기관 API 응답을 받지 못했습니다. 서비스 상태를 확인하고 잠시 후 다시 시도하세요."
+        elif isinstance(exc, httpx.TimeoutException):
+            detail = "G2B 응답 시간이 초과되었습니다. 검색 기간을 줄여 다시 시도하세요."
+        else:
+            detail = "G2B 외부 서비스에 연결하지 못했습니다. 잠시 후 다시 시도하세요."
+        raise HTTPException(status_code=502, detail=detail)
 
 
 @router.post("/upsert", response_model=NoticeRecord)
 def upsert_notice(payload: NoticeUpsertRequest) -> NoticeRecord:
+    from api.services.notice_facts import normalize_notice_facts
+
     engine = require_engine()
     now = datetime.now(tz=UTC)
+    facts = normalize_notice_facts(payload.raw)
 
     stmt = insert(bid_pipeline).values(
         notice_no=payload.notice_no,
@@ -798,6 +430,7 @@ def upsert_notice(payload: NoticeUpsertRequest) -> NoticeRecord:
         status="collected",
         created_at=now,
         updated_at=now,
+        **facts,
     )
 
     # Idempotency rule:
@@ -810,6 +443,7 @@ def upsert_notice(payload: NoticeUpsertRequest) -> NoticeRecord:
             "raw": stmt.excluded.raw,
             "updated_at": now,
             "status": bid_pipeline.c.status,
+            **{key: getattr(stmt.excluded, key) for key in facts},
         },
     ).returning(*bid_pipeline.c)
 
@@ -885,11 +519,21 @@ def analyze_notice(notice_no: str) -> NoticeAnalyzeResponse:
             raise HTTPException(status_code=404, detail="notice not found")
 
         current_status = row["status"]
-        if not can_transition(current_status, "analyzed"):
-            raise HTTPException(status_code=409, detail=f"invalid transition {current_status} -> analyzed")
-
         analyzer = ClaudeAnalyzer()
         result = analyzer.analyze_notice(notice_no=notice_no, title=row["title"], raw=row["raw"])
+        if result.analysis.get("error") or result.analysis.get("schema_valid") is False:
+            _record_errors(conn, notice_no, [{"stage": "claude.schema" if result.analysis.get("schema_valid") is False else "claude.analysis",
+                "source": "claude", "detail": "분석 실패: 인증/연결/응답 형식 확인 필요"}])
+            conn.commit()
+            raise HTTPException(status_code=502, detail={
+                "code": "analysis_failed",
+                "message": "분석하지 못했습니다. 기존 점수와 문서 결과는 유지됩니다.",
+                "next_action": "LLM 인증과 연결을 확인한 뒤 다시 분석하세요.",
+            })
+        merged_analysis = dict(row["analysis"] or {})
+        merged_analysis.update(result.analysis)
+        merged_analysis.pop("error", None)
+        next_status = advance_status(current_status, "analyzed")
         assignee = assignee_for_category(result.category)
         schema_errors = [
             {"stage": "claude.schema", "source": "claude", "detail": str(err)}
@@ -904,8 +548,8 @@ def analyze_notice(notice_no: str) -> NoticeAnalyzeResponse:
                 category=result.category,
                 fit_score=result.fit_score,
                 assignee=assignee,
-                analysis=result.analysis,
-                status="analyzed",
+                analysis=merged_analysis,
+                status=next_status,
             )
         )
 
@@ -914,8 +558,8 @@ def analyze_notice(notice_no: str) -> NoticeAnalyzeResponse:
             category=result.category,  # type: ignore[arg-type]
             fit_score=result.fit_score,
             assignee=assignee,
-            analysis=result.analysis,
-            status="analyzed",
+            analysis=merged_analysis,
+            status=next_status,
         )
 
 
@@ -931,11 +575,10 @@ def notify_notice(notice_no: str, body: NotifyRequest) -> NotifyResponse:
         if not row:
             raise HTTPException(status_code=404, detail="notice not found")
 
-        next_status = compute_notify_status(int(row["fit_score"] or 0))
-        if not can_transition(row["status"], next_status):
-            raise HTTPException(
-                status_code=409, detail=f"invalid transition {row['status']} -> {next_status}"
-            )
+        analysis = row["analysis"] or {}
+        if analysis.get("error") or analysis.get("schema_valid") is False:
+            raise HTTPException(status_code=409, detail="유효한 분석 결과가 없습니다. 분석을 다시 실행하세요.")
+        next_status = row["status"]
 
         title = f"[입찰] {row['title'] or notice_no}"
         body_text = (
@@ -947,11 +590,11 @@ def notify_notice(notice_no: str, body: NotifyRequest) -> NotifyResponse:
         )
         outcome = notifier.deliver(title=title, body=body_text, dry_run=body.dry_run)
 
-        conn.execute(
-            update(bid_pipeline)
-            .where(bid_pipeline.c.notice_no == notice_no)
-            .values(status=next_status)
-        )
+        notification_log = list(analysis.get("notification_log") or [])
+        notification_log.append({"at": datetime.now(tz=UTC).isoformat(), "dry_run": body.dry_run, "delivered": outcome.delivered})
+        conn.execute(update(bid_pipeline).where(bid_pipeline.c.notice_no == notice_no).values(
+            analysis={**analysis, "notification_log": notification_log},
+        ))
 
         return NotifyResponse(notice_no=notice_no, status=next_status, delivered=outcome.delivered)
 
@@ -1635,6 +1278,15 @@ def review_hwp_job(
         ).mappings().one_or_none()
         if not existing:
             raise HTTPException(status_code=404, detail="HWP generation job not found")
+        if body.review_status == "approved":
+            if existing["status"] != "completed":
+                raise HTTPException(status_code=409, detail="완료된 HWP 작업만 승인할 수 있습니다.")
+            export = _lookup_export_by_id(conn, notice_no, existing["export_id"]) if existing["export_id"] else None
+            if not export or export.get("validation_status") == "failed":
+                raise HTTPException(status_code=409, detail="검토 가능한 생성 파일이 없습니다. 다시 생성하세요.")
+            warning = existing["missing"] or existing["remaining_placeholders"] or export.get("validation_status") == "warning" or export.get("validation_errors")
+            if warning and not (body.review_note or "").strip():
+                raise HTTPException(status_code=422, detail="경고가 있는 생성물은 검토 의견을 입력해야 승인할 수 있습니다.")
         conn.execute(
             update(hwp_generation_jobs)
             .where(hwp_generation_jobs.c.id == job_id)
@@ -2056,6 +1708,7 @@ def _hwp_job_to_model(row: dict[str, Any]) -> HwpJobRecord:
         review_status=str(row.get("review_status") or "pending"),
         review_note=row.get("review_note"),
         reviewed_by=row.get("reviewed_by"),
+        created_at=row.get("created_at"),
     )
 
 
@@ -2066,7 +1719,7 @@ def _merge_hwp_job_into_document_automation(document_automation: dict, job: HwpJ
         for item in list(updated.get("hwp_jobs") or [])
         if not (isinstance(item, dict) and item.get("id") == job.id)
     ]
-    jobs.insert(0, job.model_dump())
+    jobs.insert(0, job.model_dump(mode="json"))
     updated["hwp_jobs"] = jobs[:10]
     return updated
 
@@ -2400,12 +2053,12 @@ def fetch_g2b_attachments(notice_no: str) -> AttachmentFetchResponse:
                     hwp_client=hwp_client,
                     hwp_available=hwp_ok,
                 )
-                resolved_item_id = str(analysis_meta.pop("item_id") or "") or None
+                analysis_meta.pop("item_id", None)
                 uploaded = build_metadata(
                     saved,
                     original_name=attachment.filename,
                     mime=downloaded.mime,
-                    item_id=resolved_item_id,
+                    item_id=None,
                     source_ref="g2b_attachment",
                     **analysis_meta,
                 )
@@ -2560,7 +2213,7 @@ async def upload_document(
 
 
 @router.post("/{notice_no}/documents/import-common/{upload_id}", response_model=UploadResponse)
-def import_common_document(notice_no: str, upload_id: str) -> UploadResponse:
+def import_common_document(notice_no: str, upload_id: str, item_id: str | None = Query(None)) -> UploadResponse:
     common = get_common_upload(upload_id)
     if common is None:
         raise HTTPException(status_code=404, detail="common upload not found")
@@ -2568,6 +2221,10 @@ def import_common_document(notice_no: str, upload_id: str) -> UploadResponse:
     with engine.begin() as conn:
         _, analysis, document_automation = _load_document_automation(conn, notice_no)
         imported = clone_common_upload_for_notice(common)
+        if item_id:
+            if not any(item.get("id") == item_id for item in document_automation.get("checklist", [])):
+                raise HTTPException(status_code=422, detail="연결할 체크리스트 항목을 확인하세요.")
+            imported = imported.model_copy(update={"item_id": item_id})
         updated_docs = merge_into_document_automation(document_automation, imported)
         _persist_document_automation(conn, notice_no, analysis, updated_docs)
         return UploadResponse(notice_no=notice_no, uploaded=imported)
@@ -2742,7 +2399,7 @@ def compose_hwp_documents(notice_no: str, body: HwpComposeRequest) -> HwpCompose
                 row=row,
                 analysis=updated_analysis,
                 document_automation=updated_docs,
-                template_key="bid_form",
+                template_key=body.template_key,
                 values_override=merged_values,
                 output_path=output_path,
                 visible=body.visible,
@@ -2872,7 +2529,7 @@ def compose_proposal_document(
                 row=row,
                 analysis=analysis,
                 document_automation=updated_docs,
-                template_key="proposal",
+                template_key=body.template_key,
                 values_override=body.values_override,
                 output_path=output_path,
                 visible=body.visible,
@@ -3027,12 +2684,14 @@ def _has_blocked_document(analysis: dict[str, Any] | None) -> bool:
     checklist = doc.get("checklist")
     if not isinstance(checklist, list):
         return False
-    return any(isinstance(item, dict) and item.get("status") == "blocked" for item in checklist)
+    return bool(validate_document_automation(doc).get("missing_required")) or any(
+        isinstance(item, dict) and item.get("status") == "blocked" for item in checklist
+    )
 
 
 def _is_ready_for_submission(analysis: dict[str, Any] | None) -> bool:
     doc = (analysis or {}).get("document_automation")
-    return isinstance(doc, dict) and doc.get("ready_for_submission") is True
+    return isinstance(doc, dict) and validate_document_automation(doc).get("ready_for_submission") is True
 
 
 @router.get("/summary", response_model=NoticeSummary)
@@ -3086,7 +2745,7 @@ def get_notice(notice_no: str) -> NoticeRecord:
     engine = require_engine()
     with engine.begin() as conn:
         row = conn.execute(
-            select(*bid_pipeline.c).where(bid_pipeline.c.notice_no == notice_no)
+            select(*_notice_select_columns()).where(bid_pipeline.c.notice_no == notice_no)
         ).mappings().one_or_none()
         if not row:
             raise HTTPException(status_code=404, detail="notice not found")

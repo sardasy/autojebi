@@ -90,7 +90,7 @@ def test_hwp_path_uses_text_key_from_agent_response(temp_attachment_dir):
     hwp_client.analyze_document.assert_called_once()
 
 
-def test_hwp_path_falls_back_to_json_when_no_body_key(temp_attachment_dir):
+def test_hwp_transport_metadata_is_not_document_body(temp_attachment_dir):
     """현재 milim-hwp-agent의 analyze_document는 placeholder 탐지용이라
     본문 텍스트 키가 없을 수 있음. 그 경우 응답을 JSON으로 직렬화해 약신호로 사용."""
     raw = {
@@ -106,8 +106,7 @@ def test_hwp_path_falls_back_to_json_when_no_body_key(temp_attachment_dir):
     with patch.object(attachments, "_download", side_effect=_successful_download(b"HWP")):
         text = attachments.fetch_first_attachment_text(raw, hwp_client=hwp_client)
 
-    assert text is not None
-    assert "placeholders" in text  # JSON 직렬화 약신호
+    assert text is None
 
 
 def test_download_failure_returns_none(temp_attachment_dir):

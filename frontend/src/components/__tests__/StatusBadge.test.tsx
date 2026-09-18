@@ -29,6 +29,6 @@ describe("StatusBadge", () => {
 
   it("falls back gracefully for unknown status", () => {
     const { container } = render(<StatusBadge value="WIP" />);
-    expect(container.querySelector(".bg-slate-700")).not.toBeNull();
+    expect(container.querySelector(".bg-slate-200")).not.toBeNull();
   });
 });

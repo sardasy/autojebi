@@ -6,6 +6,7 @@ import base64
 import binascii
 import io
 import mimetypes
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote_to_bytes
@@ -29,20 +30,34 @@ class DownloadedAttachment:
     mime: str | None
 
 
-def iter_g2b_attachments(raw: dict[str, Any] | None) -> list[G2BAttachment]:
-    """Return supported G2B spec attachments in raw order."""
+def iter_g2b_attachments(
+    raw: dict[str, Any] | None, *, include_unsupported: bool = False
+) -> list[G2BAttachment]:
+    """Return legacy supported attachments, or every declared slot for inventory."""
     if not isinstance(raw, dict):
         return []
     found: list[G2BAttachment] = []
-    for index in range(1, 11):
+    indices = range(1, 11)
+    if include_unsupported:
+        indices = sorted(
+            {
+                int(match.group(1))
+                for key in raw
+                if isinstance(key, str)
+                and (match := re.fullmatch(r"ntceSpec(?:DocUrl|FileNm|DocNm)([1-9]\d*)", key))
+            }
+        )
+    for index in indices:
         url = str(raw.get(f"ntceSpecDocUrl{index}") or "").strip()
         filename = str(raw.get(f"ntceSpecFileNm{index}") or "").strip()
-        if not url:
+        if include_unsupported and not filename:
+            filename = str(raw.get(f"ntceSpecDocNm{index}") or "").strip()
+        if (not url and not filename) or (not include_unsupported and not url):
             continue
         if not filename:
             filename = f"g2b-attachment-{index}.bin"
         ext = _extension(filename)
-        if ext not in SUPPORTED_ATTACHMENT_EXTS:
+        if not include_unsupported and ext not in SUPPORTED_ATTACHMENT_EXTS:
             continue
         found.append(G2BAttachment(index=index, url=url, filename=filename))
     return found

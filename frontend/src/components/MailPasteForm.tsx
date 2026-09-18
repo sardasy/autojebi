@@ -48,24 +48,24 @@ export function MailPasteForm() {
   return (
     <div className="space-y-3">
       <label className="block">
-        <span className="mb-1 block text-xs text-slate-400">메일 본문 (KJEBI 알림메일 통째로 paste)</span>
+        <span className="mb-1 block text-xs text-slate-600">메일 본문 (KJEBI 알림메일 통째로 paste)</span>
         <textarea
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
           rows={10}
           placeholder={"□ 공고번호 : R26BK01543282-000\n□ 공고명 : ...\n□ 마감일시 : 2026-06-20 18:00\n..."}
-          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono"
+          className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-mono"
           spellCheck={false}
         />
       </label>
       <div className="flex flex-wrap items-end gap-3">
         <label className="block">
-          <span className="mb-1 block text-xs text-slate-400">source</span>
+          <span className="mb-1 block text-xs text-slate-600">source</span>
           <input
             type="text"
             value={source}
             onChange={(e) => setSource(e.target.value)}
-            className="w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm"
+            className="w-32 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
           />
         </label>
         <button
@@ -81,7 +81,7 @@ export function MailPasteForm() {
             type="button"
             onClick={clear}
             disabled={pending}
-            className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-100 disabled:opacity-50"
           >
             초기화
           </button>
@@ -89,21 +89,21 @@ export function MailPasteForm() {
       </div>
 
       {result ? (
-        <div className="space-y-2 rounded border border-slate-700 bg-slate-950/60 p-3">
+        <div className="space-y-2 rounded border border-slate-300 bg-white/60 p-3">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">
+            <span className="text-slate-600">
               confidence{" "}
-              <span className="font-mono text-slate-100">{result.confidence.toFixed(2)}</span>
+              <span className="font-mono text-slate-900">{result.confidence.toFixed(2)}</span>
             </span>
             {result.upserted ? (
               <Link
                 href={`/notices/${encodeURIComponent(result.upserted.notice_no)}`}
-                className="text-brand-300 hover:text-brand-200 underline"
+                className="text-brand-700 hover:text-brand-700 underline"
               >
                 /notices/{result.upserted.notice_no} →
               </Link>
             ) : (
-              <span className="text-amber-400">미등록 (notice_no 없음)</span>
+              <span className="text-amber-800">미등록 (notice_no 없음)</span>
             )}
           </div>
           <dl className="grid grid-cols-1 gap-1 text-xs md:grid-cols-2">
@@ -133,7 +133,7 @@ function ExtractField({ label, value }: { label: string; value: string | null | 
   return (
     <div className="flex gap-2">
       <dt className="w-24 shrink-0 text-slate-500">{label}</dt>
-      <dd className={`font-mono ${value ? "text-slate-100" : "text-slate-600"}`}>
+      <dd className={`font-mono ${value ? "text-slate-900" : "text-slate-600"}`}>
         {value ?? "—"}
       </dd>
     </div>

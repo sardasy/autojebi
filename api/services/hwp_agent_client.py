@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any, TypeVar
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_S = 30.0
@@ -14,6 +16,100 @@ DEFAULT_RETRIES = 2
 
 class HwpAgentError(RuntimeError):
     """Wraps transport, HTTP, and decode errors from the local HWP agent."""
+
+    def __init__(self, message: str, *, code: str = "worker_error", stage: str | None = None):
+        self.code = code
+        self.stage = stage
+        super().__init__(message)
+
+
+class _FieldsResponse(BaseModel):
+    # Extension metadata is allowed, but required reports must never be synthesized.
+    model_config = ConfigDict(strict=True, extra="allow")
+
+    output_path: str = Field(min_length=1)
+    replaced: list[str]
+    missing: list[str]
+    remaining_placeholders: list[str]
+    fields: list[str] | None = None
+
+    @field_validator("output_path")
+    @classmethod
+    def nonblank_path(cls, value: str) -> str:
+        if not value.strip() or "\x00" in value:
+            raise ValueError("invalid output path")
+        return value
+
+    @field_validator("replaced", "missing", "remaining_placeholders", "fields")
+    @classmethod
+    def field_names(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and (
+            any(not name.strip() or "\x00" in name for name in value)
+            or len(value) != len(set(value))
+        ):
+            raise ValueError("invalid or duplicate field names")
+        return value
+
+
+class _AutofillResponse(_FieldsResponse):
+    template_path: str = Field(min_length=1)
+    placeholders: list[str]
+
+
+class _ProposalResponse(_FieldsResponse):
+    section_count: Annotated[int, Field(ge=0)]
+    table_count: Annotated[int, Field(ge=0)]
+
+
+class _FieldOccurrence(BaseModel):
+    model_config = ConfigDict(strict=True)
+    field: str = Field(min_length=1, max_length=200)
+    occurrence: int = Field(ge=0)
+
+
+class _InspectionResponse(BaseModel):
+    model_config = ConfigDict(strict=True)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fields: list[str] = Field(max_length=10000)
+    field_occurrences: list[_FieldOccurrence] = Field(max_length=10000)
+    lifecycle: list[str]
+
+
+_Response = TypeVar("_Response", bound=_FieldsResponse)
+
+
+def _reject_provider_error(body: dict[str, Any]) -> None:
+    if (
+        any(key in body and body[key] is not True for key in ("ok", "success"))
+        or body.get("error") not in (None, "", [], {})
+        or body.get("errors") not in (None, "", [], {})
+        or str(body.get("status", "")).lower() in {"error", "failed", "failure", "blocked"}
+    ):
+        # Never include provider payloads: errors can contain document text or credentials.
+        raise HwpAgentError("HWP provider reported an error")
+
+
+def _parse_response(body: dict[str, Any], schema: type[_Response]) -> _Response:
+    _reject_provider_error(body)
+    try:
+        return schema.model_validate(body)
+    except ValidationError:
+        raise HwpAgentError("invalid HWP provider response schema") from None
+
+
+def validate_put_fields_response(
+    body: dict[str, Any], expected_fields: list[str]
+) -> _FieldsResponse:
+    """Validate reports, not saved field values or COM execution guarantees.
+
+    Every requested field must be reported exactly once as replaced or missing.
+    Additional missing template fields are retained as draft warnings.
+    """
+    report = _parse_response(body, _FieldsResponse)
+    expected, replaced, missing = set(expected_fields), set(report.replaced), set(report.missing)
+    if replaced & missing or replaced - expected or expected - (replaced | missing):
+        raise HwpAgentError("inconsistent HWP provider field partition")
+    return report
 
 
 @dataclass(frozen=True)
@@ -96,7 +192,9 @@ class HwpAgentClient:
         last_exc: Exception | None = None
         connect_failed = False
         with self._client() as client:
-            for _ in range(self._retries):
+            # A timed-out COM write may still be saving. Only read-only HTTP calls can retry.
+            attempts = self._retries if method.upper() == "GET" else 1
+            for _ in range(attempts):
                 try:
                     resp = client.request(method, path, **kwargs)
                 except httpx.HTTPError as exc:
@@ -112,12 +210,20 @@ class HwpAgentClient:
                         raise HwpAgentError(f"invalid JSON from {path}: {exc}") from exc
                     if not isinstance(body, dict):
                         raise HwpAgentError(f"unexpected response shape from {path}")
+                    _reject_provider_error(body)
                     return body
-                # 4xx is not retryable
-                if 400 <= resp.status_code < 500:
-                    raise HwpAgentError(
-                        f"{method} {path} -> {resp.status_code}: {resp.text[:500]}"
-                    )
+                if method.upper() != "GET" or 400 <= resp.status_code < 500:
+                    try:
+                        detail = resp.json().get("detail", {})
+                        code = detail.get("code", "worker_error") if isinstance(detail, dict) else "worker_error"
+                        stage = detail.get("stage") if isinstance(detail, dict) else None
+                        if not isinstance(code, str) or not re.fullmatch(r"[a-z_]{1,80}", code):
+                            code = "worker_error"
+                        if not isinstance(stage, str) or not re.fullmatch(r"[a-z_]{1,80}", stage):
+                            stage = None
+                    except ValueError:
+                        code, stage = "worker_error", None
+                    raise HwpAgentError(f"HWP Worker 요청 실패 (HTTP {resp.status_code}): {code}", code=code, stage=stage)
                 last_exc = RuntimeError(f"{method} {path} -> {resp.status_code}")
         if connect_failed:
             raise HwpAgentError(
@@ -131,7 +237,57 @@ class HwpAgentClient:
             body = self._request("GET", "/health")
         except HwpAgentError:
             return False
-        return bool(body.get("ok"))
+        return body.get("ok") is True
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Read-only, single attempt. Never return provider text, paths, or credentials."""
+        result = {"available": False, "code": "worker_offline", "recovery_required": False,
+                  "generation_verified": False}
+        if len(self._token) < 32:
+            return {**result, "code": "worker_token_missing"}
+        try:
+            with self._client() as client:
+                response = client.get("/health")
+            if response.status_code in {401, 403}:
+                return {**result, "code": "worker_auth"}
+            if response.status_code != 200:
+                return result
+            body = response.json()
+            if not isinstance(body, dict):
+                return {**result, "code": "worker_invalid_health"}
+            operation = body.get("operation")
+            safe_operation = {}
+            if isinstance(operation, dict):
+                for key in ("operation_id", "stage", "call_name", "failure_stage"):
+                    value = operation.get(key)
+                    if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,100}", value):
+                        safe_operation[key] = value
+                elapsed = operation.get("elapsed_seconds")
+                if type(elapsed) in (int, float) and 0 <= elapsed <= 604800:
+                    safe_operation["elapsed_seconds"] = elapsed
+                for key in ("started_at", "stage_started_at", "failed_at", "finished_at"):
+                    value = operation.get(key)
+                    if isinstance(value, str) and re.fullmatch(r"[0-9T:.+Z-]{1,40}", value):
+                        safe_operation[key] = value
+            if body.get("recovery_required") is True:
+                return {**result, "code": "worker_recovery", "recovery_required": True, "operation": safe_operation}
+            if body.get("state") == "running":
+                return {**result, "code": "worker_running", "operation": safe_operation}
+            if body.get("ok") is not True:
+                return {**result, "code": "worker_unhealthy"}
+            return {**result, "available": True, "code": "worker_connected",
+                    "generation_verified": body.get("generation_verified") is True}
+        except httpx.TimeoutException:
+            return {**result, "code": "worker_timeout"}
+        except (httpx.HTTPError, ValueError):
+            return result
+
+    def create_template(self, *, operation_id: str, output_path: str, layout: dict,
+                        base_template_path: str | None = None, visible: bool = False) -> dict:
+        return self._request("POST", "/document/create-template", json={
+            "operation_id": operation_id, "output_path": output_path, "layout": layout,
+            "base_template_path": base_template_path, "visible": visible,
+        })
 
     def autofill_bid_form(
         self,
@@ -148,13 +304,14 @@ class HwpAgentClient:
             "visible": visible,
         }
         body = self._request("POST", "/bid-form/autofill", json=payload)
+        report = _parse_response(body, _AutofillResponse)
         return AutofillOutcome(
-            template_path=str(body.get("template_path", template_path)),
-            output_path=str(body.get("output_path", output_path)),
-            placeholders=list(body.get("placeholders") or []),
-            replaced=list(body.get("replaced") or []),
-            missing=list(body.get("missing") or []),
-            remaining_placeholders=list(body.get("remaining_placeholders") or []),
+            template_path=report.template_path,
+            output_path=report.output_path,
+            placeholders=report.placeholders,
+            replaced=report.replaced,
+            missing=report.missing,
+            remaining_placeholders=report.remaining_placeholders,
             raw=body,
         )
 
@@ -167,6 +324,30 @@ class HwpAgentClient:
         """Calls milim-hwp-agent's stateless file analyzer (M1 addition)."""
         body = self._request("POST", "/document/analyze-file", json={"path": path})
         return body
+
+    def inspect_fields(self, path: str, *, visible: bool = False, operation_id: str | None = None) -> dict[str, Any]:
+        payload = {"path": path}
+        if visible:
+            payload["visible"] = True
+        if operation_id:
+            payload["operation_id"] = operation_id
+        body = self._request("POST", "/document/fields", json=payload)
+        try:
+            report = _InspectionResponse.model_validate(body)
+            if report.lifecycle not in (["opened", "closed", "quit"], ["opened", "readback", "closed", "quit"]):
+                raise ValueError("incomplete lifecycle")
+            counts: dict[str, int] = {}
+            for item in report.field_occurrences:
+                if not item.field.strip() or any(c in item.field for c in ("\x00", "\x02", "{{", "}}")):
+                    raise ValueError("invalid field")
+                if item.occurrence != counts.get(item.field, 0):
+                    raise ValueError("invalid occurrence")
+                counts[item.field] = item.occurrence + 1
+            if report.fields != list(counts):
+                raise ValueError("inconsistent names")
+            return report.model_dump()
+        except (ValidationError, ValueError):
+            raise HwpAgentError("invalid HWP field inspection report") from None
 
     def generate_compliance_table(
         self,
@@ -212,13 +393,14 @@ class HwpAgentClient:
             "visible": visible,
         }
         body = self._request("POST", "/proposal/compose", json=payload)
+        report = _parse_response(body, _ProposalResponse)
         return ProposalComposeOutcome(
-            output_path=str(body.get("output_path") or output_path),
-            replaced=list(body.get("replaced") or []),
-            missing=list(body.get("missing") or []),
-            remaining_placeholders=list(body.get("remaining_placeholders") or []),
-            section_count=int(body.get("section_count") or len(sections)),
-            table_count=int(body.get("table_count") or len(tables)),
+            output_path=report.output_path,
+            replaced=report.replaced,
+            missing=report.missing,
+            remaining_placeholders=report.remaining_placeholders,
+            section_count=report.section_count,
+            table_count=report.table_count,
             raw=body,
         )
 
@@ -229,6 +411,8 @@ class HwpAgentClient:
         output_path: str,
         values: dict[str, str],
         visible: bool = False,
+        operation_id: str | None = None,
+        render_pages: bool = False,
     ) -> PutFieldsOutcome:
         """Fill HWP fields through the worker's serialized PutFieldText endpoint."""
         payload = {
@@ -237,11 +421,16 @@ class HwpAgentClient:
             "values": values,
             "visible": visible,
         }
+        if operation_id is not None:
+            payload["operation_id"] = operation_id
+        if render_pages:
+            payload["render_pages"] = True
         body = self._request("POST", "/document/put-fields", json=payload)
+        report = validate_put_fields_response(body, list(values))
         return PutFieldsOutcome(
-            output_path=str(body.get("output_path") or output_path),
-            replaced=list(body.get("replaced") or []),
-            missing=list(body.get("missing") or []),
-            remaining_placeholders=list(body.get("remaining_placeholders") or []),
+            output_path=report.output_path,
+            replaced=report.replaced,
+            missing=report.missing,
+            remaining_placeholders=report.remaining_placeholders,
             raw=body,
         )

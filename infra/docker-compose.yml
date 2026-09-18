@@ -68,6 +68,7 @@ services:
       GRADE_ALERT_THRESHOLD: ${GRADE_ALERT_THRESHOLD:-0.6}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       API_KEY: ${API_KEY:-}
+      APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # M11 v2 — 서류 자동화 업로드/내보내기 저장소
       UPLOAD_DIR: /app/uploads
@@ -93,15 +94,17 @@ services:
       start_period: 30s
       retries: 3
 
-  # M7 — Next.js 15 minimal 읽기전용 프론트
+  # 기존 화면은 기본 실행에서 제외. 별도 호환 검증 때만 --profile legacy-ui 사용.
+  # 현재 검토 작업대는 infra/start-workspace.ps1로 실행한다.
   frontend:
+    profiles: ["legacy-ui", "test"]
     build:
       context: ..
       dockerfile: infra/Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8001}
     container_name: autojebi-frontend
-    restart: unless-stopped
+    restart: "no"
     environment:
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8001}
       INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:8000}

@@ -82,12 +82,14 @@ def common_metadata_path() -> Path:
 def validate_extension(filename: str) -> str:
     """확장자 검증. 허용 목록에 없으면 415 raise. 반환값: 점 없는 소문자 확장자."""
     if "." not in filename:
-        raise UploadError(status_code=415, detail="filename has no extension")
+        raise UploadError(status_code=415, detail="파일 확장자가 없습니다. 원래 확장자가 포함된 파일을 선택해 주세요.")
     ext = filename.rsplit(".", 1)[-1].strip().lower()
     if ext not in settings.upload_allowed_ext_set:
         raise UploadError(
             status_code=415,
-            detail=f"extension '{ext}' not allowed (allowed: {sorted(settings.upload_allowed_ext_set)})",
+            detail=(f"{ext.upper() if re.fullmatch(r'[a-z0-9]{1,10}', ext) else '선택한 형식'} 파일은 지원되지 않습니다. "
+                    f"지원 형식: {', '.join(sorted(e.upper() for e in settings.upload_allowed_ext_set))}. "
+                    "지원하는 형식의 원본 또는 변환본을 업로드해 주세요."),
         )
     return ext
 
@@ -304,31 +306,16 @@ def merge_into_document_automation(
     document_automation: dict,
     uploaded: UploadedDocument,
 ) -> dict:
-    """업로드 메타를 `document_automation.uploads`에 추가하고 매핑 항목 ready로 승격.
-
-    item_id가 있고 해당 항목 status가 `needed`/`blocked`이면 `ready`로 자동 승격
-    (수동으로 generated/not_applicable 등 다른 상태로 바꾼 경우는 존중).
-    """
+    """Store uploads without turning a suggested classification into approval."""
     updated = dict(document_automation)
     uploads = list(updated.get("uploads") or [])
     uploads.append(uploaded.model_dump())
     updated["uploads"] = uploads
 
-    if uploaded.item_id:
-        checklist = list(updated.get("checklist") or [])
-        for item in checklist:
-            if not isinstance(item, dict) or item.get("id") != uploaded.item_id:
-                continue
-            if item.get("status") in {"needed", "blocked", None}:
-                item["status"] = "ready"
-                source = str(item.get("source") or "rule")
-                parts = [p for p in source.split("+") if p]
-                if "upload" not in parts:
-                    parts.append("upload")
-                item["source"] = "+".join(parts)
-            break
-        updated["checklist"] = checklist
-    return updated
+    # Classification/linking is a suggestion, never a human confirmation.
+    from api.services.document_automation import validate_document_automation
+
+    return validate_document_automation(updated)
 
 
 def list_common_uploads() -> list[UploadedDocument]:
@@ -390,7 +377,19 @@ def remove_from_document_automation(
             continue
         survivors.append(item)
     updated["uploads"] = survivors
-    return updated, removed
+    if removed and removed.get("item_id") and not any(
+        item.get("item_id") == removed["item_id"] for item in survivors
+    ):
+        checklist = [dict(item) for item in updated.get("checklist") or []]
+        for item in checklist:
+            sources = str(item.get("source") or "").split("+")
+            if item.get("id") == removed["item_id"] and item.get("status") == "ready" and "upload" in sources:
+                item["status"] = "needed"
+                item["source"] = "+".join(part for part in sources if part != "upload")
+        updated["checklist"] = checklist
+    from api.services.document_automation import validate_document_automation
+
+    return validate_document_automation(updated), removed
 
 
 _MIME_MAP = {

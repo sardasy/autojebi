@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import tempfile
@@ -118,9 +117,5 @@ def _extract_hwp_text(path: Path, hwp_client: HwpAgentClient | None) -> str | No
         if isinstance(val, str) and val.strip():
             return val.strip()
 
-    # 본문 텍스트 키 없음 — best-effort로 응답 전체를 약신호로 직렬화.
-    log.info("[attachments] hwp_agent 응답에 본문 키 없음, JSON 직렬화로 약신호 사용")
-    try:
-        return json.dumps(body, ensure_ascii=False)[:6000]
-    except (TypeError, ValueError):
-        return None
+    # Transport/placeholder metadata is not document evidence.
+    return None

@@ -26,14 +26,31 @@ dependencies = [
   "qdrant-client[fastembed]>=1.9",
   "alembic>=1.13",
   "openpyxl>=3.1",
+  "defusedxml>=0.7.1",
+  "lxml>=5,<7",
+  "olefile>=0.47",
+  "markdown-it-py>=3.0,<5",
+  "Pillow>=10.0,<13",
   "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
+spec-search = [
+  "pint>=0.24,<1",
+  "rdflib>=7,<8",
+  "pyshacl>=0.30,<1",
+  "neo4j>=5.28,<6",
+  "sentence-transformers>=3,<6",
+]
+hwp-worker = [
+  "pywin32>=306; sys_platform == 'win32'",
+]
 dev = [
   "pytest>=8.0",
+  "pytest-asyncio>=0.23",
   "ruff>=0.4",
   "black>=24.0",
+  "import-linter>=2.0",
 ]
 
 [tool.black]
@@ -43,6 +60,8 @@ target-version = ["py311"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# 로컬 스크래치(gitignore)는 CI와 동일하게 검사 대상에서 제외 — `ruff check .` 결과가 로컬/CI에서 같아야 한다.
+extend-exclude = ["tmp", "output", "chroma_db", "data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -54,3 +73,33 @@ ignore = ["E501", "B008", "B904"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+# ADR 0001 fitness functions. Run: `lint-imports`
+[tool.importlinter]
+root_package = "api"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "v2 workspace must not depend on HTTP routers"
+type = "forbidden"
+source_modules = ["api.workspace"]
+forbidden_modules = ["api.routers"]
+
+[[tool.importlinter.contracts]]
+name = "v2 domain must not import fastapi directly (HTTP mapping stays in routers)"
+type = "forbidden"
+source_modules = ["api.workspace"]
+forbidden_modules = ["fastapi"]
+allow_indirect_imports = true
+ignore_imports = [
+    # Transitional: HANDLED_ERRORS still includes HTTPException raised by legacy services.
+    "api.workspace.errors -> fastapi",
+    # HTTP adapter (router + request identity); to be moved under api.routers later.
+    "api.workspace.identity -> fastapi",
+]
+
+[[tool.importlinter.contracts]]
+name = "parsers stay pure: api.parsing must not depend on workspace or HTTP layers"
+type = "forbidden"
+source_modules = ["api.parsing"]
+forbidden_modules = ["api.workspace", "api.routers", "fastapi"]

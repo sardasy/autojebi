@@ -12,13 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.pool import StaticPool
 
 # api.ontology.tables를 import해야 metadata에 ontology 테이블이 등록된다
 import api.ontology.tables  # noqa: F401
-from alembic.config import Config
-from alembic.script import ScriptDirectory
 from api.routers.notices import metadata
 
 
@@ -35,8 +35,8 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
     script = ScriptDirectory.from_config(alembic_cfg)
     heads = list(script.get_heads())
     assert len(heads) == 1, f"unexpected branching: {heads}"
-    assert heads[0] == "0012_proposal_agent_workspace", (
-        f"expected 0012 as head, got {heads}"
+    assert heads[0] == "0017_spec_search", (
+        f"expected 0016 as head, got {heads}"
     )
     chain = [r.revision for r in script.walk_revisions()]
     for rev in (
@@ -53,6 +53,7 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
         "0010b_noop_placeholder",
         "0011_required_documents",
         "0012_proposal_agent_workspace",
+        "0015_hwp_render_mode",
     ):
         assert rev in chain, f"{rev} missing from chain: {chain}"
 

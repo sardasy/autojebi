@@ -70,6 +70,7 @@ export interface NoticeRecord {
   unresolved_error_count?: number;
   export_count?: number;
   spec_item_count?: number;
+  spec_value_count?: number;
 }
 
 export interface NoticeListResponse {
@@ -445,6 +446,7 @@ export interface SpecItemUpdateRequest {
 }
 
 export interface HwpComposeRequest {
+  template_key?: string;
   bid_form_template_path?: string;
   bid_form_output_path?: string | null;
   values?: Record<string, string>;
@@ -477,6 +479,51 @@ export interface HwpJobRecord {
   review_status: HwpReviewStatus;
   review_note?: string | null;
   reviewed_by?: string | null;
+  created_at?: string | null;
+}
+
+export interface HwpJobListItem {
+  job: HwpJobRecord;
+  title: string | null;
+  template_name: string | null;
+  export: ExportRecord | null;
+}
+export interface HwpJobListResponse {
+  items: HwpJobListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+export async function listHwpJobs(filters: { review_status?: string; status?: string; q?: string; page?: number }): Promise<HwpJobListResponse> {
+  const query = new URLSearchParams(Object.entries(filters).filter(([,v]) => v !== undefined && v !== "").map(([k,v]) => [k, String(v)]));
+  const r = await fetch(`${INTERNAL_API_BASE}/documents/hwp-jobs?${query}`, { headers: defaultHeaders(), cache: "no-store" });
+  if (!r.ok) throw new Error("검토 목록을 불러오지 못했습니다. 연결 상태를 확인하세요.");
+  return r.json();
+}
+
+export interface ProposalSection {
+  id: string;
+  section_title: string;
+  generated_content: string;
+  evidence_ids: string[];
+  fact_check_status: string;
+  human_approved: boolean;
+}
+export async function getProposalSections(noticeNo: string): Promise<{ sections: ProposalSection[] }> {
+  const r = await fetch(`${INTERNAL_API_BASE}/proposals/${encodeURIComponent(noticeNo)}/sections`, { headers: defaultHeaders(), cache: "no-store" });
+  if (!r.ok) throw new Error("제안서 섹션을 불러오지 못했습니다.");
+  return r.json();
+}
+export interface CompanyProfileRecord { profile_key: string; company_name: string | null; business_number: string | null; ceo_name: string | null; address: string | null }
+export async function getCompanyProfile(): Promise<CompanyProfileRecord> {
+  const r = await fetch(`${INTERNAL_API_BASE}/documents/company-profile`, { headers: defaultHeaders(), cache: "no-store" });
+  if (!r.ok) throw new Error("회사정보 조회 실패");
+  return r.json();
+}
+export async function runProposalStage(noticeNo: string, stage: "analyze" | "retrieve" | "generate" | "verify"): Promise<{ sections?: ProposalSection[] }> {
+  const encoded = encodeURIComponent(noticeNo);
+  return postJson(stage === "analyze" ? `/proposals/analyze/${encoded}` : `/proposals/${encoded}/${stage}`, {});
 }
 
 export interface HwpContextRequest {
@@ -528,6 +575,7 @@ export interface HwpTemplateFieldMapping {
 }
 
 export interface HwpTemplateRecord {
+  render_mode?: "fields" | "proposal_layout_v1";
   id: number;
   template_key: string;
   kind: "bid_form" | "proposal";
@@ -607,6 +655,7 @@ export interface HwpComposeResponse {
 }
 
 export interface ProposalComposeRequest {
+  template_key?: string;
   template_path?: string;
   output_path?: string | null;
   values_override?: Record<string, string>;
@@ -669,11 +718,11 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     let detail: string;
     try {
       const j = await r.json();
-      detail = j?.detail ? JSON.stringify(j.detail) : r.statusText;
+      detail = typeof j?.detail === "string" ? j.detail : j?.detail ? JSON.stringify(j.detail) : r.statusText;
     } catch {
       detail = r.statusText;
     }
-    throw new Error(`POST ${path} failed: ${r.status} ${detail}`);
+    throw new Error(path === "/notices/search" ? detail : `POST ${path} failed: ${r.status} ${detail}`);
   }
   return r.json();
 }
@@ -1087,9 +1136,10 @@ export async function updateHwpMapping(
 export async function importCommonUpload(
   noticeNo: string,
   uploadId: string,
+  itemId?: string,
 ): Promise<UploadResponse> {
   return postJson<UploadResponse>(
-    `/notices/${encodeURIComponent(noticeNo)}/documents/import-common/${encodeURIComponent(uploadId)}`,
+    `/notices/${encodeURIComponent(noticeNo)}/documents/import-common/${encodeURIComponent(uploadId)}${itemId ? `?item_id=${encodeURIComponent(itemId)}` : ""}`,
     {},
   );
 }

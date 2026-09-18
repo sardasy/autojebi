@@ -200,12 +200,7 @@ def _raw_spec_value(key: str, elec_spec: dict[str, Any], raw: dict[str, Any], up
             if raw.get(raw_key):
                 return raw[raw_key]
     if key == "notes":
-        summaries = [
-            str(u.get("analysis_summary") or "")
-            for u in uploads
-            if u.get("analysis_summary")
-        ]
-        return "\n".join(summaries) or elec_spec.get("notes")
+        return elec_spec.get("notes")
     return None
 
 
@@ -219,7 +214,7 @@ def _value_to_text(value: Any) -> str:
 
 def _excerpt(raw: dict[str, Any], uploads: list[dict[str, Any]]) -> str:
     for item in uploads:
-        summary = str(item.get("analysis_summary") or "").strip()
+        summary = str(item.get("text_excerpt") or "").strip() if not item.get("text_extract_error") else ""
         if summary:
             return summary
     for key in ("bidNtceNm", "ntceSpecFileNm1", "cntrctCnclsMthdNm", "dminsttNm", "ntceInsttNm"):
@@ -248,12 +243,9 @@ def _source_text(
     if value_text:
         snippets.append(f"{key}: {value_text}")
     for item in uploads:
-        summary = str(item.get("analysis_summary") or "").strip()
+        summary = str(item.get("text_excerpt") or "").strip() if not item.get("text_extract_error") else ""
         if summary:
             snippets.append(summary)
-        error = str(item.get("text_extract_error") or "").strip()
-        if error:
-            snippets.append(f"extract_error: {error}")
     for raw_key in ("bidNtceNm", "prdctSpecNm", "ntceSpecFileNm1", "cntrctCnclsMthdNm"):
         value = str(raw.get(raw_key) or "").strip()
         if value:

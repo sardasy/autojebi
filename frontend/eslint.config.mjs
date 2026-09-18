@@ -7,6 +7,7 @@ export default tseslint.config(
     ignores: [
       ".next/**",
       "**/.next/**",
+      "**/.next-*/**",
       "coverage/**",
       "**/coverage/**",
       "node_modules/**",
@@ -78,6 +79,18 @@ export default tseslint.config(
         ...globals.node,
         ...globals.vitest,
       },
+    },
+  },
+  {
+    // ADR 0001 FF 5: UI code reaches the backend only through lib clients
+    // (lib/workspace: workspaceFetch/workspaceApi/workspaceSessionFetch, lib/api for v1).
+    files: ["src/components/**/*.{ts,tsx}", "src/app/**/*.{ts,tsx}"],
+    ignores: ["src/**/__tests__/**", "src/app/api/**"],
+    rules: {
+      "no-restricted-globals": ["error", {
+        name: "fetch",
+        message: "Use workspaceFetch/workspaceApi from @/lib/workspace (or lib/api for v1). ADR 0001.",
+      }],
     },
   },
   {

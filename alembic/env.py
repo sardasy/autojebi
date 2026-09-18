@@ -1,7 +1,7 @@
 """Alembic sync env — autojebi 동기 SQLAlchemy 환경.
 
 autojebi의 bid_pipeline 테이블은 SQLAlchemy Core (`Table()`)로 정의되어 있고
-metadata 객체는 api/routers/notices.py에서 모듈 레벨로 생성된다. 그 metadata를
+metadata 객체는 api/db/tables.py에서 모듈 레벨로 생성된다. 그 metadata를
 직접 import해서 target_metadata로 사용 — Base 클래스(ORM Declarative) 불필요.
 
 abb 원본은 fully async였지만 autojebi는 동기 유지 결정 (M4 plan 4.x). 따라서
@@ -16,7 +16,9 @@ from sqlalchemy import engine_from_config, pool, text
 
 from alembic import context
 from api.config import settings
-from api.routers.notices import metadata as target_metadata
+from api.db.tables import metadata as target_metadata
+from api.specifications import tables as spec_tables  # noqa: F401
+from api.workspace import tables  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

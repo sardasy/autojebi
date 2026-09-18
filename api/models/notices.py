@@ -60,6 +60,7 @@ class NoticeRecord(BaseModel):
     unresolved_error_count: int = 0
     export_count: int = 0
     spec_item_count: int = 0
+    spec_value_count: int = 0
 
 
 class NoticeListResponse(BaseModel):
@@ -86,7 +87,7 @@ SortDirection = Literal["asc", "desc"]
 
 
 class GradeRequest(BaseModel):
-    alert: bool = True
+    alert: bool = False
 
 
 class NoticeGradeResponse(BaseModel):
@@ -387,12 +388,21 @@ class SpecItemUpdateRequest(BaseModel):
 
 
 class HwpComposeRequest(BaseModel):
+    template_key: str = "bid_form"
     bid_form_template_path: str = "templates/입찰참가신청서_양식.hwp"
     bid_form_output_path: str | None = None
     values: dict[str, str] = Field(default_factory=dict)
     visible: bool = False
     include_bid_form: bool = True
     include_technical_compliance: bool = True
+
+
+class CompanyProfileRecord(BaseModel):
+    profile_key: str = "default"
+    company_name: str | None = None
+    business_number: str | None = None
+    ceo_name: str | None = None
+    address: str | None = None
 
 
 HwpTemplateKind = Literal["bid_form", "proposal"]
@@ -420,6 +430,7 @@ class HwpTemplateFieldMapping(BaseModel):
 
 
 class HwpTemplateRecord(BaseModel):
+    render_mode: Literal["fields", "proposal_layout_v1"] = "fields"
     id: int
     template_key: str
     kind: HwpTemplateKind
@@ -435,6 +446,7 @@ class HwpTemplateListResponse(BaseModel):
 
 
 class HwpTemplateUpsertRequest(BaseModel):
+    render_mode: Literal["fields", "proposal_layout_v1"] = "fields"
     template_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
     kind: HwpTemplateKind
     name: str = Field(min_length=1, max_length=300)
@@ -444,6 +456,7 @@ class HwpTemplateUpsertRequest(BaseModel):
 
 
 class HwpTemplateUpdateRequest(BaseModel):
+    render_mode: Literal["fields", "proposal_layout_v1"] | None = None
     kind: HwpTemplateKind | None = None
     name: str | None = Field(default=None, min_length=1, max_length=300)
     template_path: str | None = Field(default=None, min_length=1)
@@ -511,6 +524,22 @@ class HwpJobRecord(BaseModel):
     review_status: HwpReviewStatus = "pending"
     review_note: str | None = None
     reviewed_by: str | None = None
+    created_at: datetime | None = None
+
+
+class HwpJobListItem(BaseModel):
+    job: HwpJobRecord
+    title: str | None = None
+    template_name: str | None = None
+    export: ExportRecord | None = None
+
+
+class HwpJobListResponse(BaseModel):
+    items: list[HwpJobListItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 class HwpPutFieldsResponse(BaseModel):
@@ -547,6 +576,7 @@ class HwpComposeBidFormResult(BaseModel):
 
 
 class ProposalComposeRequest(BaseModel):
+    template_key: str = "proposal"
     template_path: str = "templates/제안서_양식.hwp"
     output_path: str | None = None
     values_override: dict[str, str] = Field(default_factory=dict)

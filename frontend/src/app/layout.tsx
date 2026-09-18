@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { homePath, isWorkspaceV2Enabled } from "@/lib/flags";
 import { ToastProvider } from "@/components/Toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "autojebi · 미림씨스콘 입찰 자동화 콘솔",
-  description: "G2B 공고 수집 + 분석 + 3축 그레이딩",
+  description: "공고 찾기 · 서류 검토 · 비교 작성 · 서류 확인",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -14,28 +15,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body className="min-h-screen">
         <ToastProvider>
-          <header className="border-b border-slate-800 bg-slate-950">
-            <div className="mx-auto max-w-7xl px-6 py-3 flex items-center gap-6">
-              <Link href="/search" className="text-lg font-semibold text-brand-500">
+          <header className="border-b border-slate-200 bg-white">
+            <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <Link href={homePath()} className="text-lg font-semibold text-brand-500">
                 autojebi
               </Link>
-              <nav className="text-sm text-slate-300 flex gap-4">
-                <Link href="/search" className="hover:text-white">
+              <nav aria-label="주 메뉴" className="text-sm text-slate-700 flex flex-wrap gap-4">
+                {isWorkspaceV2Enabled() ? <>
+                  <Link href="/workspace">공고 찾기</Link>
+                  <Link href="/workspace#saved">작성 중 서류</Link>
+                </> : <>
+                <Link href="/search" className="hover:text-red-700">
                   공고 검색
                 </Link>
-                <Link href="/notices" className="hover:text-white">
-                  고급
-                </Link>
-                <Link href="/admin" className="hover:text-white">
-                  어드민
+                <Link href="/reviews">검토함</Link>
+                </>}
+                <Link href="/admin" className="hover:text-red-700">
+                  설정
                 </Link>
               </nav>
-              <span className="ml-auto text-xs text-slate-500">
-                API {process.env.NEXT_PUBLIC_API_BASE}
-              </span>
             </div>
           </header>
-          <main className="mx-auto max-w-7xl px-6 py-6">{children}</main>
+          <main className="mx-auto min-w-0 max-w-[1440px] px-4 py-5 sm:px-6">{children}</main>
         </ToastProvider>
       </body>
     </html>

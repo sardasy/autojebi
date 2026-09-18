@@ -70,3 +70,31 @@ def test_post_upsert_requires_key(client_with_auth):
 def test_skus_ingest_requires_key(client_with_auth):
     r = client_with_auth.post("/skus/ingest", json={})
     assert r.status_code == 403
+
+
+def test_production_refuses_to_start_without_api_key(monkeypatch):
+    """APP_ENV=production + API_KEY 공란 → 기동 거부 (인증 우회 모드가 운영에 나가지 않게)."""
+    from api.main import enforce_auth_policy
+
+    monkeypatch.setattr(settings, "api_key", "")
+    monkeypatch.setattr(settings, "app_env", "production")
+    with pytest.raises(RuntimeError, match="API_KEY"):
+        enforce_auth_policy()
+
+
+def test_production_starts_with_api_key(monkeypatch):
+    from api.main import enforce_auth_policy
+
+    monkeypatch.setattr(settings, "api_key", "x" * 32)
+    monkeypatch.setattr(settings, "app_env", "production")
+    enforce_auth_policy()
+
+
+def test_development_only_warns_without_api_key(monkeypatch, caplog):
+    from api.main import enforce_auth_policy
+
+    monkeypatch.setattr(settings, "api_key", "")
+    monkeypatch.setattr(settings, "app_env", "development")
+    with caplog.at_level("WARNING", logger="api.main"):
+        enforce_auth_policy()
+    assert any("API_KEY" in r.getMessage() for r in caplog.records)

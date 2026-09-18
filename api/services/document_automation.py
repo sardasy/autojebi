@@ -41,8 +41,6 @@ def analyze_document_requirements(row: Any) -> dict[str, Any]:
         checklist,
         (existing.get("checklist") or []),
     )
-    # v2 — uploads로 채워진 항목 status를 ready로 자동 승격 (수동 변경 보존 후 적용)
-    checklist = _apply_uploads_to_checklist(checklist, existing.get("uploads") or [])
 
     drafts = _build_drafts(row, checklist, llm_payload, existing)
     existing_drafts = existing.get("drafts") if isinstance(existing, dict) else None
@@ -77,25 +75,7 @@ def _apply_uploads_to_checklist(
     checklist: list[DocumentChecklistItem],
     uploads: list[Any],
 ) -> list[DocumentChecklistItem]:
-    """업로드된 파일이 매핑된 항목 status를 ready로 자동 승격 (M11).
-
-    이미 generated/not_applicable 상태인 항목은 변경하지 않는다.
-    수동으로 ready로 둔 항목은 그대로 유지.
-    """
-    upload_items: set[str] = {
-        str(u.get("item_id"))
-        for u in uploads
-        if isinstance(u, dict) and u.get("item_id")
-    }
-    if not upload_items:
-        return checklist
-    for item in checklist:
-        if item.id in upload_items and item.status in {"needed", "blocked"}:
-            item.status = "ready"
-            parts = [p for p in item.source.split("+") if p]
-            if "upload" not in parts:
-                parts.append("upload")
-            item.source = "+".join(parts)
+    """Compatibility helper: upload linkage no longer grants readiness."""
     return checklist
 
 
@@ -270,7 +250,7 @@ def _attachments_text(uploads: list[Any]) -> str:
     for u in uploads:
         if not isinstance(u, dict):
             continue
-        excerpt = str(u.get("text_excerpt") or u.get("analysis_summary") or "").strip()
+        excerpt = str(u.get("text_excerpt") or "").strip() if not u.get("text_extract_error") else ""
         if not excerpt:
             continue
         chunk = f"[{u.get('name') or '첨부'}]\n{excerpt}"
@@ -410,7 +390,7 @@ def _preserve_manual_updates(
             continue
         # 사용자가 수동으로 바꾼 항목만 status/owner/note를 보존한다. 규칙/LLM이 파생한
         # status는 재평가가 갱신하도록 둔다(그렇지 않으면 한 번 정해진 필요/해당없음이 고정됨).
-        # 업로드로 ready가 된 항목은 이후 _apply_uploads_to_checklist가 다시 승격한다.
+        # Uploaded files require explicit human confirmation; preserve manual rejection.
         if "manual" not in str(prev.get("source") or ""):
             continue
         if "status" in prev:

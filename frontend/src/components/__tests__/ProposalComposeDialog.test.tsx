@@ -7,6 +7,8 @@ import { ToastProvider } from "../Toast";
 vi.mock("@/lib/actions", () => ({
   actionComposeProposalDocument: vi.fn(),
   actionGetHwpAgentHealth: vi.fn(),
+  actionListHwpTemplates: vi.fn().mockResolvedValue({items:[]}),
+  actionPreviewHwpContext: vi.fn().mockResolvedValue({template:{template_path:"templates/proposal.hwp"}, input_values:{company_name:"테스트"}, required_missing:[]}),
 }));
 
 async function loadDialog() {
@@ -158,14 +160,15 @@ describe("ProposalComposeDialog", () => {
     const Dialog = await loadDialog();
     renderDialog(Dialog);
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "작성" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "작성" }));
 
     await waitFor(() =>
       expect(actionComposeProposalDocument).toHaveBeenCalledWith(
         "DOC-1",
         expect.objectContaining({
-          template_path: "templates/제안서_양식.hwp",
-          values_override: {},
+          template_path: "templates/proposal.hwp",
+          values_override: {company_name:"테스트"},
           visible: false,
         }),
       ),

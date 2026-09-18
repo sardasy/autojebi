@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 
 _GRADEABLE_STATUSES = {
     "analyzed",
+    "attachments_fetched",
+    "documents_analyzed",
+    "spec_extracted",
+    "hwp_composed",
     "form_filled",
     "notified",
     "digest_queued",
@@ -105,14 +109,14 @@ def grade_notice_impl(
     engine: Engine,
     notice_no: str,
     *,
-    alert: bool = True,
+    alert: bool = False,
 ) -> NoticeGradeResponse:
     """ElecSpec → Qdrant → 3축 그레이딩 → DB 저장 + fit_score 동기화 + Slack 알림.
 
     status 변동 없음. grade는 analyzed 이후 어디서든 재호출 가능.
     HTTP 비종속 — 도메인 예외(GradeError 계열)만 던진다.
     """
-    from api.routers.notices import bid_pipeline  # 순환 의존 방지
+    from api.db.tables import bid_pipeline
 
     with engine.begin() as conn:
         row = conn.execute(
@@ -124,6 +128,8 @@ def grade_notice_impl(
             raise GradeInvalidStatusError(notice_no, row["status"])
 
         analysis_dict = row["analysis"] or {}
+        if analysis_dict.get("error") or analysis_dict.get("schema_valid") is False:
+            raise GradeInvalidStatusError(notice_no, "analysis_failed")
         elec_dict = analysis_dict.get("elec_spec") or {}
         try:
             spec = ElecSpec.model_validate(elec_dict)

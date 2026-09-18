@@ -3,6 +3,34 @@
 @tailwind utilities;
 
 html, body {
-  background-color: #0f172a;
-  color: #e2e8f0;
+  background-color: #f8fafb;
+  color: #20262d;
+  letter-spacing: 0;
 }
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea, summary { touch-action: manipulation; }
+button { min-height: 36px; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid #0e7490; outline-offset: 3px; }
+input, select, textarea { max-width: 100%; min-width: 0; }
+pre, code { overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; }
+h1, h2, h3, p { overflow-wrap: anywhere; }
+table { border-collapse: collapse; }
+th { white-space: nowrap; }
+td { vertical-align: top; }
+.work-table { min-width: 760px; width: 100%; }
+.work-table th { padding: 12px; background: #f1f4f5; text-align: left; font-size: 12px; color: #52616b; }
+.work-table td { padding: 14px 12px; border-bottom: 1px solid #e2e8ec; }
+.work-table tbody tr:hover { background: #f7fafb; }
+.work-band { border-bottom: 1px solid #dce3e8; padding-block: 20px; }
+.work-control { border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 10px; background: white; }
+.work-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; padding: 7px 12px; font-size: 14px; }
+.work-button:hover { background: #f1f5f9; }
+.work-primary { background: #b91c1c; color: white; border-color: #b91c1c; }
+.work-primary:hover { background: #991b1b; }
+.work-button:disabled { opacity: .5; }
+@media (max-width: 639px) { button { min-height: 44px; } }

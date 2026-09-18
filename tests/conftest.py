@@ -24,12 +24,12 @@ if str(ROOT) not in sys.path:
 def sqlite_engine(monkeypatch):
     """In-memory SQLite + 모든 metadata create_all + `api.db.get_engine` monkeypatch.
 
-    `api.routers.notices.metadata`에는 `bid_pipeline` + ontology 테이블 8개가 모두 등록돼 있다
+    `api.db.tables.metadata`에는 `bid_pipeline` + ontology 테이블 8개가 모두 등록돼 있다
     (api.ontology.tables가 같은 metadata를 공유). 따라서 1번의 create_all로 충분.
     """
     # api.ontology.tables가 metadata에 자기 테이블을 등록하도록 임포트 보장
     import api.ontology.tables  # noqa: F401
-    from api.routers.notices import metadata
+    from api.db.tables import metadata
 
     engine = create_engine(
         "sqlite:///:memory:",

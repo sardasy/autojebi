@@ -52,7 +52,11 @@ class QdrantStore:
         kwargs = {"url": self._url}
         if settings.qdrant_api_key:
             kwargs["api_key"] = settings.qdrant_api_key
-        self._client = QdrantClient(**kwargs)
+        self._client = QdrantClient(timeout=10, **kwargs)
+
+    def close(self) -> None:
+        """Release the client owned by this store."""
+        self._client.close()
 
     @property
     def collection(self) -> str:

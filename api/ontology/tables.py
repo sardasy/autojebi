@@ -1,6 +1,6 @@
 """SQLAlchemy Core Table 정의 — 온톨로지 8 테이블.
 
-`api.routers.notices.metadata`를 공유한다 — `notice_assertions.notice_no`와
+`api.db.tables.metadata`를 공유한다 — `notice_assertions.notice_no`와
 `notice_work_tasks.notice_no`가 `bid_pipeline.notice_no`를 FK로 참조하므로
 같은 MetaData에 있어야 SQLAlchemy가 FK를 해결할 수 있다.
 
@@ -31,7 +31,7 @@ from sqlalchemy import (
     func,
 )
 
-from api.routers.notices import metadata  # 단일 MetaData 공유 (bid_pipeline 포함)
+from api.db.tables import metadata  # 단일 MetaData 공유 (bid_pipeline 포함)
 
 # 1. 핵심 어휘 — 개념 정의
 ontology_concepts = Table(

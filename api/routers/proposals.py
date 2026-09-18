@@ -9,6 +9,16 @@ from sqlalchemy import delete, select, update
 
 from api.auth import verify_api_key
 from api.db import require_engine
+from api.db.tables import (
+    bid_pipeline,
+    document_chunks,
+    notice_requirements,
+    notice_spec_items,
+    project_performances,
+    proposal_documents,
+    proposal_sections,
+    requirement_evidences,
+)
 from api.models.proposals import (
     ProjectPerformanceCreate,
     ProjectPerformanceRecord,
@@ -19,16 +29,6 @@ from api.models.proposals import (
     ProposalGenerateResponse,
     ProposalRetrieveResponse,
     ProposalVerifyResponse,
-)
-from api.routers.notices import (
-    bid_pipeline,
-    document_chunks,
-    notice_requirements,
-    notice_spec_items,
-    project_performances,
-    proposal_documents,
-    proposal_sections,
-    requirement_evidences,
 )
 from api.services.proposal_agent import (
     SECTION_BY_TYPE,
@@ -291,6 +291,14 @@ def get_proposal_coverage(notice_no: str) -> ProposalCoverageResponse:
         evidences = [item.model_dump() for item in _list_evidences(conn, notice_no)]
     score, items = coverage_items(requirements, evidences)
     return ProposalCoverageResponse(notice_no=notice_no, readiness_score=score, items=items)
+
+
+@router.get("/{notice_no}/sections", response_model=ProposalGenerateResponse)
+def get_proposal_sections(notice_no: str) -> ProposalGenerateResponse:
+    with require_engine().begin() as conn:
+        _load_notice(conn, notice_no)
+        sections = _list_sections(conn, notice_no)
+    return ProposalGenerateResponse(notice_no=notice_no, sections=sections)
 
 
 def _load_notice(conn, notice_no: str) -> dict[str, Any]:

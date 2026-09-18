@@ -121,7 +121,7 @@ def test_upload_rejects_disallowed_extension(client, sqlite_engine):
     assert r.status_code == 415
 
 
-def test_upload_creates_metadata_and_promotes_item(client, sqlite_engine):
+def test_upload_creates_metadata_without_human_approval(client, sqlite_engine):
     _seed_with_document_automation(sqlite_engine)
     r = client.post(
         "/notices/DOC-1/documents/uploads",
@@ -141,11 +141,11 @@ def test_upload_creates_metadata_and_promotes_item(client, sqlite_engine):
         ).mappings().one()
     docs = row["analysis"]["document_automation"]
     bizn = next(i for i in docs["checklist"] if i["id"] == "business_registration")
-    assert bizn["status"] == "ready"
-    assert "upload" in bizn["source"]
+    assert bizn["status"] == "needed"
+    assert bizn["source"] == "rule"
 
 
-def test_pdf_upload_auto_detects_and_promotes_item(client, sqlite_engine, monkeypatch):
+def test_pdf_upload_suggests_but_does_not_approve_item(client, sqlite_engine, monkeypatch):
     _seed_with_document_automation(sqlite_engine)
     monkeypatch.setattr(
         "api.services.uploads.extract_pdf_text",
@@ -168,7 +168,7 @@ def test_pdf_upload_auto_detects_and_promotes_item(client, sqlite_engine, monkey
         ).mappings().one()
     docs = row["analysis"]["document_automation"]
     bizn = next(i for i in docs["checklist"] if i["id"] == "business_registration")
-    assert bizn["status"] == "ready"
+    assert bizn["status"] == "needed"
 
 
 def test_explicit_item_id_wins_over_auto_detection(client, sqlite_engine, monkeypatch):
@@ -208,7 +208,7 @@ def test_hwp_agent_failure_records_error_but_upload_succeeds(client, sqlite_engi
     assert "agent down" in uploaded["text_extract_error"]
 
 
-def test_common_upload_import_promotes_current_notice_item(client, sqlite_engine, monkeypatch):
+def test_common_upload_requires_current_notice_confirmation(client, sqlite_engine, monkeypatch):
     _seed_with_document_automation(sqlite_engine)
     monkeypatch.setattr(
         "api.services.uploads.extract_pdf_text",
@@ -233,7 +233,7 @@ def test_common_upload_import_promotes_current_notice_item(client, sqlite_engine
         ).mappings().one()
     docs = row["analysis"]["document_automation"]
     bizn = next(i for i in docs["checklist"] if i["id"] == "business_registration")
-    assert bizn["status"] == "ready"
+    assert bizn["status"] == "needed"
 
 
 def test_list_uploads_returns_persisted_items(client, sqlite_engine):

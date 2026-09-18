@@ -1,6 +1,26 @@
 # autojebi — 미림씨스콘 입찰 자동화
 
-G2B(나라장터)·KJEBI 메일로 들어오는 전력기기 입찰공고를 실시간 검색/등록 → Claude 분석 → 3축 그레이딩 → Slack/Teams 알림 → HWP 입찰양식 자동 작성 → 서류 체크리스트/업로드/Excel·HWP 내보내기까지 한 파이프라인으로 처리한다. M1~M11 마일스톤 완료(FastAPI + PostgreSQL + Next.js 15 + Qdrant + milim-hwp-agent).
+**2026-09-09 OpenAI 실호출:** 독립 가상 공고에서 `gpt-4.1-mini` 원문 분석·제안서 생성 각 1회가 성공했다. 비교 초안 저장, 누락 검사, Excel/검토 패키지 다운로드와 파일 검증을 완료했다. HWP 템플릿·필수값이 없어 HWP 생성 및 실공고 제출 준비 완료는 미검증이다. [실제 E2E 결과](docs/openai-live-e2e-2026-09-09.md), [구현 및 설정](docs/openai-test-readiness-2026-09-09.md).
+
+**2026-09-09 Gemini 실호출:** 사용자 승인 키로 실제 공고 분석 2회를 실행했으나 미완료 응답/공급자 오류로 실패했다. 기존 자료는 보존했고 Excel 다운로드·경고 검토 패키지를 확인했다. 전체 실연동 통과가 아니다. [실제 버튼 E2E 결과 및 남은 조건](docs/gemini-live-e2e-2026-09-09.md).
+
+**2026-09-09 Gemini 추가:** v2 작업대의 원문 분석·근거 기반 제안서 생성에 `WORKSPACE_LLM_PROVIDER=gemini`를 지원한다. `/v2/settings`는 선택 공급자·모델·키 등록 여부를 반환하며 실제 연결 성공과 구분한다. 기존 API는 Claude를 유지한다. [설정 방법 및 검증 범위](docs/gemini-workspace-2026-09-09.md). 실제 Google 호출은 아직 검증하지 않았다.
+
+**2026-09-08 HWP 검사 작업:** v2 jobs에 `hwp_inspect`를 추가했다. 템플릿 필드 조회를 영속 큐로 실행하고 파일/매핑 해시에 연결한다. 제안서 전체 본문 필수 매핑과 생성 전 실제 필드 대조를 추가했다. [실행 결과와 복구 대기 사항](docs/hwp-template-recovery-progress-2026-09-08.md). 실제 HWP 템플릿 제작과 배치 검증은 미완료다.
+
+**2026-09-08 필수조건 점검:** `/v2/notices/{notice_no}/prerequisites`와 작업대 점검 패널을 추가했다. 자격·증빙, 템플릿 파일, Worker 인증·복구 조건을 구분하고 미충족 HWP 요청을 차단한다. [구현 및 실제 버튼 검증](docs/workspace-prerequisites-2026-09-08.md). 조건 점검 통과는 제출 준비 승인이나 실제 HWP 배치 검증을 의미하지 않는다.
+
+**2026-09-08 실제 PLECS 공고 준비:** 신규 공고 원본 2개, 인용 기반 확인 항목 18개, 경고 상태의 Excel/검토 패키지를 확보했다. 검색 마감 필터와 서버 제출 준비 마감 검증을 추가했다. [준비 기록과 미완료 조건](docs/plecs-R26BK01706511-preparation-2026-09-08.md)을 참고한다. 실제 참가 승인·최종 서류·HWP 검증은 미완료다.
+
+**2026-09-08 작업대 개선:** 원문 PDF·요구사항 나란히 보기, 기존 작성자료 수치 비교, 초안 저장·승인·반려 분리, 변경 없는 본문 재추출 시 검토 보존을 적용했다. PDF 페이지 API와 실제 테스트 결과는 [UX 개선 검증 기록](docs/document-workbench-ux-2026-09-08.md)을 참고한다. HWP 실파일 검증 및 운영 전환은 아직 완료되지 않았다.
+
+**2026-09-07 동선 축소:** 검증 환경은 **공고 찾기 → 공고 서류 검토 → 기존 작성자료와 비교·작성 → 서류 확인**만 기본 동선으로 사용한다. 기존 작성자료는 증빙과 분리하며, 비교 초안 API와 검증 결과는 [서류 작성 루프](docs/document-loop-2026-09-07.md)를 참고한다. 아래의 그레이딩·알림 등은 기존 기능 설명이며 새 기본 화면에서는 제공하지 않는다.
+
+> **2026-09-06: 실무용 v2 검증 중, 운영 전환 미완료.** `/workspace`는 독립 작업 큐·원문 근거·사람 검토를 사용하는 새 작업대다. 기존 완료 표기는 기능 구현 이력이며 실제 공고 3건/HWP 실파일 검증 완료를 뜻하지 않는다. 실행 방법, API, 제한과 검증 결과는 [v2 구현 및 전환 기록](docs/workspace-v2-implementation.md)을 따른다.
+
+2026-09-07 실공고 보완: XLS/ZIP 첨부의 조용한 누락을 제거하고 전체 첨부 목록·원본 보관·미확인 차단·수동 변환본 연결을 추가했다. [실제 공고 리허설 결과](docs/real-rehearsal-2026-09-07.md)를 참고한다. HWP 실제 생성 및 운영 전환은 별도 미완료 조건이다.
+
+G2B(나라장터)·KJEBI 메일로 들어오는 전력기기 입찰공고를 실시간 검색/등록 → Claude 분석 → 3축 그레이딩 → Slack/Teams 알림 → HWP 입찰양식 자동 작성 → 서류 체크리스트/업로드/Excel·HWP 내보내기까지 한 파이프라인으로 처리한다. M1~M11·M13 마일스톤 완료, M14(HWP 제안서)·v2 작업대는 구현 후 운영 전환 검증 중 (FastAPI + PostgreSQL + Next.js 15 + Qdrant + in-repo HWP Worker). 현재 상태와 잔여 조건은 [AGENTS.md](AGENTS.md) §1 마일스톤 표를 따른다.
 
 이 문서는 **신규 유저(영업·검토자·운영자) 매뉴얼** + **API 레퍼런스**다.
 
@@ -316,14 +336,26 @@ form_filled ──────────────────────�
    - 응답: `{ status, delivered }`
    - 상태: `fit_score` 기준 자동 분기 ([§ 4 자동 분기 임계치](#자동-분기-임계치))
 
-4. **HWP Autofill** (`status` ∈ {`analyzed`, `form_filled`}) → 모달에서 template_path / output_path / values(JSON) 입력 → `POST /notices/{notice_no}/autofill-form`
-   - 응답: `{ replaced, missing, remaining_placeholders }`
-   - 상태: `analyzed → form_filled`
-   - 부수효과: `analysis.document_automation.drafts.bid_form` 및 `bid_form` 체크리스트 항목이 `generated`로 전환 (M10)
+4. **HWP 작성** → 규격 대응 탭에서 템플릿 선택, 입력값 확인 후 수동 실행 → `POST /notices/{notice_no}/documents/hwp-compose`
+   - JSON/파일 경로는 고급 설정에 있으며 기본 입력은 일반 폼이다.
+   - 생성/검토 탭과 `/reviews`에서 생성 상태, 누락, 미입력 항목, 검토 의견을 확인한다.
+   - 기존 `/autofill-form` API는 호환용으로 유지한다.
+
+### 실무 작업대 (2026-09)
+
+G2B 연결 진단: [서비스 문서 비교 및 연결 검사](docs/g2b-connection-diagnosis-2026-09-06.md). `G2B_API_SCHEME`는 `https` 기본이며 제공기관 계약에 따른 명시적 `http` 선택만 지원한다. HTTP는 인증키를 암호화하지 않으며 자동 전환하지 않는다. 현재 검색 클라이언트는 공공데이터개방표준서비스가 아닌 입찰공고정보서비스를 사용한다.
+
+- 기본 주소는 `/notices`: 진행 중 공고, 마감일 오름차순(미확인 뒤), URL 검색/필터/페이지 유지.
+- `/search`는 G2B 검색과 저장, `/reviews`는 HWP 작업 검토, `/admin`은 연결/회사정보/매핑/SKU 관리다.
+- 상세는 `공고 검토`, `서류 준비`, `규격 대응`, `제안서`, `생성/검토` 탭으로 나눈다.
+- `?tab=review|documents|spec|proposal|exports`와 기존 `#documents`, `#spec-items`, `#grading`, `#proposal-readiness`, `#exports`를 지원한다.
+- 기존 `/notices/{noticeNo}/analyze`, `/compose`는 각각 서류 준비/규격 대응 탭으로 이동한다.
+- 전체 후보 수 `spec_item_count`와 실제 요구값이 있는 수 `spec_value_count`는 동일 집계로 목록/상세에 반환한다.
+- 검증 절차 및 실연동 차단 사항: [작업대 검증 기록](docs/workbench-ux-verification-2026-09-06.md).
 
 ### 서류 준비 패널 ([components/DocumentPreparationPanel.tsx](frontend/src/components/DocumentPreparationPanel.tsx)) — M10
 
-공고 상세 페이지 하단의 별도 섹션. 분석된 공고에 대해 제출서류 체크리스트·검토용 초안·위험 메모를 한 화면에서 관리한다.
+공고 상세의 서류 준비 탭. 누락 서류를 먼저 표시하고 항목별 업로드/공통 서류 연결/준비 상태를 관리한다. 생성물과 HWP 검토 이력은 생성/검토 탭에 둔다.
 
 - **서류 분석** (`status` ∈ {`analyzed`, `form_filled`}) → `POST /notices/{notice_no}/documents/analyze`
   - 룰 기반 9개 기본 체크리스트(입찰참가신청서·사업자등록증·법인등기/인감·제조사 공급확약서·카탈로그·규격대응표·실적증명·입찰보증·자격면허) + Claude 추가 제안 병합
@@ -363,6 +395,18 @@ form_filled ──────────────────────�
 ---
 
 ## 7. API / CLI 레퍼런스
+
+### 문서 완결 흐름 (2026-09-13)
+
+- `POST /v2/notices`는 선택 입력 `org_name`, 시간대가 포함된 `close_date`를 보존한다. 수동 등록 화면은 한국시간을 명시하며 마감 미확인·경과 상태는 제출 준비 완료를 허용하지 않는다.
+- `PUT /v2/notices/{notice_no}/output-plan`은 `{version, template_keys, note}`를 받는다. 활성 HWP 서식을 하나 이상 선택하며 `inputs.output_plan`에 보존한다. 계획 변경 시 입력 버전이 올라가고 생성 파일을 다시 검토한다. 미설정 데이터는 기존 `bid_form/proposal` 요구를 유지한다.
+- `GET /v2/notices/{notice_no}/requirement-candidates?version=...`는 현재 공고 원문에서 의무·수량·기한·제출 표현을 포함한 행을 읽기 전용 후보로 반환한다. `{version, items, scanned_characters, source_document_count, limited, warnings}`이며 후보에 원문 인용, 파일/본문 해시, 문자 위치와 행 위치를 포함한다. 최대 100개·150,000자 범위로 제한하고 문장을 잘라 제안하지 않는다. 화면에서 문맥 확인 후 기존 요구사항 API로 `pending/unassessed` 저장하며 승인하거나 LLM을 호출하지 않는다.
+- 패키지는 선택한 최신 HWP와 Excel, 원문, 작성된 원본 양식을 포함한다. 입찰/기타 작성 대상은 실제 해당 원본 양식 작성·검토까지 확인하며 Markdown 초안만으로 제출 준비를 완료하지 않는다.
+- `POST /v2/notices/{notice_no}/reviews`의 HWP `approved`에는 검토한 `output_sha256`과 `layout_confirmed=true`가 필요하다. 저장값 미검증·미입력·내용 경고는 승인으로 해소할 수 없다. 파일에 연결된 배치 승인은 새 패키지에서 배치 경고를 해소한다.
+- `ready`는 현재 선택한 파일·해시·승인·패키지를 다시 대조한다. 파일 변경, 반려, 재생성, 입력 변경으로 기존 제출 준비 판정이 무효화되고 이력은 보존된다. `reviews[]`에는 `actor`, `output_sha256`, `layout_confirmed`가 노출된다.
+- `GET /v2/worker/health`의 `runtime`은 API 및 실행기의 시작 지문/현재 지문과 `current/mismatch/unknown`, `restart_required`, 프로세스별 진단을 반환한다. 시작 시 지문은 고정하며 현재 파일은 5초 캐시·60초 전체 재해시로 비교한다. 상태 조회가 작업을 중단하거나 재시작하지 않는다.
+- 개인 계정 로그인과 조회/작성/검토/최종승인 역할은 opt-in이다. `GET /v2/identity`와 [개인 인증 설정](docs/workspace-identity-2026-09-13.md)을 따른다. 기존 shared-key 환경은 개인 인증 완료로 간주하지 않는다.
+- ZIP 내부 HWP/HWPX와 깊이 제한 중첩 ZIP을 지원한다. 한국어 OCR은 검토 대기로 유지한다. [첨부 검증](docs/attachment-extraction-completion-2026-09-13.md)과 [완결 E2E 결과](docs/document-loop-completion-2026-09-13.md)에 실검증 범위를 기록한다.
 
 모든 엔드포인트는 `API_KEY`가 설정돼 있으면 `X-API-Key: <키>` 헤더 필요.
 
@@ -524,14 +568,19 @@ curl -X POST http://localhost:8001/notices/R26BK01543282-000/documents/exports/e
 - agent 실패 시 제안서 draft와 `errors[]`는 저장하고, HWP 파일이 생성된 경우에만 `proposal_hwp` export를 기록한다. `remaining_placeholders`가 남으면 export는 저장하되 `validation_status=warning`으로 표시한다.
 
 ### HWP 필드 매핑 기반 자동작성 (M14+)
-`python -m api.hwp_fields seed`로 `company_profiles`, `hwp_templates`, `document_field_mappings` 기본값을 upsert한다. HWP 양식에는 `document_field_mappings.hwp_field_name`과 같은 필드명을 미리 삽입한다.
+`python -m api.hwp_fields seed`는 회사·템플릿·필드 매핑 중 없는 기본 항목만 추가한다. 기존 관리자 수정값, 메타데이터, 비활성 상태는 보존한다. 기존 회사정보를 로컬 설정의 비어 있지 않은 값으로 갱신하려면 `python -m api.hwp_fields seed --update-company-from-env`를 명시한다. HWP 양식에는 `document_field_mappings.hwp_field_name`과 같은 필드명을 미리 삽입한다.
 
 - `GET /documents/hwp-templates` — active 템플릿과 필드 매핑 조회.
+- `GET /documents/company-profile` — 활성 회사 프로필(없으면 환경 설정 기본값) 조회. 기존 API 키 인증 적용.
+- `GET /documents/hwp-jobs` — DB 작업 기록 조회. `q`(공고명/번호/템플릿명), `review_status=pending|approved|rejected`, `status=pending|running|completed|failed`, `page>=1`, `page_size=1..100`(기본 20). `{items:[{job,title,template_name,export}],total,page,page_size,total_pages}` 반환. `job.created_at` 포함, 최신순.
 - `POST /documents/hwp-templates` / `PATCH /documents/hwp-templates/{template_id}` — 관리자용 템플릿 upsert/수정/soft-disable.
 - `POST /documents/hwp-templates/{template_id}/mappings` / `PATCH /documents/hwp-templates/{template_id}/mappings/{mapping_id}` — 관리자용 필드 매핑 upsert/수정/soft-disable.
 - `POST /notices/{notice_no}/documents/hwp-context` — `template_key` 기준 Context JSON, 실제 입력값, required 누락 미리보기.
 - `POST /notices/{notice_no}/documents/hwp-put-fields` — Windows HWP Worker `/document/put-fields`에 `{ template_path, output_path, values, visible }`를 위임해 `PutFieldText` 입력.
 - `POST /notices/{notice_no}/documents/hwp-jobs/{job_id}/review` — 사람 검토 결과(`pending`/`approved`/`rejected`) 저장.
+  - 성공 생성물과 유효 export가 없는 작업의 승인은 409. 필수 누락/미입력 항목/검증 경고가 있으면 공백 아닌 `review_note` 필수(422). 다운로드는 경고가 있어도 허용.
+  - `hwp-compose`의 `template_key` 기본값은 `bid_form`, `proposal-compose`는 `proposal`. 선택한 활성 템플릿으로 매핑한다.
+- `GET /proposals/{notice_no}/sections` — 저장된 섹션/근거/사실검증 상태 조회. 생성이나 외부 검색을 자동 실행하지 않는다.
 - transform은 whitelist(`none`, `date_yyyy_mm_dd`, `number_comma`, `business_number_dash`, `strip`, `truncate_1000`)만 허용한다.
 - 생성 로그는 `hwp_generation_jobs`에 context/input/missing/remaining/review_status로 저장되고, UI는 required 누락·remaining placeholder·검토 상태를 표시한다.
 - Windows HWP Worker는 HWP COM 제약 때문에 단일 Lock/Queue로 `/document/put-fields` 작업을 순차 실행해야 한다.
@@ -716,7 +765,33 @@ fit_score   = int(score_total × 100)                           # 0~100
 
 ## 9. HWP 양식 자동 작성
 
-[milim-hwp-agent](../../Desktop/milim-hwp-agent)는 Windows 데스크톱에서 HWP COM을 통해 입찰참가신청서/제안서를 자동 작성한다. autojebi는 레거시 `POST /notices/{notice_no}/autofill-form` 호출 시 `/bid-form/autofill`을 유지하고, 필드 매핑 기반 HWP 생성은 `POST /notices/{notice_no}/documents/hwp-put-fields`와 `proposal-compose`에서 `/document/put-fields`를 위임한다.
+[저장소 내 Windows HWP Worker](docs/hwp-worker.md)는 필드 조회, 본문 추출, `/document/create-template`, `/document/put-fields`를 제공한다. v2 작업 실행기는 사람이 요청한 생성만 전달하고 저장 결과를 재검증한다. 2026-09-10 PLECS 제안서의 실제 HWP 16쪽, 표 20개, 필드 510개 저장값과 페이지 이미지를 확인했다. 담당자 내용 승인 및 기존 입찰양식 두 종 전체 검증은 별개다. [실생성 결과와 검증 범위](docs/hwp-layout-implementation-2026-09-10.md)를 따른다.
+
+`hwp_templates.render_mode`는 기존 `fields`와 새 `proposal_layout_v1`만 허용한다. 새 모드는 제한된 Markdown을 실제 제목·문단·표·페이지 나눔과 개별 필드로 구성하고 `PutFieldText`로 입력한다. `python -m api.hwp_fields prepare-template`은 인증된 Worker에서 저장·재열기·필드 검사를 통과한 새 서식만 등록하며 기존 템플릿을 덮어쓰지 않는다.
+
+- `GET /v2/hwp-templates`: 활성 템플릿과 `render_mode`, 매핑.
+- `GET /v2/hwp-worker`: 연결·작업 중·복구 필요, 현재 작업번호/단계/경과 시간.
+- `GET /v2/jobs/{job_id}/pages/{number}`: 성공한 작업의 해시 검증된 PNG. 기존 API 인증을 적용한다.
+- `POST /v2/notices/{notice_no}/jobs`의 `kind=hwp`는 그대로 유지한다. 생성물에 논리 본문/물리 필드 대응표, 입력·레이아웃·템플릿·출력 해시, 페이지 이미지와 검토 상태를 보존한다.
+
+### v2 인용 복구와 실행기 분리 (2026-09-10)
+- `POST /v2/notices/{notice_no}/jobs/{job_id}/adopt-requirements`: 현재 `version`, `idempotency_key`, `note`, 선택 후보 `items`의 `candidate_id/quote/start/locator`를 받아 원문 해시와 위치를 재검증한다. 채택은 검토 대기·미판정이며 실패한 분석 이력은 유지한다.
+- `PUT /v2/notices/{notice_no}/source-needs`: 현재 `version`과 `items`의 문서 ID, `missing/linked/not_applicable`, 근거 인용·의견을 저장한다. 미해결 참조 문서는 제출 준비를 차단하지만 검토용 초안은 허용한다.
+- 작업 조회에 `quote_diagnostics`, `execution_lane`을 제공한다. 원문 일치·공백 차이·중복 위치·불일치를 구분하며 LLM 전체 응답이나 비밀값은 오류에 저장하지 않는다.
+
+### v2 Excel/ZIP/PDF 추출 (2026-09-11)
+- 기존 `kind=extract` 작업과 결과 반영 API를 사용한다. `result.documents[].extraction` 및 반영 후 `inputs.documents[].extraction`에 완전성(`complete`), 시트/셀(`cells`), 품목 후보(`items`), ZIP 내부 파일(`members`), PDF 페이지(`pages`)를 보존한다.
+- XLSX는 읽기 전용으로 처리한다. 수식은 실행하지 않으며 캐시가 없으면 값은 null이다. 수식 값은 별도 대조가 필요하고 품목은 자동 적합/가격 판정이 아닌 후보다.
+- ZIP을 디스크에 풀거나 실행하지 않는다. 내부 XLSX/PDF는 추출하며 HWP/도면/중첩 ZIP 등 미지원 파일도 해시와 미확인 상태로 남긴다. 일부 텍스트만 확보돼도 전체 원문 완료로 인정하지 않는다. XLS 바이너리 파서는 아직 지원하지 않는다.
+- 스캔 PDF는 로컬 Tesseract가 설치된 경우 OCR한다. `WORKSPACE_OCR_ENABLED`, `TESSERACT_CMD`, `WORKSPACE_OCR_LANGUAGES=kor+eng`로 설정한다. 언어팩은 별도 설치가 필요하며 원문을 외부 OCR 서비스로 보내지 않는다.
+- OCR 결과는 페이지별 신뢰도와 원문 대조 필요 상태로 보존한다. 미설치/시간 초과/읽지 못한 페이지는 완료로 숨기지 않는다. 입력 파일 50MB, ZIP 500개 항목/누적 해제 50MB, PDF 100쪽, 작업당 OCR 최대 10쪽 및 페이지당 20초 제한을 적용한다.
+- 검증 범위와 남은 실제 파일 검증은 [첨부 처리 기록](docs/attachment-extraction-2026-09-11.md)을 따른다.
+- `python -m api.workspace.supervisor --split`은 `local`(verify/excel/package)과 `external` 실행기를 각각 하나씩 실행한다. PostgreSQL 잠금, 완료 기록, 복구와 health는 경로별로 분리한다. 기존 `--lane all` 실행기와 혼용하지 않는다.
+- `infra/start-workspace.ps1`은 분리 실행을 기본 사용한다. `-BackendOnly`는 기존 프론트를 유지하고 API/실행기만 시작하며, 기존 프로세스를 자동 종료하지 않는다.
+- `hwp_inspect/hwp` 요청과 명시적 복구 요청의 `visible`은 기본 false다. 필드 검사 Worker 요청의 `operation_id/visible`은 선택값이다. `failure_stage/failed_at`은 뒤늦은 정리 단계와 구분하며 재시작으로 복구 차단을 해제하지 않는다.
+- [현재 공고 복구 구현·실검증 보고서](docs/current-notice-recovery-2026-09-10.md): 실제 HWP 생성과 AI 인용 실패 복구, mock 검증 및 남은 사람 검토를 구분한다.
+
+레거시 `POST /notices/{notice_no}/autofill-form`의 `/bid-form/autofill`은 기존 외부 Agent 전용 계약이다. 새 Worker가 해당 레거시 합성/RAG 기능까지 대체한다고 간주하지 않는다.
 
 ### 전송되는 값
 **환경변수 (회사 상수)** — [.env](#11-환경변수-레퍼런스)에서 로드:
@@ -728,21 +803,21 @@ fit_score   = int(score_total × 100)                           # 0~100
 **공고 메타** — `bid_pipeline` 레코드에서:
 - `notice_no`, `title`, `category`, `assignee`, `fit_score`
 
-**요청 본문 `values`로 override 가능** — 환경변수/공고 메타 값을 임의 키로 덮어쓸 수 있다 (예: 다른 회사명으로 제출).
+기존 동기 API에는 값 override가 있지만, v2는 회사 프로필과 입력 버전의 스냅샷·매핑을 사용한다. 작성값과 회사 증빙은 사람이 대조하며, 생성 성공은 제출 승인이 아니다.
 
 ### 응답 해석
 | 필드 | 의미 |
 |------|------|
-| `replaced` | 실제로 값이 채워진 placeholder 이름 리스트 |
-| `missing` | 템플릿에 있지만 빈 값으로 남은 placeholder (→ `.env` COMPANY_* 누락 확인) |
-| `remaining_placeholders` | 템플릿에 있고 우리가 매핑하지 않은 placeholder (템플릿 점검 필요) |
+| `replaced` | 요청했고 템플릿에서 찾아 입력한 필드명. v2는 저장 후 실제 값도 재조회 |
+| `missing` | 요청한 필드 중 실제 템플릿에서 찾지 못한 필드명 |
+| `remaining_placeholders` | 저장값이 비어 있거나 검증 표식이 남은 필드명 |
 
-성공 시: `bid_pipeline.analysis.bid_form`에 응답 기록, 상태 `analyzed → form_filled`.
+v2는 독립 작업의 입력·출력·해시·검증 결과를 기록하며 참가 결정을 변경하지 않는다. 기존 `analysis.bid_form`과 `form_filled`는 레거시 호환용으로 구분한다.
 
 ### 클라이언트 ([api/services/hwp_agent_client.py](api/services/hwp_agent_client.py))
 - `HWP_AGENT_BASE_URL` (기본 `http://127.0.0.1:8000`)
-- `HWP_AGENT_TOKEN` 설정 시 `Authorization: Bearer <token>` 헤더 자동 첨부
-- 2회 재시도 (timeout 30s), 실패 시 `HwpAgentError → HTTP 502`
+- `HWP_AGENT_TOKEN`은 `X-Agent-Token` 헤더로 전달한다. 저장소 내 Worker는 32자 이상 토큰이 필수다.
+- 읽기 HTTP 요청만 최대 2회 재시도한다. 생성 등 POST 요청은 결과가 불확실할 수 있으므로 자동 재시도하지 않는다. 기본 timeout은 30초, v2 HWP 생성 호출은 120초다.
 
 ---
 
@@ -910,8 +985,8 @@ services:
 ### HWP 에이전트 / 회사정보
 | 변수 | 기본값 | 설명 |
 |------|-------|------|
-| `HWP_AGENT_BASE_URL` | `http://127.0.0.1:8000` | milim-hwp-agent 주소 |
-| `HWP_AGENT_TOKEN` | (빈값) | 빈값이면 인증 비활성 |
+| `HWP_AGENT_BASE_URL` | `http://127.0.0.1:8000` | 저장소 내 Windows HWP Worker 주소 |
+| `HWP_AGENT_TOKEN` | (빈값) | Worker 실행에 32자 이상 필수. 빈값 인증 우회 없음. 로컬 API도 `--env-file .env`로 실행 |
 | `COMPANY_NAME` | (빈값) | HWP 양식 회사명 |
 | `COMPANY_BUSINESS_NUMBER` | (빈값) | 사업자번호 |
 | `COMPANY_CEO_NAME` | (빈값) | 대표이사 |
@@ -988,10 +1063,8 @@ curl -X POST http://localhost:8001/notices/search \
 
 ### "도커 실행 시 HWP 에이전트 미연결" (`/documents/hwp-agent/health` → ok:false)
 - 원인: 컨테이너 안의 `127.0.0.1`은 컨테이너 자신을 가리켜 호스트의 에이전트에 닿지 못함.
-- 해결:
-  1. `.env`에 `HWP_AGENT_BASE_URL=http://host.docker.internal:8000` (override가 api에 `extra_hosts: host.docker.internal:host-gateway`를 이미 추가).
-  2. 에이전트를 **0.0.0.0 바인딩**으로 기동: `python -c "import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=8000)"` (기본 `run_api_server.py`는 127.0.0.1이라 컨테이너에서 접근 불가).
-  3. 토큰 인증을 켰다면 `.env`의 `HWP_AGENT_TOKEN`을 에이전트 토큰과 일치(client가 `X-Agent-Token` 헤더로 전송).
+- v2 검증은 Windows 로컬 API/작업 실행기/HWP Worker와 공통 파일 경로를 사용한다. COM 서비스를 외부 인터페이스로 공개하지 않는다.
+- `python -m api.hwp_worker --check`로 등록 상태를 확인한다. 실행·토큰·허용 폴더와 실연동 기준은 [HWP Worker 운영 안내](docs/hwp-worker.md)를 따른다.
 
 ### "키를 .env에 넣었는데 반영 안 됨"
 - compose는 `--env-file`로 명시한 파일에서만 `${VAR}`를 치환한다. 레포 루트에 `.env`를 두고:
@@ -1012,6 +1085,16 @@ curl -X POST http://localhost:8001/notices/search \
   또는 작업 동안 CFA 일시 해제, 혹은 레포를 보호 폴더 밖으로 이동.
 
 ---
+
+### 문서별 비교·작성 API (검증 화면)
+
+비교·작성 목록은 공고 서류 검토에서 확인한 실제 항목만 사용한다. `PUT /v2/notices/{notice_no}/writing-plan`으로 원문 인용과 작성/첨부/전자제출 구분을 검증하며, 응답의 `writing_plan_current`가 참인 목록에 포함된 직접 작성 항목만 저장할 수 있다. 원문 변경 시 재확인이 필요하다. 고정 문서·공통 목차는 기본으로 생성하지 않는다.
+
+`POST /v2/notices/{notice_no}/document-drafts`는 입력 버전과 중복방지 키를 받아 정성제안서·입찰서·기타서류 초안을 각각 저장한다. 회사 참고자료 인용과 웹 자료는 승인된 증빙이 아니며, `GET /v2/notices/{notice_no}/document-drafts/{draft_id}/download`로 Markdown 검토 초안을 받는다. 웹검색은 Google/네이버 새 탭 검색과 선택 자료 등록 방식이다. 응답의 `inputs.proposal_sections`에 `document_kind`, `title`, `references`, `web_references`가 추가된다. 상세 계약과 검증 결과는 [문서별 작성 작업대](docs/document-writing-ui-2026-09-11.md)를 따른다.
+
+공고에 첨부된 HWPX 원본은 `form-fields` 조회와 `form-fillings` 저장·다운로드로 항목별 작성한다. `inputs.form_fillings`에 작성 내용과 출처를 보존하며 원본 서식 사본을 내보낸다. 상세 지원 범위와 검증은 [공고 원본 양식 작성](docs/original-notice-forms-2026-09-11.md)을 참고한다.
+
+`GET /v2/notices/{notice_no}/form-fillings/{document_id}/review`는 검토할 작성본의 `version`, `output_sha256`, `unfilled_count`, `review_status`를 반환한다. 같은 경로의 `POST`는 해당 버전·파일 해시와 `approved`, `source_checked`, `content_checked`, `layout_checked`, `note`를 받아 사람의 양식 검토를 기록한다. `inputs.form_fillings[].review`에는 검토 의견·시각·입력 버전·입력/출력 해시가 보존된다. 승인에는 모든 확인과 빈칸 없는 작성본이 필요하며, 자료·작성 내용이 바뀌면 재검토한다. 자격증빙이나 제출 준비 승인은 별도다. [검토 경로 검증 기록](docs/original-form-review-2026-09-12.md)을 따른다.
 
 ## 14. 핵심 파일 맵
 
@@ -1041,3 +1124,8 @@ curl -X POST http://localhost:8001/notices/search \
 ---
 
 > 새 기능 추가 시 이 문서도 함께 갱신할 것. 점수 공식·상태 전이·환경변수 기본값이 바뀌면 §4·§8·§11도 동기화.
+# 사양 검증·하이브리드 검색 (검증 환경 전용)
+
+v2 사양 JSON/수치·단위·인용 검사, 표 구조 보존, 사양 교정 ETag, PostgreSQL lexical + Neo4j + BGE-M3/Qdrant 검색을 추가했다.
+기본 비활성이고 3002/8002에서만 검증한다. 검색 순위는 사람 승인이나 참가 결정이 아니다.
+API·환경·실측 결과·공개 차단 조건은 [구현 및 검증 기록](docs/specification-search-2026-09-11.md)을 따른다.

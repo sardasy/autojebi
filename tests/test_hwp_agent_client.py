@@ -42,6 +42,19 @@ def test_health_returns_false_on_error():
     assert client.health() is False
 
 
+@pytest.mark.parametrize("recover", [False, True])
+def test_diagnostics_progress_has_only_safe_fields(recover):
+    client = _make_client(lambda request: httpx.Response(200, json={
+        "ok": not recover, "state": "running", "recovery_required": recover,
+        "operation": {"operation_id": "job-123", "stage": "save", "call_name": "SaveAs",
+                      "elapsed_seconds": 12.5, "token": "secret", "body": "private"},
+    }), token="x" * 32)
+    result = client.diagnostics()
+    assert not result["available"]
+    assert result["operation"] == {"operation_id": "job-123", "stage": "save", "call_name": "SaveAs", "elapsed_seconds": 12.5}
+    assert result["code"] == ("worker_recovery" if recover else "worker_running")
+
+
 def test_autofill_sends_token_header_and_parses_response():
     captured: dict = {}
 
@@ -163,6 +176,19 @@ def test_request_raises_after_exhausting_retries():
     # direct call surfaces HwpAgentError
     with pytest.raises(HwpAgentError):
         client.analyze_document("templates/foo.hwp")
+
+
+def test_put_fields_does_not_replay_uncertain_write():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ReadTimeout("save may still be running")
+
+    client = _make_client(handler)
+    with pytest.raises(HwpAgentError):
+        client.put_fields(template_path="a.hwp", output_path="b.hwp", values={"name": "test"})
+    assert len(calls) == 1
 
 
 def test_connect_failure_gives_actionable_message():

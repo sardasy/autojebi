@@ -19,6 +19,28 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "plecs-document-live",
+      testMatch: /plecs-document-live\.spec\.ts/,
+      retries: 0,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "openai-live",
+      testMatch: /openai-live\.spec\.ts/,
+      retries: 0,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "workspace-v2",
+      testMatch: /(?:workspace-v2|sample-document-loop)\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "workbench-mock",
+      testMatch: /(?:workbench-mock|hwp-layout-mock|recovery-mock|workspace-guidance-mock|notice-brief-mock|document-writing-mock|company-assets-mock|specification-mock)\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "chromium-smoke",
       testMatch: /.*(?:program-smoke|notices-flow|notices-search|notices-search-api|ontology-api)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },

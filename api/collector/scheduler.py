@@ -83,7 +83,7 @@ def _grade_job() -> None:
     try:
         from sqlalchemy import select
 
-        from api.routers.notices import bid_pipeline
+        from api.db.tables import bid_pipeline
         from api.services.grading_runner import (
             GradeError,
             grade_notice_impl,

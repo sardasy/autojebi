@@ -17,7 +17,7 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
 
   if (uploads.length === 0) {
     return (
-      <div className="rounded border border-slate-800 bg-slate-900/30 p-3 text-xs text-slate-400">
+      <div className="rounded border border-slate-200 bg-slate-50/30 p-3 text-xs text-slate-600">
         업로드된 파일이 없습니다. "첨부 서류 가져오기" 또는 "파일 업로드"로 공고 첨부와
         사업자등록증·인감·실적증명 등을 첨부할 수 있습니다.
       </div>
@@ -37,9 +37,9 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
   };
 
   return (
-    <div className="overflow-x-auto rounded border border-slate-800">
+    <div className="overflow-x-auto rounded border border-slate-200">
       <table className="w-full text-sm">
-        <thead className="bg-slate-900/80 text-slate-300">
+        <thead className="bg-slate-50/80 text-slate-700">
           <tr>
             <th className="px-3 py-2 text-left font-medium">파일</th>
             <th className="px-3 py-2 text-left font-medium">크기</th>
@@ -51,21 +51,21 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
         </thead>
         <tbody>
           {uploads.map((up) => (
-            <tr key={up.id} className="border-t border-slate-800">
-              <td className="px-3 py-2 text-slate-100">
+            <tr key={up.id} className="border-t border-slate-200">
+              <td className="px-3 py-2 text-slate-900">
                 <a
                   href={`/api/notices/${encodeURIComponent(noticeNo)}/documents/uploads/${encodeURIComponent(up.id)}/download`}
-                  className="text-brand-400 hover:underline"
+                  className="text-brand-700 hover:underline"
                   download={up.name}
                 >
                   {up.name}
                 </a>
               </td>
-              <td className="px-3 py-2 text-slate-300">{formatBytes(up.size)}</td>
-              <td className="px-3 py-2 text-slate-300">
+              <td className="px-3 py-2 text-slate-700">{formatBytes(up.size)}</td>
+              <td className="px-3 py-2 text-slate-700">
                 <div>{up.item_id || "-"}</div>
                 {!up.item_id && up.detected_item_id ? (
-                  <div className="text-xs text-amber-300">
+                  <div className="text-xs text-amber-800">
                     추천: {up.detected_item_id}
                     {typeof up.detect_confidence === "number"
                       ? ` (${up.detect_confidence.toFixed(2)})`
@@ -76,16 +76,16 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
                   <div className="text-xs text-cyan-300">공통 서류함</div>
                 ) : null}
                 {up.source_ref === "g2b_attachment" ? (
-                  <div className="text-xs text-emerald-300">G2B 첨부</div>
+                  <div className="text-xs text-emerald-700">G2B 첨부</div>
                 ) : null}
               </td>
-              <td className="max-w-md px-3 py-2 text-xs text-slate-400">
+              <td className="max-w-md px-3 py-2 text-xs text-slate-600">
                 {up.analysis_summary || "-"}
                 {up.text_extract_error ? (
-                  <div className="mt-1 text-rose-300">{up.text_extract_error}</div>
+                  <div className="mt-1 text-rose-800">{up.text_extract_error}</div>
                 ) : null}
               </td>
-              <td className="px-3 py-2 text-xs text-slate-400">
+              <td className="px-3 py-2 text-xs text-slate-600">
                 {formatDate(up.uploaded_at)}
               </td>
               <td className="px-3 py-2 text-right">
@@ -93,7 +93,7 @@ export function UploadsTable({ noticeNo, uploads }: Props) {
                   type="button"
                   onClick={() => remove(up)}
                   disabled={pending}
-                  className="rounded border border-rose-700 px-2 py-1 text-xs text-rose-200 hover:bg-rose-900/30 disabled:opacity-50"
+                  className="rounded border border-rose-700 px-2 py-1 text-xs text-rose-800 hover:bg-rose-50/30 disabled:opacity-50"
                 >
                   삭제
                 </button>

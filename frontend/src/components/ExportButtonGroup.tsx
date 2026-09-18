@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { actionExportDocument } from "@/lib/actions";
@@ -27,15 +27,15 @@ const VALIDATION_LABELS: Record<string, string> = {
 
 // 다운로드는 항상 허용하되, 검증 결과가 warning/failed면 시각적으로 강조한다.
 const DOWNLOAD_LINK_CLASS: Record<string, string> = {
-  warning: "border-amber-500/70 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20",
-  failed: "border-rose-500/70 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
-  default: "border-slate-700 text-slate-200 hover:bg-slate-800",
+  warning: "border-amber-500/70 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20",
+  failed: "border-rose-500/70 bg-rose-500/10 text-rose-800 hover:bg-rose-500/20",
+  default: "border-slate-300 text-slate-800 hover:bg-slate-100",
 };
 
 const VALIDATION_BADGE_CLASS: Record<string, string> = {
-  warning: "border-amber-500/60 bg-amber-500/15 text-amber-200",
-  failed: "border-rose-500/60 bg-rose-500/15 text-rose-200",
-  passed: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200",
+  warning: "border-amber-500/60 bg-amber-500/15 text-amber-800",
+  failed: "border-rose-500/60 bg-rose-500/15 text-rose-800",
+  passed: "border-emerald-500/50 bg-emerald-500/10 text-emerald-800",
 };
 
 function downloadHref(noticeNo: string, rec: ExportRecord): string {
@@ -97,13 +97,14 @@ function DownloadLink({
         {label}
       </a>
       <ValidationBadge status={status} />
-      {summary ? <span className="text-xs text-slate-400">{summary}</span> : null}
+      {summary ? <span className="text-xs text-slate-600">{summary}</span> : null}
     </div>
   );
 }
 
 export function ExportButtonGroup({ noticeNo, exports }: Props) {
   const [pending, startTransition] = useTransition();
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const toast = useToast();
   const router = useRouter();
 
@@ -120,23 +121,25 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
   }
 
   const generate = (kind: ExportKind) => {
+    setResultMessage(`${KIND_LABELS[kind]} 파일 생성 중입니다.`);
     startTransition(async () => {
       try {
         const r = await actionExportDocument(noticeNo, kind);
-        toast.push(
-          "success",
-          `${KIND_LABELS[kind]} 파일 생성 완료: ${r.export.output_path}`,
-        );
+        const message = `${KIND_LABELS[kind]} 파일 생성 완료: ${r.export.output_path}`;
+        setResultMessage(message);
+        toast.push("success", message);
         router.refresh();
       } catch (e) {
-        toast.push("error", `${KIND_LABELS[kind]} 생성 실패: ${(e as Error).message}`);
+        const message = `${KIND_LABELS[kind]} 생성 실패: ${(e as Error).message}`;
+        setResultMessage(message);
+        toast.push("error", message);
       }
     });
   };
 
   return (
-    <div className="rounded border border-slate-800 bg-slate-900/40 p-3">
-      <div className="mb-2 text-xs font-semibold text-slate-300">
+    <div className="min-w-0">
+      <div className="mb-2 text-xs font-semibold text-slate-700">
         규격대응표 내보내기
       </div>
       <div className="flex flex-wrap gap-2">
@@ -148,7 +151,7 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
                 type="button"
                 onClick={() => generate(kind)}
                 disabled={pending}
-                className="rounded bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="rounded bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-600"
               >
                 {pending ? "생성 중…" : `${KIND_LABELS[kind]} 생성`}
               </button>
@@ -180,12 +183,11 @@ export function ExportButtonGroup({ noticeNo, exports }: Props) {
           />
         ) : null}
       </div>
-      <p className="mt-2 text-xs text-slate-500">
-        HWP 출력은 Windows 데스크톱의 milim-hwp-agent가 가동돼 있어야 합니다 (
-        <code>insert-table</code>·<code>put-fields</code> 위임). 에이전트 미가동 시 502가
-        반환되며, Excel은 에이전트 없이도 항상 정상 동작합니다. 검토 필요/검증 실패 파일도
-        다운로드는 가능하나 배지로 표시됩니다.
-      </p>
+      {resultMessage ? (
+        <div role="status" className="mt-3 rounded border border-slate-300 bg-white p-2 text-xs text-slate-800">
+          {resultMessage}
+        </div>
+      ) : null}
     </div>
   );
 }
