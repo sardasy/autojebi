@@ -20,11 +20,9 @@ from fastapi import (
 )
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import select, update
 
 from api.auth import verify_api_key
 from api.db import require_engine
-from api.db.tables import bid_pipeline
 from api.models.notices import NoticeSearchRequest, NoticeSearchResponse, NoticeUpsertRequest
 from api.routers.company_assets import router as company_assets_router
 from api.routers.notice_forms import router as notice_forms_router
@@ -32,7 +30,8 @@ from api.routers.notices import search_notices_endpoint, upsert_notice
 from api.routers.requirement_candidates import router as requirement_candidates_router
 from api.routers.specifications import router as specifications_router
 from api.services.uploads import build_metadata, save_stream
-from api.workspace import service
+from api.workspace import queries, service
+from api.workspace.apply import apply_job_result
 from api.workspace.assets import AssetLink
 from api.workspace.errors import WorkspaceError
 from api.workspace.execution import hwp_preview, source_path, storage_root
@@ -71,7 +70,6 @@ from api.workspace.source_inventory import (
     source_inventory_issues,
     source_text_complete,
 )
-from api.workspace.tables import jobs, workspaces
 
 router = APIRouter(prefix="/v2", tags=["workspace"], dependencies=[Depends(verify_api_key)])
 
@@ -139,23 +137,7 @@ def search(body: NoticeSearchRequest) -> NoticeSearchResponse:
 @router.get("/notices")
 def list_workspaces(q: str = Query("", max_length=200), page: int = Query(1, ge=1)) -> dict:
     with require_engine().begin() as conn:
-        query = select(bid_pipeline.c.notice_no, bid_pipeline.c.title).order_by(
-            bid_pipeline.c.updated_at.desc()
-        )
-        if q:
-            query = query.where(
-                bid_pipeline.c.title.contains(q, autoescape=True)
-                | bid_pipeline.c.notice_no.contains(q, autoescape=True)
-            )
-        rows = conn.execute(query.offset((page - 1) * 20).limit(21)).mappings().all()
-        output = []
-        for row in rows[:20]:
-            exists = conn.execute(
-                select(workspaces.c.notice_no).where(workspaces.c.notice_no == row["notice_no"])
-            ).first()
-            ws = service.view(conn, row["notice_no"]) if exists else None
-            output.append({**row, "workspace": ws.model_dump(mode="json") if ws else None})
-        return {"items": output, "page": page, "has_more": len(rows) > 20}
+        return queries.list_notices(conn, q, page)
 
 
 @router.post("/notices")
@@ -163,9 +145,7 @@ def register_notice(body: WorkspaceNoticeRequest) -> dict:
     if not body.notice_no.strip():
         service.fail("notice_required", "공고번호를 입력하세요.", status=422)
     with require_engine().connect() as conn:
-        if conn.execute(
-            select(bid_pipeline.c.notice_no).where(bid_pipeline.c.notice_no == body.notice_no)
-        ).first():
+        if queries.notice_exists(conn, body.notice_no):
             return {"notice_no": body.notice_no, "already_exists": True}
     raw = dict(body.raw or {})
     if body.org_name is not None:
@@ -180,12 +160,7 @@ def register_notice(body: WorkspaceNoticeRequest) -> dict:
 @router.post("/notices/{notice_no}/initialize", response_model=WorkspaceRecord)
 def initialize_workspace(notice_no: str) -> WorkspaceRecord:
     with require_engine().begin() as conn:
-        # Lock the existing notice so simultaneous initialization stays idempotent.
-        conn.execute(
-            select(bid_pipeline.c.notice_no)
-            .where(bid_pipeline.c.notice_no == notice_no)
-            .with_for_update()
-        )
+        queries.lock_notice(conn, notice_no)
         service.initialize(conn, notice_no)
         return service.view(conn, notice_no)
 
@@ -226,32 +201,9 @@ def create_job(notice_no: str, body: JobRequest) -> JobRecord:
         try:
             return JobRecord(**service.enqueue(conn, notice_no, body))
         except (HTTPException, WorkspaceError) as exc:
-            if (
-                body.kind not in {"hwp", "hwp_inspect"}
-                or not conn.execute(
-                    select(workspaces.c.notice_no).where(workspaces.c.notice_no == notice_no)
-                ).first()
-            ):
+            detail = queries.record_blocked_attempt(conn, notice_no, body, exc.detail)
+            if detail is None:
                 raise
-            ws = service.load(conn, notice_no)
-            attempted = service.create_job_record(
-                conn,
-                ws,
-                body.kind,
-                "blocked:" + service.uid(),
-                {
-                    "template_key": body.template_key,
-                    "attempt_only": True,
-                    "requested_input_version": body.input_version,
-                    "request_key_hash": service.digest(body.idempotency_key),
-                },
-            )
-            detail = {**exc.detail, "job_id": attempted["id"]}
-            conn.execute(
-                update(jobs)
-                .where(jobs.c.id == attempted["id"])
-                .values(status="blocked", error=detail, finished_at=service.now())
-            )
             rejected = HTTPException(status_code=exc.status_code, detail=detail)
     # Commit the blocked attempt before returning the rejected request to the caller.
     raise rejected
@@ -260,10 +212,7 @@ def create_job(notice_no: str, body: JobRequest) -> JobRecord:
 @router.get("/jobs/{job_id}", response_model=JobRecord)
 def get_job(job_id: str) -> JobRecord:
     with require_engine().connect() as conn:
-        row = conn.execute(select(jobs).where(jobs.c.id == job_id)).mappings().first()
-        if not row:
-            service.fail("job_not_found", "작업 기록이 없습니다.", status=404)
-        return JobRecord(**row)
+        return JobRecord(**queries.get_job(conn, job_id))
 
 
 @router.post("/notices/{notice_no}/jobs/{job_id}/adopt-requirements", response_model=WorkspaceRecord)
@@ -313,85 +262,7 @@ def recover_job(job_id: str, body: RecoveryRequest) -> JobRecord:
 @router.post("/notices/{notice_no}/jobs/{job_id}/apply", response_model=WorkspaceRecord)
 def apply_job(notice_no: str, job_id: str, body: VersionRequest) -> WorkspaceRecord:
     with require_engine().begin() as conn:
-        ws = service.load(conn, notice_no, body.version)
-        service.assert_source_current(conn, ws)
-        job = (
-            conn.execute(select(jobs).where(jobs.c.id == job_id, jobs.c.notice_no == notice_no))
-            .mappings()
-            .first()
-        )
-        if not job or job["status"] != "succeeded" or job["input_version"] != ws["version"]:
-            service.fail("stale_result", "현재 버전에서 완료된 결과만 반영할 수 있습니다.")
-        inputs = copy.deepcopy(ws["inputs"])
-        if job["kind"] == "fetch":
-            existing = {d["id"]: d for d in inputs["documents"]}
-            for document in job["result"]["documents"]:
-                target = existing.get(document["id"])
-                if target is None:
-                    target = copy.deepcopy(document)
-                    inputs["documents"].append(target)
-                    existing[target["id"]] = target
-                elif "attachment_index" in document and "attachment_url" in document:
-                    if target.get("role") != "notice_source" or document.get("role") != "notice_source":
-                        service.fail("source_identity_conflict", "회사·제품 증빙을 공고 첨부로 덮어쓸 수 없습니다.")
-                    target.update(
-                        attachment_index=document["attachment_index"],
-                        attachment_url=document["attachment_url"],
-                    )
-        elif job["kind"] == "extract":
-            for doc in inputs["documents"]:
-                found = next((d for d in job["result"]["documents"] if d["id"] == doc["id"]), None)
-                if found:
-                    if doc.get("text") != found["text"]:
-                        doc["confirmed"] = False
-                    doc.update(text=found["text"], text_origin=found["format"])
-                    if "extraction" in found:
-                        doc["extraction"] = copy.deepcopy(found["extraction"])
-                        if not found["extraction"].get("complete", False):
-                            doc["confirmed"] = False
-                            inputs["source_reviewed"] = False
-        elif job["kind"] == "proposal":
-            written = [s for s in inputs.get("proposal_sections") or [] if s.get("document_kind")]
-            generated = job["result"]["sections"]
-            if {s["id"] for s in written} & {s["id"] for s in generated}:
-                service.fail("draft_conflict", "작성한 서류와 생성 결과의 식별자가 겹칩니다.")
-            inputs["proposal_sections"] = written + generated
-        elif job["kind"] == "analyze":
-
-            def identity(requirement: dict) -> tuple:
-                return tuple(
-                    requirement.get(key) for key in ("document_id", "quote", "category", "text")
-                )
-
-            seen = {identity(r) for r in inputs["requirements"]}
-            additions = []
-            for requirement in job["result"]["requirements"]:
-                key = identity(requirement)
-                if key not in seen:
-                    additions.append(
-                        {**requirement, "id": service.uid(), "review_status": "pending",
-                         "compliance": "unassessed"}
-                    )
-                    seen.add(key)
-            if not additions:
-                return service.view(conn, notice_no)
-            inputs["requirements"].extend(additions)
-        else:
-            service.fail("not_applicable", "반영 대상 작업이 아닙니다.")
-        if job["kind"] != "extract":
-            inputs["source_reviewed"] = False
-        if inputs == ws["inputs"]:
-            return service.view(conn, notice_no)
-        changed = service.change(
-            conn,
-            ws,
-            inputs,
-            "extract_result" if job["kind"] == "extract" else "apply_result",
-            "사용자가 작업 결과를 검토 대상으로 반영",
-        )
-        if job["kind"] == "analyze":
-            from api.specifications.service import sync_adopted
-            sync_adopted(conn, changed)
+        apply_job_result(conn, notice_no, job_id, body.version)
         return service.view(conn, notice_no)
 
 
@@ -724,12 +595,7 @@ def prerequisites(notice_no: str, template_key: str = Query("bid_form", max_leng
     with require_engine().connect() as conn:
         ws = service.load(conn, notice_no)
         _, signature = service.source_data(conn, notice_no)
-        inspections = conn.execute(select(jobs.c.result, jobs.c.parameters).where(
-            jobs.c.notice_no == notice_no, jobs.c.input_version == ws["version"],
-            jobs.c.kind == "hwp_inspect", jobs.c.status == "succeeded",
-        ).order_by(jobs.c.created_at.desc())).mappings()
-        inspected = next((row["result"] for row in inspections
-                          if row["parameters"].get("template_key") == template_key), None)
+        inspected = queries.latest_inspection(conn, notice_no, ws["version"], template_key)
         return check_prerequisites(conn, ws["inputs"], ws["version"], template_key,
                                    source_changed=signature != ws["source_hash"], inspection=inspected)
 
@@ -740,16 +606,7 @@ def workspace_settings() -> dict:
     from api.workspace.providers import configured_key, model_name
 
     with require_engine().connect() as conn:
-        last = (
-            conn.execute(
-                select(jobs.c.kind, jobs.c.status, jobs.c.finished_at)
-                .where(jobs.c.kind.in_(["analyze", "hwp"]), jobs.c.finished_at.is_not(None))
-                .order_by(jobs.c.finished_at.desc())
-                .limit(10)
-            )
-            .mappings()
-            .all()
-        )
+        last = queries.recent_checks(conn)
     return {
         "configured": {
             "g2b": bool(settings.data_go_kr_api_key.strip()),
@@ -762,7 +619,7 @@ def workspace_settings() -> dict:
             "key_registered": bool(configured_key()),
             "connection_status": "not_checked",
         },
-        "last_checks": [dict(r) for r in last],
+        "last_checks": last,
         "external_notifications": "dry_run_only",
         "worker": worker_health(),
     }

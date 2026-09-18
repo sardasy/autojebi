@@ -1,6 +1,6 @@
 # autojebi 전체 리팩토링 계획 — 10단계 파이프라인
 
-> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0·R1 완료.
+> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0·R1·R2 완료.
 > 9단계 ADR: [docs/adr/0001-v2-module-boundaries.md](../adr/0001-v2-module-boundaries.md). 지표 측정: `python tools/change_amplification.py`.
 
 ## Context
@@ -177,6 +177,11 @@ ADR 초안은 `docs/adr/0001-v2-module-boundaries.md`에 쓴다. B안을 채택�
 - **R1**: 테이블을 `api/db/tables.py`로 이동하고 re-export. 대상은 v2, `alembic/env.py`, `tests/conftest.py`의 import 경로. import-linter 계약 1을 도입한다
   - **완료 (2026-09-18)**: 17개 테이블과 `metadata`를 이동했다(`api/db.py` → `api/db/__init__.py` 패키지화). `api/` 비라우터 모듈 전체, `routers/{documents,proposals,workspace}`, alembic, conftest, tools를 새 경로로 바꿨다. 계약 1은 CI `lint-imports`에 넣었고 위반 주입 테스트에서 BROKEN을 확인했다. alembic 대상 테이블 28개는 변경 전후 동일하고, OpenAPI는 이동 전 코드 기준 스냅샷과 동일하다(`tests/test_openapi_snapshot.py`). pytest 1,741 passed / 17 skipped(+1은 스냅샷 테스트). 테스트 144곳의 `api.routers.notices` import는 re-export로 유지한다
 - **R2**: `WorkspaceError`와 exception handler를 추가하고, 라우터의 SQL을 service로 옮긴다. 계약 3 도입
+  - **완료 (2026-09-18)**:
+    - R2a: `api/workspace/errors.py`의 `WorkspaceError`로 도메인 예외를 바꿨다. 응답은 FastAPI `http_exception_handler`에 위임해서 본문이 같다(`tests/test_workspace_errors.py`). 레거시 서비스(uploads·exporters·db)는 아직 HTTPException을 던지므로 catch 지점은 `HANDLED_ERRORS`로 받는다. 계약 3(`api.workspace` ↛ fastapi 직접 import)의 예외는 `errors`(과도기)와 `identity`(HTTP 어댑터) 두 곳이다. 테스트 13개 파일의 `pytest.raises(HTTPException)`을 `WorkspaceError`로 바꿨다.
+    - R2b: `apply_job` 도메인 로직을 `api/workspace/apply.py`로, 라우터 SQL 7곳을 `api/workspace/queries.py`로 옮겼다. 라우터에 남은 SQL은 0이다(774 → 654줄). 목록 API 회귀 테스트를 추가했고 이동 전 코드에서도 통과함을 확인했다.
+    - pytest 1,744 passed / 17 skipped. OpenAPI 스냅샷 동일.
+  - **잔여**: 라우터 핸들러 몇 곳(`review_section`, `upload_document`, `link_source`, `register_text`, `confirm_document`)에 입력 dict 변경 로직이 남아 있다. SQL은 아니며, 해당 흐름 단계를 service 모듈로 나눌 때(R4 이후) 함께 옮긴다. `identity`는 `api.routers`로 이동할 후보다
 - **R3**: `execution.py`를 `executors/*`로 분할하고 함수 안 import를 제거한다
 - **R4**: `api/parsing/*`, `api/net/download.py`를 만들고 v2 중복 경로를 대체한다. `notice_forms`를 분할한다. 계약 2 도입
 - **R5**: 프론트 `workspaceApi`를 일원화하고 사용처 없는 컴포넌트를 삭제한다

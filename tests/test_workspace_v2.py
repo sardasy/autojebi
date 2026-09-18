@@ -538,3 +538,24 @@ def test_v2_auth_gate(client, workspace, monkeypatch):
     monkeypatch.setattr(settings, "api_key", "local-test-key")
     assert client.get("/v2/notices").status_code == 403
     assert client.get("/v2/notices", headers={"X-API-Key": "local-test-key"}).status_code == 200
+
+
+def test_list_notices_marks_workspaces_and_filters(client, workspace):
+    """R2 regression: list query moved to api.workspace.queries keeps the response shape."""
+    registered = client.post("/v2/notices", json={
+        "notice_no": "E2E-LIST", "title": "목록 전용 공고", "source": "MANUAL_E2E", "raw": {},
+    })
+    assert registered.status_code == 200, registered.text
+    assert client.post("/v2/notices", json={
+        "notice_no": "E2E-LIST", "title": "목록 전용 공고", "source": "MANUAL_E2E", "raw": {},
+    }).json() == {"notice_no": "E2E-LIST", "already_exists": True}
+
+    body = client.get("/v2/notices").json()
+    assert body["page"] == 1 and body["has_more"] is False
+    by_no = {item["notice_no"]: item for item in body["items"]}
+    assert by_no["E2E-V2"]["workspace"]["notice_no"] == "E2E-V2"
+    assert by_no["E2E-LIST"]["workspace"] is None
+    assert by_no["E2E-LIST"]["title"] == "목록 전용 공고"
+
+    filtered = client.get("/v2/notices", params={"q": "목록"}).json()
+    assert [item["notice_no"] for item in filtered["items"]] == ["E2E-LIST"]
