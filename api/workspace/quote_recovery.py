@@ -13,6 +13,7 @@ from sqlalchemy import select
 from api.workspace import service
 from api.workspace.errors import WorkspaceError
 from api.workspace.models import RequirementRequest
+from api.workspace.storage import source_path
 from api.workspace.tables import jobs, reviews
 
 
@@ -107,7 +108,6 @@ def adopt(conn: Any, notice_no: str, job_id: str, body: Any) -> None:
         text = str((doc or {}).get("text") or "")
         if not doc or text_hash(text) != candidate.get("source_text_sha256"):
             service.fail("source_changed", "후보의 원문이 변경되었습니다. 다시 대조하세요.")
-        from api.workspace.execution import source_path
         source_path(doc)
         quote = selected.quote
         if not quote.strip() or text[selected.start:selected.start + len(quote)] != quote:

@@ -8,6 +8,7 @@ from api.config import settings
 from api.workspace import providers
 from api.workspace.llm_usage import (
     proposal_requirements,
+    reserve_call,
     result_metadata,
     reuse_result,
 )
@@ -25,7 +26,6 @@ class Draft(BaseModel):
 
 
 def generate_proposal(engine: Any, job: dict) -> dict:
-    from api.workspace.execution import reserve_call
 
     reqs = proposal_requirements(job["snapshot"])
     evidence = [

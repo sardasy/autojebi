@@ -1,6 +1,6 @@
 # autojebi 전체 리팩토링 계획 — 10단계 파이프라인
 
-> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0·R1·R2 완료.
+> 상태: **진행 중** (2026-09-18). 1단계 페르소나 확정(박정비), 3단계 지표를 대표 변경 시나리오 방식으로 확정, R0~R3 완료.
 > 9단계 ADR: [docs/adr/0001-v2-module-boundaries.md](../adr/0001-v2-module-boundaries.md). 지표 측정: `python tools/change_amplification.py`.
 
 ## Context
@@ -183,6 +183,12 @@ ADR 초안은 `docs/adr/0001-v2-module-boundaries.md`에 쓴다. B안을 채택�
     - pytest 1,744 passed / 17 skipped. OpenAPI 스냅샷 동일.
   - **잔여**: 라우터 핸들러 몇 곳(`review_section`, `upload_document`, `link_source`, `register_text`, `confirm_document`)에 입력 dict 변경 로직이 남아 있다. SQL은 아니며, 해당 흐름 단계를 service 모듈로 나눌 때(R4 이후) 함께 옮긴다. `identity`는 `api.routers`로 이동할 후보다
 - **R3**: `execution.py`를 `executors/*`로 분할하고 함수 안 import를 제거한다
+  - **완료 (2026-09-18)**:
+    - `execution.py`(933줄)를 `executors/{analyze,extract,fetch,hwp,excel,package}.py`(62~219줄)와 디스패처 `executors/__init__.py`로 나눴다. 파일 검사는 `storage.py`(storage_root, source_path, artifact)로, `fail`은 `errors.py`로 옮겼다. `service.fail`은 re-export로 유지한다. `execution.py`는 32줄짜리 호환 파사드로 남긴다.
+    - 순환의 뿌리였던 `service ↔ execution`을 끊었다. 그래서 `source_path`를 함수 안에서 import하던 9곳을 모듈 상단 import로 바꿨다. `service`의 비순환 지연 import 4종(identity, asset_policy, output_plan, writing_plan)도 끌어올렸다.
+    - 1st-party 함수 안 import: 67 → **31**. 전체(3rd-party 포함)는 81 → 39. 남은 것은 `notice_forms`·`source_needs`·`specifications.service` 순환(서비스 분할 때 해소)과 의도적 지연 2건(`spec-search` 선택 extra, grading의 Qdrant 스택)이다. `tests/test_architecture.py` 래칫이 파일별 예산을 감소 방향으로만 허용한다.
+    - 테스트 패치 대상 12곳을 코드가 실제로 있는 모듈로 바꿨다. 원래 지연 import였던 이름(`pdf_text.extract_pdf`, `attachment_text.*`, `uploads.*`)은 모듈 속성 접근으로 바꿔서, 호출 시점에 바인딩되는 의미를 유지했다. 대상을 일부러 틀리게 넣는 변이 검사로 패치가 실제로 효과가 있는지 확인했다.
+    - pytest 1,746 passed / 17 skipped(+2 아키텍처 테스트). OpenAPI 스냅샷 동일. 계약 2개 유지.
 - **R4**: `api/parsing/*`, `api/net/download.py`를 만들고 v2 중복 경로를 대체한다. `notice_forms`를 분할한다. 계약 2 도입
 - **R5**: 프론트 `workspaceApi`를 일원화하고 사용처 없는 컴포넌트를 삭제한다
 - **R6**: `WorkspaceClient`를 분해한다(`useWorkspace`, `nextStep`, 탭 3개, `JobHistory`)

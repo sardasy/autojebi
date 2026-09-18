@@ -21,7 +21,7 @@ def test_empty_source_analysis_blocks_before_paid_call(monkeypatch, documents):
     def unexpected_call(*args, **kwargs):
         pytest.fail("An empty source must not reserve a paid call")
 
-    monkeypatch.setattr(execution, "reserve_call", unexpected_call)
+    monkeypatch.setattr("api.workspace.executors.analyze.reserve_call", unexpected_call)
     with pytest.raises(WorkspaceError) as raised:
         execution.analyze(None, {"snapshot": {"documents": documents}})
     assert raised.value.detail["code"] == "no_source_text"

@@ -18,7 +18,8 @@ from api.db.tables import (
     hwp_templates,
 )
 from api.services.notice_facts import normalize_notice_facts
-from api.workspace.errors import HANDLED_ERRORS, WorkspaceError
+from api.workspace import asset_policy, identity, output_plan, writing_plan
+from api.workspace.errors import HANDLED_ERRORS, fail
 from api.workspace.models import JobRecord, WorkspaceRecord
 from api.workspace.provenance import (
     commercial_valid,
@@ -32,6 +33,7 @@ from api.workspace.source_inventory import (
     source_inventory_issues,
     source_text_complete,
 )
+from api.workspace.storage import source_path
 from api.workspace.tables import jobs, reviews, workspaces
 
 
@@ -47,15 +49,6 @@ def digest(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, default=str, ensure_ascii=False).encode()
     ).hexdigest()
-
-
-def fail(
-    code: str, message: str, next_action: str = "입력과 최신 상태를 확인하세요.", status: int = 409
-) -> None:
-    raise WorkspaceError(
-        status,
-        {"code": code, "message": message, "next_action": next_action, "job_id": None},
-    )
 
 
 def notice_facts(source: dict) -> dict:
@@ -158,7 +151,6 @@ def assert_source_current(conn: Any, workspace: dict) -> None:
 def audit(
     conn: Any, ws: dict, action: str, note: str, details: dict, job_id: str | None = None
 ) -> None:
-    from api.workspace.identity import audit_details
 
     if not note.strip():
         fail("note_required", "검토 의견을 입력하세요.", status=422)
@@ -170,7 +162,7 @@ def audit(
             job_id=job_id,
             action=action,
             note=note.strip(),
-            details=audit_details(details),
+            details=identity.audit_details(details),
             created_at=now(),
         )
     )
@@ -314,21 +306,18 @@ def deadline_issues(inputs: dict) -> list[str]:
 
 
 def blockers(inputs: dict) -> list[str]:
-    from api.workspace.asset_policy import document_issue
     from api.workspace.source_needs import issues as source_need_issues
     issues = source_inventory_issues(inputs)
     issues.extend(source_need_issues(inputs))
     from api.workspace.notice_forms import filling_issues
     issues.extend(filling_issues(inputs))
-    from api.workspace.output_plan import writing_output_issues
-    issues.extend(writing_output_issues(inputs))
+    issues.extend(output_plan.writing_output_issues(inputs))
     from api.specifications.service import enabled, summary
     if inputs.get("specifications") or enabled():
         if summary(inputs)["spec_compliance"] != "충족":
             issues.append("필수 기술사양 검증·사람 검토 필요")
     if inputs.get("writing_plan"):
-        from api.workspace.writing_plan import current
-        if not current(inputs):
+        if not writing_plan.current(inputs):
             issues.append("공고 작성 대상 재확인 필요")
         written = {s["id"] for s in inputs.get("proposal_sections", []) if s.get("text", "").strip()}
         issues.extend(f"작성 대상 미작성: {item['title']}" for item in inputs["writing_plan"]["items"]
@@ -337,7 +326,7 @@ def blockers(inputs: dict) -> list[str]:
         issues.append("원문 전체 및 필수 요구사항 대조 확인 필요")
     docs = inputs.get("documents") or []
     for doc in docs:
-        issue = document_issue(doc, inputs.get("company") or {})
+        issue = asset_policy.document_issue(doc, inputs.get("company") or {})
         if issue:
             issues.append(f"{issue}: {doc.get('name', doc['id'])}")
     if not source_text_complete(inputs):
@@ -345,7 +334,7 @@ def blockers(inputs: dict) -> list[str]:
     for item in inputs.get("checklist") or []:
         if not any(
             d.get("confirmed")
-            and not document_issue(d, inputs.get("company") or {})
+            and not asset_policy.document_issue(d, inputs.get("company") or {})
             and d.get("role") in {"company_evidence", "product_evidence"}
             and str(d.get("text") or "").strip()
             and d.get("item_id") == item["id"]
@@ -376,7 +365,6 @@ def blockers(inputs: dict) -> list[str]:
 
 
 def input_file_issues(inputs: dict) -> list[str]:
-    from api.workspace.execution import source_path
 
     issues = []
     for doc in inputs.get("documents") or []:
@@ -435,15 +423,13 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
     for doc in public_inputs["documents"]:
         doc.pop("storage_path", None)
         if doc.get("company_asset"):
-            from api.workspace.asset_policy import document_issue
-            doc["asset_issue"] = document_issue(doc, public_inputs.get("company") or {})
+            doc["asset_issue"] = asset_policy.document_issue(doc, public_inputs.get("company") or {})
             if doc["asset_issue"]:
                 doc["confirmed"] = False
     from api.workspace.source_needs import inventory as needs_inventory
-    from api.workspace.writing_plan import current as writing_plan_current
     return WorkspaceRecord(
         **_spec_summary(ws["inputs"]),
-        writing_plan_current=writing_plan_current(ws["inputs"]),
+        writing_plan_current=writing_plan.current(ws["inputs"]),
         notice_no=notice_no,
         version=ws["version"],
         decision=ws["decision"],
@@ -500,7 +486,6 @@ def latest_review(conn: Any, job_id: str) -> dict | None:
 
 
 def package_current(conn: Any, ws: dict, package: dict) -> bool:
-    from api.workspace.output_plan import review_matches, selected_artifacts, template_keys
 
     if not artifact_healthy(package):
         return False
@@ -508,11 +493,11 @@ def package_current(conn: Any, ws: dict, package: dict) -> bool:
         jobs.c.notice_no == ws["notice_no"], jobs.c.input_version == ws["version"],
         jobs.c.kind.in_(["excel", "hwp"])
     ).order_by(jobs.c.created_at.desc(), jobs.c.id.desc())).mappings())
-    keys = set(template_keys(ws["inputs"]))
+    keys = set(output_plan.template_keys(ws["inputs"]))
     if any(j["status"] in {"queued", "running"} and
            (j["kind"] == "excel" or j["parameters"].get("template_key") in keys) for j in records):
         return False
-    selected = selected_artifacts(records, ws["inputs"])
+    selected = output_plan.selected_artifacts(records, ws["inputs"])
     included = (package.get("result") or {}).get("included_jobs") or []
     if not included or set(included) != {j["id"] for j in selected}:
         return False
@@ -520,7 +505,7 @@ def package_current(conn: Any, ws: dict, package: dict) -> bool:
         j["parameters"].get("template_key") for j in selected if j["kind"] == "hwp"
     }:
         return False
-    return all(artifact_healthy(j) and review_matches(j, latest_review(conn, j["id"]))
+    return all(artifact_healthy(j) and output_plan.review_matches(j, latest_review(conn, j["id"]))
                for j in selected)
 
 
@@ -753,9 +738,7 @@ def review_artifact(conn: Any, notice_no: str, body: Any) -> None:
         if body.output_sha256 is not None and body.output_sha256 != result.get("sha256"):
             fail("file_changed", "화면에서 검토한 파일과 현재 파일이 다릅니다.")
         if job["kind"] == "hwp":
-            from api.workspace.output_plan import hwp_review_issues
-
-            issues = hwp_review_issues(result)
+            issues = output_plan.hwp_review_issues(result)
             if issues:
                 fail("hwp_review_blocked", issues[0])
             if not body.layout_confirmed or body.output_sha256 != result.get("sha256"):

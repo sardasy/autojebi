@@ -30,9 +30,11 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "upload_max_bytes", 50_000)
     monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path / "workspace"))
     monkeypatch.setenv("HWP_AGENT_TOKEN", "test-only-token-to-exercise-ole-routing")
-    monkeypatch.setattr(
-        execution, "HwpAgentClient", lambda *args, **kwargs: pytest.fail("unexpected HWP call")
-    )
+    for module in ("extract", "hwp"):
+        monkeypatch.setattr(
+            f"api.workspace.executors.{module}.HwpAgentClient",
+            lambda *args, **kwargs: pytest.fail("unexpected HWP call"),
+        )
 
 
 @pytest.fixture
@@ -375,8 +377,7 @@ def test_hwp_ole_still_uses_worker_when_suffix_matches(tmp_path, monkeypatch):
     path.write_bytes(OLE + b"hwp document")
     calls = []
     monkeypatch.setattr(
-        execution,
-        "HwpAgentClient",
+        "api.workspace.executors.extract.HwpAgentClient",
         lambda **kwargs: SimpleNamespace(
             analyze_document=lambda value: calls.append(value) or {"text": "HWP body"},
         ),
@@ -409,7 +410,7 @@ def test_zip_original_is_stored_untouched_without_opening_archive(transport, mon
     content = section_archive()
     original_zip = zipfile.ZipFile
     monkeypatch.setattr(
-        execution.zipfile, "ZipFile", lambda *args, **kwargs: pytest.fail("ZIP must stay inert")
+        zipfile, "ZipFile", lambda *args, **kwargs: pytest.fail("ZIP must stay inert")
     )
     result = execution.fetch_sources(job_for(transport, [(3, "original.zip", content)]))
     assert "zip" in settings.upload_allowed_ext_set
@@ -421,7 +422,7 @@ def test_zip_original_is_stored_untouched_without_opening_archive(transport, mon
     assert path.suffix == ".zip" and path.read_bytes() == content
     assert doc["sha256"] == hashlib.sha256(content).hexdigest()
     assert result["source_inventory"][0]["status"] == "downloaded"
-    monkeypatch.setattr(execution.zipfile, "ZipFile", original_zip)
+    monkeypatch.setattr(zipfile, "ZipFile", original_zip)
     extracted = execution.extract({"snapshot": {"documents": [doc]}})
     assert extracted["documents"][0]["text"] == ""
     assert not extracted["documents"][0]["extraction"]["complete"]
@@ -454,7 +455,7 @@ def test_non_hwpx_pk_and_cross_extension_aliases_are_not_parsed(
         opened.append(args)
         return original_zip_file(*args, **kwargs)
 
-    monkeypatch.setattr(execution.zipfile, "ZipFile", tracked_zip_file)
+    monkeypatch.setattr(zipfile, "ZipFile", tracked_zip_file)
     doc = {"id": "archive", "name": name, "storage_path": str(path)}
     manual = {"id": "manual", "text": "checked text", "text_origin": "manual_confirmed"}
     result = execution.extract({"snapshot": {"documents": [doc, manual]}})

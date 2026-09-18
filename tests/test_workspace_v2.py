@@ -518,7 +518,7 @@ def test_hwp_mock_writes_audited_artifact_and_remaining_fields(
                 raw={},
             )
 
-    monkeypatch.setattr("api.workspace.execution.HwpAgentClient", Worker)
+    monkeypatch.setattr("api.workspace.executors.hwp.HwpAgentClient", Worker)
     job = enqueue(client, kind="hwp", version=2).json()
     run_once(sqlite_engine)
     result = client.get(f"/v2/jobs/{job['id']}").json()

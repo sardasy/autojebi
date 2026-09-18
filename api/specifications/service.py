@@ -9,6 +9,7 @@ from api.specifications.models import Candidate, Correction, Specification
 from api.specifications.tables import active_indexes, generations, spec_events, specifications
 from api.specifications.validation import VERSION, sha, validate_spec
 from api.workspace import service as workspace
+from api.workspace.storage import source_path
 
 
 def enabled() -> bool:
@@ -166,7 +167,6 @@ def correct(conn, notice_no: str, spec_id: str, body: Correction, if_match: str 
     check = validate_spec(body.payload, doc)
     if "source_changed" in check["codes"] or not doc or doc.get("role") != "notice_source":
         workspace.fail("source_changed", "공고 원문과 교정 인용 위치가 일치해야 합니다.")
-    from api.workspace.execution import source_path
     source_path(doc)
     inputs = copy.deepcopy(ws["inputs"])
     req = next((r for r in inputs["requirements"] if r["id"] == row["requirement_id"]), None)

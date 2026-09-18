@@ -4,8 +4,8 @@ from fastapi import APIRouter, Query
 
 from api.db import require_engine
 from api.workspace import service
-from api.workspace.execution import source_path
 from api.workspace.requirement_candidates import RequirementCandidatesResponse, find_candidates
+from api.workspace.storage import source_path
 
 router = APIRouter()
 

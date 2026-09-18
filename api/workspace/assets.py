@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from api.services.uploads import build_metadata, save_stream
 from api.workspace import service
 from api.workspace.asset_policy import business_number, validity
+from api.workspace.storage import source_path
 from api.workspace.tables import company_asset_events, company_assets, workspaces
 
 AssetCategory = Literal["business_registration", "corporate_register", "credit_rating",
@@ -104,7 +105,6 @@ def load(conn: Any, asset_id: str, version: int | None = None) -> dict:
 def create(conn: Any, stream: BinaryIO, name: str, mime: str | None, details: AssetDetails) -> dict:
     # This registry never runs COM or an LLM while accepting a file.
     from api.workspace.attachment_text import checked_archive
-    from api.workspace.execution import source_path
     from api.workspace.hwp_validation import validate_hwp_content
 
     if Path(name).suffix.lower() not in {".pdf", ".hwp", ".hwpx", ".xlsx"}:
@@ -168,7 +168,6 @@ def edit(conn: Any, asset_id: str, body: AssetEdit) -> dict:
 
 
 def link(conn: Any, notice_no: str, asset_id: str, body: AssetLink) -> None:
-    from api.workspace.execution import source_path
     row = load(conn, asset_id, body.asset_version)
     ws = service.load(conn, notice_no, body.version)
     if not row["details"]["active"]:

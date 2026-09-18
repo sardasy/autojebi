@@ -19,7 +19,7 @@ from sqlalchemy.exc import (
 from api.db import get_engine
 from api.workspace import receipts
 from api.workspace.errors import HANDLED_ERRORS, HandledError
-from api.workspace.execution import execute
+from api.workspace.executors import execute
 from api.workspace.lanes import LOCAL_KINDS, validate_lane
 from api.workspace.service import assert_source_current, load, now, uid
 from api.workspace.tables import jobs

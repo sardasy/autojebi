@@ -31,7 +31,7 @@ from api.specifications.validation import VERSION, compare, parse_numeric, sha, 
 from api.workspace import service
 from api.workspace.asset_policy import document_issue
 from api.workspace.errors import HANDLED_ERRORS
-from api.workspace.execution import source_path
+from api.workspace.storage import source_path
 from api.workspace.tables import jobs
 
 GRAPH_SCHEMA_VERSION = "spec-graph-v2-notice-requirement-product"

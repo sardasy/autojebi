@@ -3,6 +3,7 @@ import io
 import json
 import stat
 import zipfile
+from pathlib import Path
 
 import pytest
 from openpyxl import Workbook
@@ -348,7 +349,7 @@ def test_execution_cached_hwp_retains_metadata_and_does_not_reopen_worker(tmp_pa
     doc = {"id": "source", "name": path.name, "storage_path": str(path),
            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "text_origin": "hwp_ole",
            "text": "Cached body", "extraction": {"custom": ["keep"]}}
-    monkeypatch.setattr(execution, "HwpAgentClient", lambda **_: pytest.fail("cached HWP must not reopen COM"))
+    monkeypatch.setattr("api.workspace.executors.extract.HwpAgentClient", lambda **_: pytest.fail("cached HWP must not reopen COM"))
     result = execution.extract({"snapshot": {"documents": [doc]}})["documents"][0]
     assert result["text"] == "Cached body"
     assert result["extraction"]["custom"] == ["keep"]
@@ -368,13 +369,13 @@ def test_execution_zip_hwp_uses_authenticated_worker_with_immutable_digest_sourc
     opened = []
     class Worker:
         def analyze_document(self, source):
-            source = execution.Path(source)
+            source = Path(source)
             assert source.parent == tmp_path / "uploads" / "archive-members"
             assert source.name == hashlib.sha256(hwp).hexdigest() + ".hwp"
             assert source.read_bytes() == hwp
             opened.append(source)
             return {"text": "Actual Worker body", "table_count": 1}
-    monkeypatch.setattr(execution, "HwpAgentClient", lambda **_: Worker())
+    monkeypatch.setattr("api.workspace.executors.extract.HwpAgentClient", lambda **_: Worker())
     doc = {"id": "zip", "name": path.name, "storage_path": str(path),
            "sha256": hashlib.sha256(content).hexdigest()}
     result = execution.extract({"snapshot": {"documents": [doc]}})["documents"][0]
@@ -397,7 +398,7 @@ def test_archive_hwp_refuses_changed_retained_source_without_calling_worker(tmp_
     folder = tmp_path / "uploads" / "archive-members"
     folder.mkdir(parents=True)
     (folder / (hashlib.sha256(content).hexdigest() + ".hwp")).write_bytes(b"changed")
-    monkeypatch.setattr(execution, "HwpAgentClient", lambda **_: pytest.fail("changed source"))
+    monkeypatch.setattr("api.workspace.executors.extract.HwpAgentClient", lambda **_: pytest.fail("changed source"))
     with pytest.raises(ArchiveMemberError, match="hwp_member_source_changed"):
         execution.extract_archive_hwp(content, "test:member")
 

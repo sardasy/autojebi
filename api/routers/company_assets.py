@@ -6,7 +6,7 @@ from sqlalchemy import select
 from api.db import require_engine
 from api.workspace import assets
 from api.workspace.asset_policy import validity
-from api.workspace.execution import source_path
+from api.workspace.storage import source_path
 from api.workspace.tables import company_asset_events, company_assets
 
 router = APIRouter(prefix="/company-assets")

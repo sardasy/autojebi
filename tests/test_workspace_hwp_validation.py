@@ -293,8 +293,8 @@ def run_context(tmp_path, monkeypatch):
     engine = SimpleNamespace(begin=lambda: nullcontext(conn))
     monkeypatch.setenv("HWP_AGENT_TOKEN", "test-token")
     monkeypatch.setenv("HWP_TEMPLATE_ROOT", str(tmp_path))
-    monkeypatch.setattr(execution, "hwp_preview", lambda *args: preview)
-    monkeypatch.setattr(execution, "blockers", lambda snapshot: [])
+    monkeypatch.setattr("api.workspace.executors.hwp.hwp_preview", lambda *args: preview)
+    monkeypatch.setattr("api.workspace.executors.hwp.blockers", lambda snapshot: [])
     state = SimpleNamespace(
         content=hwpx_bytes(),
         report={},
@@ -329,7 +329,7 @@ def run_context(tmp_path, monkeypatch):
                 raw=report,
             )
 
-    monkeypatch.setattr(execution, "HwpAgentClient", Worker)
+    monkeypatch.setattr("api.workspace.executors.hwp.HwpAgentClient", Worker)
     return state
 
 
@@ -469,7 +469,7 @@ def test_proposal_body_mapping_required_before_worker(run_context):
 
 def test_missing_actual_template_fields_blocks_before_put_field(run_context, monkeypatch):
     state = run_context
-    monkeypatch.setattr(execution, "inspect_template", lambda *args: {"inspection_passed": False})
+    monkeypatch.setattr("api.workspace.executors.hwp.inspect_template", lambda *args: {"inspection_passed": False})
     with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "template_fields_missing"

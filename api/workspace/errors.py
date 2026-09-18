@@ -10,7 +10,7 @@ import fastapi: legacy services (``api.services.uploads``/``exporters``, ``api.d
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import HTTPException
 
@@ -26,6 +26,16 @@ class WorkspaceError(Exception):
 
     def __str__(self) -> str:
         return f"{self.status_code}: {self.detail}"
+
+
+def fail(
+    code: str, message: str, next_action: str = "입력과 최신 상태를 확인하세요.", status: int = 409
+) -> NoReturn:
+    """Raise the standard v2 error (``detail`` = code/message/next_action/job_id)."""
+    raise WorkspaceError(
+        status,
+        {"code": code, "message": message, "next_action": next_action, "job_id": None},
+    )
 
 
 # Transitional: legacy services still raise HTTPException (see module docstring).

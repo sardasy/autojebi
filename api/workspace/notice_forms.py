@@ -16,6 +16,7 @@ from api.workspace import service
 from api.workspace.attachment_text import checked_archive
 from api.workspace.errors import HANDLED_ERRORS
 from api.workspace.models import StrictModel, VersionRequest
+from api.workspace.storage import source_path
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 NS = {"hp": HP}
@@ -292,7 +293,6 @@ def _document(inputs: dict, document_id: str) -> dict:
 
 
 def _source(doc: dict) -> bytes:
-    from api.workspace.execution import source_path
     if Path(doc.get("name") or "").suffix.lower() != ".hwpx":
         service.fail("form_unsupported", "원본 HWPX 양식만 자동 기입을 지원합니다.")
     if not re.fullmatch(r"[0-9a-f]{64}", doc.get("sha256") or ""):
@@ -340,7 +340,6 @@ def inventory(ws: dict) -> dict:
 
 def _reference(ref: FormReference, inputs: dict, version: int) -> dict:
     from api.workspace.asset_policy import document_issue
-    from api.workspace.execution import source_path
     doc = next((d for d in inputs.get("documents", []) if d["id"] == ref.document_id), None)
     if (not doc or doc.get("role") not in {"company_reference", "company_evidence", "product_evidence"}
             or document_issue(doc, inputs.get("company") or {})):

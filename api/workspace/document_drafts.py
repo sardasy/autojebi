@@ -5,6 +5,7 @@ import hashlib
 import json
 
 from api.workspace.models import DocumentDraft
+from api.workspace.storage import source_path
 
 
 def proposal_sections(inputs: dict) -> list[dict]:
@@ -62,7 +63,6 @@ def save_draft(conn, notice_no: str, body: DocumentDraft) -> None:
         if not ref.quote.strip() or ref.quote not in (doc.get("text") or ""):
             service.fail("reference_quote_invalid", "발췌문이 회사 참고자료 본문과 일치하지 않습니다.", status=422)
         if doc.get("role") != "company_reference":
-            from api.workspace.execution import source_path
             source_path(doc)
         references.append({**ref.model_dump(), "name": doc["name"], "input_version": ws["version"],
                            "role": doc["role"], "sha256": doc.get("sha256"), "approved_as_claim": False})

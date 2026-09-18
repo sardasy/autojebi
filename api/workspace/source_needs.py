@@ -6,6 +6,7 @@ from typing import Any
 
 from api.workspace import service
 from api.workspace.quote_recovery import text_hash
+from api.workspace.storage import source_path
 
 LABELS = ("과업내용서", "과업지시서", "제안요청서", "평가표", "제출 서식")
 
@@ -65,7 +66,6 @@ def update(conn: Any, notice_no: str, body: Any) -> None:
                         and d.get("role") == "notice_source"), None)
             if not doc or not item.resolution_quote.strip() or item.resolution_quote not in str(doc.get("text") or ""):
                 service.fail("unverified_quote", "확인 근거가 공고 원문과 일치하지 않습니다.")
-            from api.workspace.execution import source_path
             source_path(doc)
             value["resolution_text_sha256"] = text_hash(doc["text"])
             if item.state == "linked":

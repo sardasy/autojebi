@@ -97,7 +97,7 @@ def test_source_changed_after_path_validation_is_rejected_before_packaging(
             result.write_bytes(b"unverified replacement")
         return result
 
-    monkeypatch.setattr(execution, "source_path", replace_after_check)
+    monkeypatch.setattr("api.workspace.executors.package.source_path", replace_after_check)
     folder = tmp_path / "rejected-package"
     folder.mkdir()
     try:

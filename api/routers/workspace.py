@@ -34,7 +34,7 @@ from api.workspace import queries, service
 from api.workspace.apply import apply_job_result
 from api.workspace.assets import AssetLink
 from api.workspace.errors import WorkspaceError
-from api.workspace.execution import hwp_preview, source_path, storage_root
+from api.workspace.executors.hwp import hwp_preview
 from api.workspace.identity import router as identity_router
 from api.workspace.models import (
     AdoptRequirements,
@@ -70,6 +70,7 @@ from api.workspace.source_inventory import (
     source_inventory_issues,
     source_text_complete,
 )
+from api.workspace.storage import source_path, storage_root
 
 router = APIRouter(prefix="/v2", tags=["workspace"], dependencies=[Depends(verify_api_key)])
 
