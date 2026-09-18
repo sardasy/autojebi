@@ -1,3 +1,11 @@
+export interface ExtractedPage {
+  page_no: number; method: string; status: string; review_required: boolean; code?: string;
+  confidence?: number | null; missing_languages?: string[];
+}
+export interface ExtractedArchiveMember {
+  name: string; sha256: string; size: number; status: string; complete: boolean; error_code?: string;
+  extraction?: {members?: ExtractedArchiveMember[]; pages?: ExtractedPage[]};
+}
 export interface SourceDocument {
   id: string; name: string; role: "notice_source" | "company_evidence" | "product_evidence" | "company_reference";
   confirmed: boolean; text: string; text_origin: string; item_id?: string | null;
@@ -5,11 +13,11 @@ export interface SourceDocument {
   company_asset?: {id:string; version:number; expires_on:string|null; no_expiry:boolean; stale:boolean};
   asset_issue?: string;
   extraction?: {version?: number; complete: boolean;
-    pages?: {page_no: number; method: string; status: string; review_required: boolean; code?: string; confidence?: number | null}[];
+    pages?: ExtractedPage[];
     cells?: {sheet: string; cell: string; value: string | number | boolean | null; formula: string | null}[];
     items?: {sheet: string; row: string; review_status: string}[];
     issues?: {code: string; sheet: string; cell: string}[];
-    members?: {name: string; sha256: string; size: number; status: string; complete: boolean}[]};
+    members?: ExtractedArchiveMember[]};
 }
 export interface SourceAttachment {
   index: number; name: string; url: string; document_ids: string[];
@@ -26,7 +34,7 @@ export interface Requirement {
 export interface WorkspaceJob {
   execution_lane?: "local" | "external";
   id: string; kind: string; input_version: number; status: string; quality: string | null;
-  result: { artifact?: string; warnings?: string[]; sections?: { text: string }[]; required_missing?: string[];
+  result: { artifact?: string; sha256?: string; warnings?: string[]; sections?: { text: string }[]; required_missing?: string[];
     quote_diagnostics?: QuoteDiagnostic[];
     pages?: {number: number; width: number; height: number; sha256: string}[];
     documents?: {id: string; role?: SourceDocument["role"]; text?: string; format?: string; attachment_index?: number | null}[];
@@ -46,12 +54,15 @@ export interface WebWritingReference {title: string; url: string; quote: string;
 export interface FormFilling {
   document_id: string; name?: string; source_sha256: string; input_version: number;
   review_status: string;
+  review?: {output_sha256: string; approved: boolean; source_checked: boolean; content_checked: boolean;
+    layout_checked: boolean; note: string; input_version: number; basis_sha256: string; reviewed_at: string};
   fields: {field_id: string; value: string;
     reference?: {document_id: string; quote: string};
     web_reference?: {title: string; url: string; quote: string}}[];
 }
 export type DocumentKind = "qualitative_proposal" | "bid_document" | "other_document";
 export interface WritingPlanItem {id:string; title:string; document_kind:DocumentKind; action:"write"|"attach"|"electronic"; document_id:string; quote:string}
+export interface WorkspaceActor {id: string; name: string; role: "viewer" | "writer" | "reviewer" | "approver"}
 export interface Workspace {
   spec_compliance?: "충족" | "불충족" | "미확인" | "일부미확인";
   unresolved_spec_count?: number;
@@ -63,13 +74,14 @@ export interface Workspace {
   inputs: { notice: { title: string | null; org_name: string | null; close_date: string | null; base_price: number | null };
     documents: SourceDocument[]; requirements: Requirement[]; checklist: {id: string; name: string}[];
     writing_plan?: {items:WritingPlanItem[]; reviewed_at:string; reviewed_version:number};
+    output_plan?: {template_keys: string[]; note: string};
     form_fillings?: FormFilling[];
     source_reviewed: boolean; legacy_warning: boolean; company: Record<string, unknown>;
     commercial?: {offer_price: number; quantity: number; document_id: string; quote: string; locator: string; note: string};
     proposal_sections?: {id: string; text: string; review_status: string; evidence_ids: string[]; requirement_ids?: string[]; reference?: {document_id: string; name?: string; quote: string; input_version: number}; document_kind?: DocumentKind; title?: string; references?: WritingReference[]; web_references?: WebWritingReference[]}[] };
   proposal_coverage?: {mandatory_count: number; covered_count: number; evidence_only_count: number; missing_ids: string[]};
   blockers: string[]; next_action: string; jobs: WorkspaceJob[];
-  reviews: {id: string; job_id: string | null; action: string; note: string; input_version: number; created_at: string}[];
+  reviews: {id: string; job_id: string | null; action: string; note: string; input_version: number; created_at: string; actor?: WorkspaceActor | null; output_sha256?: string | null; layout_confirmed?: boolean}[];
 }
 export const decisions: Record<string, string> = {pending: "미결정", participate: "참가", hold: "보류", decline: "불참"};
 export const jobNames: Record<string, string> = {spec_index: "사양 검색 색인", fetch: "첨부 가져오기", extract: "본문 추출", analyze: "요구사항 분석", grade: "규격·자격·가격 검토", proposal: "검토 초안", verify: "누락 검사", excel: "Excel 생성", hwp: "HWP 생성", hwp_inspect: "템플릿 필드 검사", package: "검토 패키지", notify: "알림 미리보기"};

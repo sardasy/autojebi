@@ -32,6 +32,26 @@ describe("WorkspaceClient", () => {
     expect(screen.getByText(/2쪽 · OCR 본문 · 원문 대조 필요/)).toBeInTheDocument();
     expect(screen.getByText("본문 · 일부 확인 가능")).toBeInTheDocument();
   });
+  it("shows nested ZIP member failures and the specific HWP recovery action", async () => {
+    vi.mocked(workspaceApi).mockResolvedValue({...fixture, inputs: {...fixture.inputs, documents: [{...sourceDocument,
+      extraction: {complete: false, members: [{name: "nested.zip", sha256: "a".repeat(64), size: 100, status: "unread", complete: false,
+        extraction: {members: [{name: "양식.hwp", sha256: "b".repeat(64), size: 50, status: "unread", complete: false, error_code: "hwp_worker_required"}]}}]},
+    }]}});
+    render(<WorkspaceClient noticeNo="V2"/>);
+    expect(await screen.findByText("양식.hwp · 본문 확인 필요")).toBeInTheDocument();
+    expect(screen.getByText("HWP 실행기 연결 필요")).toBeInTheDocument();
+    expect(screen.getByText("추출 내역 · 일부 미확인")).toBeInTheDocument();
+  });
+  it("shows missing OCR languages within an archive instead of implying complete extraction", async () => {
+    vi.mocked(workspaceApi).mockResolvedValue({...fixture, inputs: {...fixture.inputs, documents: [{...sourceDocument,
+      extraction: {complete: false, members: [{name: "스캔.pdf", sha256: "a".repeat(64), size: 100, status: "extracted", complete: false,
+        extraction: {pages: [{page_no: 1, method: "ocr", status: "extracted", review_required: true,
+          code: "ocr_language_missing", missing_languages: ["kor"]}]}}]},
+    }]}});
+    render(<WorkspaceClient noticeNo="V2"/>);
+    expect(await screen.findByText("OCR 언어 파일 설치 필요: 한국어")).toBeInTheDocument();
+    expect(screen.getByText("스캔.pdf · 본문 확인 필요")).toBeInTheDocument();
+  });
   it("guides an empty requirement list directly to source registration without creating a blocked job", async () => {
     vi.mocked(workspaceApi).mockResolvedValue(fixture);
     render(<WorkspaceClient noticeNo="V2"/>);
@@ -202,6 +222,15 @@ describe("WorkspaceClient", () => {
     fireEvent.change(screen.getByLabelText("검토 의견"), {target: {value: "Changed after checking"}});
     fireEvent.click(screen.getByRole("button", {name: "반려"}));
     await waitFor(() => expect(workspaceApi).toHaveBeenCalledWith("/notices/V2/reviews", expect.objectContaining({expected_review_id: "last-review", action: "rejected"})));
+  });
+  it("shows server authenticated reviewers and identifies legacy records without a person", async () => {
+    vi.mocked(workspaceApi).mockResolvedValue({...fixture, reviews: [
+      {id: "personal", job_id: null, action: "section_review", note: "개인 검토", input_version: 1, created_at: "2026-09-13T00:00:00Z", actor: {id: "reviewer", name: "테스트 검토자", role: "reviewer"}},
+      {id: "legacy", job_id: null, action: "initialized", note: "과거 검토", input_version: 1, created_at: "2026-09-12T00:00:00Z"},
+    ]});
+    render(<WorkspaceClient noticeNo="V2"/>);
+    expect(await screen.findByText("테스트 검토자 · 검토자")).toBeInTheDocument();
+    expect(screen.getByText("개인 식별 정보 없음")).toBeInTheDocument();
   });
   it("requires worker confirmation for HWP recovery", async () => {
     vi.mocked(workspaceApi).mockResolvedValue({...fixture, jobs: [{id: "failed-hwp", kind: "hwp", input_version: 1, status: "failed", quality: null, result: null, error: {code: "interrupted", message: "확인 필요", next_action: "Worker 확인"}, created_at: "2026-09-07T00:00:00Z", finished_at: null}]});

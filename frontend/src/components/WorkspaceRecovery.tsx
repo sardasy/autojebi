@@ -1,12 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, Save } from "lucide-react";
 import { QuoteDiagnostic, SourceNeed, Workspace, WorkspaceJob, workspaceApi } from "@/lib/workspace";
 
 const input = "block w-full min-w-0 border rounded p-2 text-sm bg-white";
 const button = "inline-flex items-center gap-2 border rounded px-3 py-2 text-sm disabled:opacity-40";
 const states = {exact: "원문 일치", whitespace: "공백 차이", ambiguous: "위치 중복", mismatch: "불일치", invalid_structure: "응답 형식 오류"};
+
+function exactLocations(text: string, quote: string) {
+  const locations: {start: number; line: number; context: string}[] = [];
+  if (!quote.trim()) return locations;
+  let previousIndex = 0;
+  let start = 0;
+  let line = 1;
+  for (let index = text.indexOf(quote); index !== -1; index = text.indexOf(quote, index + 1)) {
+    const between = text.slice(previousIndex, index);
+    // The API uses Python character offsets, which count supplementary Unicode characters once.
+    start += Array.from(between).length;
+    line += between.split("\n").length - 1;
+    const from = Math.max(0, index - 35);
+    const to = Math.min(text.length, index + quote.length + 35);
+    locations.push({start, line, context: `${from ? "…" : ""}${text.slice(from, to).replace(/\s+/g, " ")}${to < text.length ? "…" : ""}`});
+    previousIndex = index;
+  }
+  return locations;
+}
 
 export function QuoteRecovery({job, ws, prefix, reload}: {job: WorkspaceJob; ws: Workspace; prefix: string; reload: () => Promise<unknown>}) {
   return <section aria-label="AI 인용 복구" className="space-y-3 border-t pt-3">
@@ -18,30 +37,41 @@ export function QuoteRecovery({job, ws, prefix, reload}: {job: WorkspaceJob; ws:
 function Candidate({candidate, job, ws, prefix, reload}: {candidate: QuoteDiagnostic; job: WorkspaceJob; ws: Workspace; prefix: string; reload: () => Promise<unknown>}) {
   const req = candidate.requirement;
   const [quote, setQuote] = useState(candidate.matches[0]?.quote || req?.quote || "");
-  const [start, setStart] = useState(candidate.matches.length === 1 ? candidate.matches[0].start : -1);
+  const [selectedStart, setSelectedStart] = useState(-1);
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState("");
   const [requestKey] = useState(() => crypto.randomUUID());
-  const doc = ws.inputs.documents.find(d => d.id === req?.document_id);
+  const doc = ws.inputs.documents.find(d => d.id === req?.document_id && d.role === "notice_source");
+  const locations = useMemo(() => exactLocations(doc?.text || "", quote), [doc?.text, quote]);
+  const suggestions = [...new Set(candidate.matches.map(match => match.quote))];
+  const start = locations.length === 1 ? locations[0].start : selectedStart;
   const duplicate = ws.inputs.requirements.some(r => r.document_id === req?.document_id && (r.quote === quote || r.text === req?.text));
-  const valid = !!quote.trim() && start >= 0 && doc?.text.slice(start, start + quote.length) === quote;
+  const valid = locations.some(location => location.start === start);
+  const canAdopt = valid && !!note.trim() && !duplicate && !ws.source_changed && !pending;
+  const changeQuote = (value: string) => {setQuote(value); setSelectedStart(-1); setStatus("");};
+  const locationStatus = !doc?.text ? "원문이 없어 인용을 확인할 수 없습니다." : !quote.trim()
+    ? "원문에서 인용할 문장을 입력하세요." : locations.length === 0
+      ? "교정 인용과 정확히 일치하는 원문이 없습니다. 숫자·단위·부정 표현과 공백을 확인하세요."
+      : locations.length === 1 ? "원문에서 정확히 일치하는 위치 1곳을 찾았습니다."
+        : valid ? "선택한 위치가 원문과 정확히 일치합니다." : `원문에서 ${locations.length}곳이 일치합니다. 앞뒤 문맥을 보고 위치를 선택하세요.`;
   if (!req) return <p className="text-sm text-red-700">후보 {candidate.candidate_id}: 응답 형식 오류</p>;
   return <details className="border-b py-2"><summary className="cursor-pointer text-sm">{states[candidate.status]} · {req.text}{duplicate ? " · 기존 항목과 중복" : ""}</summary>
     <form className="space-y-3 pt-3" onSubmit={async e => {
-      e.preventDefault(); setPending(true); setStatus("채택 중");
+      e.preventDefault(); if (!canAdopt) return; setPending(true); setStatus("채택 중");
       try {await workspaceApi(`${prefix}/jobs/${job.id}/adopt-requirements`, {version: ws.version, idempotency_key: requestKey, note,
         items: [{candidate_id: candidate.candidate_id, quote, start, locator: req.locator}]}); setStatus("검토 대기·미판정으로 저장했습니다."); await reload();}
       catch(error) {setStatus((error as Error).message);} finally {setPending(false);}
     }}>
       <div className="grid md:grid-cols-2 gap-3"><div><p className="text-sm font-medium">AI 인용</p><p className="whitespace-pre-wrap text-sm break-words">{req.quote}</p></div>
         <div><p className="text-sm font-medium">원문 · {doc?.name || "문서 없음"}</p><pre className="text-sm whitespace-pre-wrap break-words max-h-64 overflow-auto">{doc?.text || "원문 없음"}</pre></div></div>
-      {!!candidate.matches.length && <label className="block text-sm">원문 위치 선택<select className={input} value={start} onChange={e => {const found = candidate.matches.find(m => m.start === Number(e.target.value)); if (found) {setStart(found.start); setQuote(found.quote);}}}><option value={-1}>위치를 선택하세요</option>{candidate.matches.map(m => <option key={m.start} value={m.start}>{m.start}~{m.end}: {m.quote.slice(0,70)}</option>)}</select></label>}
-      <label className="block text-sm">교정 인용<textarea className={input} value={quote} onChange={e => {setQuote(e.target.value); setStart(-1);}}/></label>
-      <label className="block text-sm">원문 시작 위치<input type="number" min={0} className={input} value={start < 0 ? "" : start} onChange={e => setStart(e.target.value === "" ? -1 : Number(e.target.value))}/></label>
+      {suggestions.length > 1 && <label className="block text-sm">원문 인용 후보<select className={input} value={suggestions.includes(quote) ? quote : ""} onChange={e => changeQuote(e.target.value)}><option value="">직접 교정</option>{suggestions.map((suggestion, index) => <option key={suggestion} value={suggestion}>{index + 1}. {suggestion}</option>)}</select></label>}
+      <label className="block text-sm">교정 인용<textarea className={input} value={quote} onChange={e => changeQuote(e.target.value)}/></label>
+      <p className="text-xs text-gray-600">숫자·단위·부정 표현을 포함해 원문 그대로 인용하세요. 일치하는 위치를 자동으로 찾습니다.</p>
+      {locations.length > 1 && <label className="block text-sm">원문 위치 선택<select className={input} value={start} onChange={e => {setSelectedStart(Number(e.target.value)); setStatus("");}}><option value={-1}>앞뒤 문맥을 보고 위치를 선택하세요</option>{locations.map((location, index) => <option key={location.start} value={location.start}>{index + 1}번째 · {location.line}행: {location.context}</option>)}</select></label>}
       <label className="block text-sm">채택 의견<input className={input} required value={note} onChange={e => setNote(e.target.value)}/></label>
-      <button className={button} disabled={pending || !valid || !note.trim() || duplicate || ws.source_changed}><Check size={16}/>이 후보 채택</button>
-      <p role="status" className="text-sm">{status || (!valid ? "인용과 원문 위치를 확인하세요." : "")}</p>
+      <button className={button} disabled={!canAdopt}><Check size={16}/>이 후보 채택</button>
+      <p role="status" className="text-sm">{status || locationStatus}</p>
     </form>
   </details>;
 }

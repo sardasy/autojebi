@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 {isWorkspaceV2Enabled() ? <>
                   <Link href="/workspace">공고 찾기</Link>
                   <Link href="/workspace#saved">작성 중 서류</Link>
-                </> : <><Link href="/notices">공고 작업대</Link>
+                </> : <>
                 <Link href="/search" className="hover:text-red-700">
                   공고 검색
                 </Link>

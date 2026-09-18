@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import {sameWorkspaceOrigin, workspaceSessionCookie} from "@/lib/workspace-session";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ path: string[] }> };
@@ -9,15 +10,15 @@ async function proxy(request: NextRequest, context: Context) {
     return Response.json({ detail: { message: "잘못된 요청 경로입니다." } }, { status: 400 });
   }
   if (request.method !== "GET") {
-    const origin = request.headers.get("origin");
-    const allowedOrigins = (process.env.FRONTEND_ORIGIN || "http://127.0.0.1:3002").split(",").map(value => value.trim());
-    if (!origin || !allowedOrigins.includes(origin)) {
+    if (!sameWorkspaceOrigin(request)) {
       return Response.json({ detail: { message: "다른 출처의 변경 요청은 허용하지 않습니다." } }, { status: 403 });
     }
   }
   const base = process.env.INTERNAL_API_BASE || "http://127.0.0.1:8002";
   const headers = new Headers();
   if (process.env.INTERNAL_API_KEY) headers.set("X-API-Key", process.env.INTERNAL_API_KEY);
+  const session = request.cookies.get(workspaceSessionCookie)?.value;
+  if (session) headers.set("Authorization", `Bearer ${session}`);
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("Content-Type", contentType);
   const ifMatch = request.headers.get("if-match");

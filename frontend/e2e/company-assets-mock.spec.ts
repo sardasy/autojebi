@@ -1,6 +1,6 @@
 import {expect,test} from "@playwright/test";
 
-test("company registry upload, expiry edit, history and soft-disable",async({page})=>{
+test("company registry upload, expiry edit, history and soft-disable",async({page},testInfo)=>{
   let asset:Record<string,unknown>|null=null;
   await page.route("**/api/v2/company-assets**",async route=>{
     const request=route.request();const path=new URL(request.url()).pathname;
@@ -44,13 +44,14 @@ test("company registry upload, expiry edit, history and soft-disable",async({pag
   for(const width of [1280,390]){
     await page.setViewportSize({width,height:800});
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-    await page.getByRole("region",{name:"회사 자료 보관소"}).screenshot({path:`test-results/company-assets-${width}.png`});
+    await page.getByRole("region",{name:"회사 자료 보관소"}).screenshot({path:testInfo.outputPath(`company-assets-${width}.png`)});
   }
 });
 
 test("one-click company attachment remains unconfirmed and refreshes workspace",async({page})=>{
   const ws={notice_no:"ASSET-E2E",version:1,decision:"pending",ready:false,source_changed:false,inputs:{notice:{title:"TEST ONLY central assets",org_name:"Test",close_date:null,base_price:null},company:{},documents:[] as object[],requirements:[],proposal_sections:[],checklist:[],source_reviewed:false,legacy_warning:false},jobs:[],reviews:[],blockers:[],next_action:""};
   let links=0;
+  await page.route("**/api/workspace-session",route=>route.fulfill({json:{enabled:false,actor:null}}));
   await page.route("**/api/v2/**",async route=>{
     const path=new URL(route.request().url()).pathname;
     if(path.endsWith("/workspace"))return route.fulfill({json:ws});
@@ -64,7 +65,8 @@ test("one-click company attachment remains unconfirmed and refreshes workspace",
     return route.fulfill({json:{available:true,state:"idle"}});
   });
   await page.goto("/workspace/ASSET-E2E#documents");
-  await page.getByText("원문·상세 검토",{exact:true}).click();
+  // With no source text, the program opens source setup by default.
+  await expect(page.locator("#source-details")).toHaveAttribute("open", "");
   await page.getByText("원문·증빙 파일 관리 · 0개",{exact:true}).click();
   await page.getByRole("button",{name:"중앙 회사자료 연결",exact:true}).click();
   await page.getByRole("button",{name:"시험 증빙 연결"}).click();

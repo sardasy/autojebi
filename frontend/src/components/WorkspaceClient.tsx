@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Download, FileText, Play, RefreshCw, Save, Upload, X } from "lucide-react";
-import { jobNames, jobStates, Requirement, SourceAttachment, SourceDocument, Workspace, workspaceApi } from "@/lib/workspace";
+import { ExtractedArchiveMember, ExtractedPage, jobNames, jobStates, Requirement, SourceAttachment, SourceDocument, Workspace, WorkspaceActor, workspaceApi } from "@/lib/workspace";
 import WorkspaceWorkerStatus from "./WorkspaceWorkerStatus";
 import WorkspaceHwpStatus from "./WorkspaceHwpStatus";
 import WorkspaceSectionReview from "./WorkspaceSectionReview";
@@ -17,12 +17,18 @@ import WritingPlanReview from "./WritingPlanReview";
 import NoticeFormWorkspace from "./NoticeFormWorkspace";
 import CompanyAssets from "./CompanyAssets";
 import SpecificationWorkbench from "./SpecificationWorkbench";
+import WorkspaceOutputPlan from "./WorkspaceOutputPlan";
+import WorkspaceArtifactReview from "./WorkspaceArtifactReview";
+import WorkspaceDecision from "./WorkspaceDecision";
+import WorkspaceIdentity from "./WorkspaceIdentity";
+import WorkspaceRequirementCandidates from "./WorkspaceRequirementCandidates";
 
 const inputClass = "block border border-gray-300 rounded p-2 w-full min-w-0 bg-white text-sm";
 const buttonClass = "inline-flex shrink-0 whitespace-nowrap items-center justify-center gap-2 border rounded px-3 py-2 text-sm disabled:opacity-40";
 const tabs = ["2. 공고 서류 검토", "3. 비교·작성", "4. 서류 확인"] as const;
 const fieldLabels: Record<string, string> = {business_number: "사업자번호", ceo_name: "대표자명", address: "주소", org_name: "공고 기관", company_name: "회사명"};
 const readableError = (message: string) => message.replace(/\b(business_number|ceo_name|address|org_name|company_name)\b/g, key => fieldLabels[key]);
+const actorLabel = (actor?: WorkspaceActor | null) => actor ? `${actor.name} · ${{viewer: "조회자", writer: "작성자", reviewer: "검토자", approver: "최종 승인자"}[actor.role]}` : "개인 식별 정보 없음";
 
 export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
   const prefix = `/notices/${encodeURIComponent(noticeNo)}`;
@@ -91,6 +97,11 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
     catch(e) {setStatus((e as Error).message); setFeedback("error"); return false;} finally {setLoading(false);}
   }, [prefix]);
   useEffect(() => {void reload();}, [reload]);
+  const plannedTemplateKeys = ws?.inputs.output_plan?.template_keys.join("\0");
+  useEffect(() => {
+    const planned = plannedTemplateKeys?.split("\0");
+    if (planned?.length) setTemplate(current => planned.includes(current) ? current : planned[0]);
+  }, [plannedTemplateKeys]);
   useEffect(() => {
     if (!ws?.jobs.some(j => j.status === "running" || j.status === "queued")) return;
     const timer = setInterval(() => void reload(), 2000);
@@ -127,6 +138,11 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
     setStatus(`${jobNames[job.kind]} · ${jobStates[job.status]}${job.quality === "warning" ? " · 경고·검토 필요" : ""}${job.error ? ` · ${job.error.message} ${job.error.next_action}` : ""}`);
   }, [ws, trackedJob]);
   const date = (value: string) => new Date(value).toLocaleString("ko-KR");
+  const layoutReviewed = (job: WorkspaceJob) => {
+    const review = ws?.reviews.find(r => r.job_id === job.id);
+    return job.kind === "hwp" && job.input_version === ws?.version && review?.action === "approved"
+      && review.layout_confirmed && review.output_sha256 === job.result?.sha256;
+  };
   const latestHwp = ws?.jobs.find(j => j.kind === "hwp");
   const hwpBlocked = latestHwp?.input_version === ws?.version && ["failed", "blocked"].includes(latestHwp?.status || "");
   const hwpMissing = hwpBlocked && latestHwp?.error?.code === "required_missing";
@@ -155,9 +171,11 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
     if (hwpBlocked) return {title: "HWP 생성 차단 사유를 확인하세요", label: "생성 결과 확인", action: () => goTo(tabs[2], "generated-files")};
     if (needsSourceReview) return {title: "제출서류와 주요 사항을 확인하세요", label: "공고 핵심 확인", action: () => goTo(tabs[0], "notice-brief")};
     if (!ws.inputs.proposal_sections?.length) return {title: "기존 작성자료와 비교해 초안을 작성하세요", label: "비교·작성", action: () => goTo(tabs[1])};
+    if (ws.ready) return {title: "제출 준비 확인 완료", label: "최종 패키지 확인", action: () => goTo(tabs[2], "generated-files")};
     return {title: ws.next_action, label: "서류 확인", action: () => goTo(tabs[2])};
   })();
   return <div className="min-w-0 space-y-4">
+    <WorkspaceIdentity/>
     <Link href="/workspace" className="text-sm underline">1. 공고 찾기</Link>
     {!ws ? <><p role="status">{loading ? "서류 불러오는 중" : status}</p>{!loading && <button disabled={busy} className={buttonClass} onClick={() => void mutate(`${prefix}/initialize`, {}, "서류 검토 시작")}><Play size={16}/>검토 시작</button>}</> : <>
       <header className="border-b pb-4 flex flex-wrap justify-between gap-3">
@@ -197,6 +215,7 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
         <SourceNeeds ws={ws} prefix={prefix} reload={reload}/>
         {(sourceDocuments.length > 0 || ws.inputs.requirements.length > 0) && <div className="grid lg:grid-cols-2 gap-6 items-start"><WorkspaceDocumentViewer documents={ws.inputs.documents.filter(d => d.role === "notice_source")} prefix={prefix}/><div className="min-w-0">
         <h2 className="font-semibold">요구사항 {ws.inputs.requirements.length}개</h2>
+        <WorkspaceRequirementCandidates ws={ws} prefix={prefix} reload={reload}/>
         {ws.inputs.requirements.map(req => <RequirementForm key={`${req.id}-${ws.version}`} req={req} ws={ws} busy={busy} prefix={prefix} mutate={mutate}/>)}
         <details id="source-requirement-entry" className="border-y py-3"><summary>요구사항 추가</summary><RequirementForm ws={ws} busy={busy} prefix={prefix} mutate={mutate}/></details>
         </div></div>}
@@ -249,6 +268,8 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
         </div>
       </>}
       {tab === tabs[2] && <>
+        <WorkspaceDecision key={`decision-${ws.version}`} ws={ws} prefix={prefix} busy={busy} onSaved={updated => {setWs(updated); setPreview(null);}}/>
+        <WorkspaceOutputPlan key={`output-plan-${ws.version}`} ws={ws} prefix={prefix} templates={templates} busy={busy} onSaved={updated => {setWs(updated); setPreview(null);}}/>
         <WorkspaceWorkerStatus/>
         <WorkspaceHwpStatus/>
         <div className="flex flex-wrap gap-2">{["excel", "package"].map(kind => <button key={kind} disabled={busy || ws.source_changed} className={buttonClass} onClick={() => void run(kind)}><Play size={16}/>{jobNames[kind]}</button>)}</div>
@@ -264,17 +285,17 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
       </>}
       <details id="generated-files" tabIndex={-1} open={tab !== tabs[0]} className="border-t pt-4 space-y-3 scroll-mt-6"><summary className="font-semibold text-sm cursor-pointer">{tab === tabs[2] ? "생성 서류와 검토 결과" : "분석·작업 이력"}</summary>
         {ws.jobs.length === 0 && <p className="text-sm text-gray-500">실행 기록 없음</p>}
-        {ws.jobs.filter(job => (tab === tabs[0] ? ["fetch", "extract", "analyze"] : tab === tabs[1] ? ["extract", "proposal"] : ["verify", "excel", "hwp", "hwp_inspect", "package"]).includes(job.kind)).map(job => <details key={job.id} open={job.input_version === ws.version && ws.jobs.find(j => j.kind === job.kind)?.id === job.id} className="border-b py-3 min-w-0"><summary className="text-sm cursor-pointer"><span className="inline-flex flex-wrap gap-2"><span className="font-medium">{jobNames[job.kind]} · {jobStates[job.status]}</span><span className="text-gray-500">{date(job.created_at)}{job.input_version !== ws.version ? " · 이전 입력" : ""}</span>{job.quality === "warning" && <span className="text-amber-800">경고·검토 필요</span>}</span></summary><article className="pt-3 space-y-2 min-w-0">
+        {ws.jobs.filter(job => (tab === tabs[0] ? ["fetch", "extract", "analyze"] : tab === tabs[1] ? ["extract", "proposal"] : ["verify", "excel", "hwp", "hwp_inspect", "package"]).includes(job.kind)).map(job => <details key={job.id} open={job.input_version === ws.version && ws.jobs.find(j => j.kind === job.kind)?.id === job.id} className="border-b py-3 min-w-0"><summary className="text-sm cursor-pointer"><span className="inline-flex flex-wrap gap-2"><span className="font-medium">{jobNames[job.kind]} · {jobStates[job.status]}</span><span className="text-gray-500">{date(job.created_at)}{job.input_version !== ws.version ? " · 이전 입력" : ""}</span>{job.quality === "warning" && <span className={layoutReviewed(job) ? "text-green-800" : "text-amber-800"}>{layoutReviewed(job) ? "배치 검토 완료" : "경고·검토 필요"}</span>}</span></summary><article className="pt-3 space-y-2 min-w-0">
           <div className="flex flex-wrap justify-between gap-2 text-sm"><strong>{jobNames[job.kind]} · {jobStates[job.status]}</strong><span>버전 {job.input_version}{job.input_version !== ws.version ? " · 이전 입력" : ""} · {date(job.created_at)}</span></div>
-          {job.quality === "warning" && <p className="text-xs font-semibold text-amber-800">경고 · 검토 필요</p>}
+          {job.quality === "warning" && <p className="text-xs font-semibold text-amber-800">{layoutReviewed(job) ? "생성 당시 경고 · 배치 검토 완료" : "경고 · 검토 필요"}</p>}
           {job.execution_lane && <p className="text-xs text-gray-500">{job.execution_lane === "local" ? "로컬 문서 실행기" : "외부 연동 실행기"}</p>}
           {job.error?.operation?.failure_stage && <p className="text-sm text-red-700">최초 실패 단계: {job.error.operation.failure_stage} · 현재 단계: {job.error.operation.stage}</p>}
           {!!job.result?.quote_diagnostics?.length && <QuoteRecovery job={job} ws={ws} prefix={prefix} reload={reload}/>}
           {job.error && <><p className="text-sm text-red-700 break-words">{readableError(job.error.message)} {readableError(job.error.next_action)}</p><details className="text-xs text-gray-500"><summary>기술 상세</summary><p className="break-all">{job.error.code} · {job.error.message}</p></details></>}
-          {job.result?.warnings?.map((warning,i) => <p className="text-sm text-amber-800 break-words" key={i}>{warning}</p>)}
+          {job.result?.warnings?.map((warning,i) => <p className="text-sm text-amber-800 break-words" key={i}>{layoutReviewed(job) && warning === "한글 페이지 배치는 담당자 검토가 필요합니다." ? "생성 당시 배치 검토 요청 · 현재 파일 검토 완료" : warning}</p>)}
           {job.result?.remaining_placeholders && <p className="text-sm">미입력 항목: {job.result.remaining_placeholders.join(", ") || "없음"}</p>}
           {job.result?.required_missing && <p className="text-sm">필수 누락: {job.result.required_missing.join(", ") || "없음"}</p>}
-          {job.kind === "hwp" && job.result?.artifact && <p className="text-sm">저장값 재조회: {job.result.verified ? "일치 확인 · 문서 배치 검토 필요" : "미확인"}</p>}
+          {job.kind === "hwp" && job.result?.artifact && <p className="text-sm">저장값 재조회: {job.result.verified ? layoutReviewed(job) ? "일치 확인 · 문서 배치 검토 완료" : "일치 확인 · 문서 배치 검토 필요" : "미확인"}</p>}
           {job.kind === "hwp_inspect" && job.result && <p className="text-sm">실제 필드 {job.result.fields?.length || 0}개 · {job.result.inspection_passed ? "필수 필드 확인" : "필드 보완 필요"} · 미매핑 {(job.result.unmapped || []).join(", ") || "없음"}</p>}
           {job.result?.axes && <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left border-b"><th className="py-2">검토 축</th><th>결과</th><th>판단 근거</th></tr></thead><tbody>{Object.entries(job.result.axes).map(([axis,value]) => <tr key={axis} className="border-b align-top"><th className="py-2 pr-3 whitespace-nowrap text-left">{{spec: "기술 규격", qualification: "참가 자격", price: "기초금액 대비"}[axis] || axis}</th><td className="py-2 pr-3 whitespace-nowrap">{value.score == null ? "미평가" : `${Math.round(value.score * 100)}%`}</td><td className="py-2 min-w-48">{value.reason}</td></tr>)}</tbody></table><p className="text-sm mt-2">종합: {job.result.score_total == null ? "미평가" : `${Math.round(job.result.score_total * 100)}%`} · 기술 근거 확인율: {job.result.technical_coverage == null ? "미확인" : `${Math.round(job.result.technical_coverage * 100)}%`}</p></div>}
           {job.result?.candidates?.map(candidate => <p key={candidate.sku.sku_id} className="text-sm break-words">SKU 참고 · {candidate.sku.name || candidate.sku.sku_id} · 검색 유사도 {Math.round(candidate.similarity * 100)}% · 적합성 확인 대기</p>)}
@@ -283,20 +304,23 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
           <div className="flex flex-wrap gap-2">
             {job.status === "succeeded" && job.input_version === ws.version && ["fetch", "extract", "analyze", "proposal"].includes(job.kind) && <button disabled={busy || ws.source_changed} className={buttonClass} onClick={() => void mutate(`${prefix}/jobs/${job.id}/apply`, {version: ws.version}, "검토 대상으로 반영 완료")}><Check size={16}/>결과 반영</button>}
             {job.result?.artifact && job.status === "succeeded" && <><a className={buttonClass} href={`/api/v2/jobs/${job.id}/download`}><Download size={16}/>다운로드</a>
-              <label className="text-sm min-w-0 basis-full sm:basis-64 sm:flex-1">파일 검토 의견<input aria-label="파일 검토 의견" className={inputClass} value={reviewNotes[job.id] ?? note} onChange={e => setReviewNotes({...reviewNotes, [job.id]: e.target.value})}/></label>
-              {(["approved", "rejected", ...(job.kind === "package" ? ["ready"] : [])] as const).map(action => <button key={action} disabled={busy || !(reviewNotes[job.id] ?? note).trim() || job.input_version !== ws.version} className={buttonClass} onClick={() => void mutate(`${prefix}/reviews`, {version: ws.version, job_id: job.id, action, note: reviewNotes[job.id] ?? note, expected_review_id: ws.reviews.find(r => r.job_id === job.id)?.id || null}, "검토 기록 저장")}>{action === "rejected" ? <X size={16}/> : <Check size={16}/>}{{approved: "초안 승인", rejected: "반려", ready: "제출 준비 확인"}[action as "approved" | "rejected" | "ready"]}</button>)}</>}
+              <WorkspaceArtifactReview key={`${job.id}-${ws.version}-${job.result.sha256}-${ws.reviews.find(r => r.job_id === job.id)?.id || "pending"}`} job={job} version={ws.version} sourceChanged={ws.source_changed} busy={busy}
+                note={reviewNotes[job.id] ?? note} onNote={value => setReviewNotes({...reviewNotes, [job.id]: value})}
+                onReview={(action, proof) => void mutate(`${prefix}/reviews`, {version: ws.version, job_id: job.id, action, note: reviewNotes[job.id] ?? note,
+                  expected_review_id: ws.reviews.find(r => r.job_id === job.id)?.id || null, ...proof}, "검토 기록 저장")}/></>}
           </div>
           {!['queued', 'running'].includes(job.status) && (job.status !== 'succeeded' || ['excel', 'hwp', 'package'].includes(job.kind)) && <div className="flex flex-wrap gap-2 items-center">
             {["hwp", "hwp_inspect"].includes(job.kind) && <label className="text-sm flex gap-2"><input type="checkbox" checked={!!recoveryConfirmed[job.id]} onChange={e => setRecoveryConfirmed({...recoveryConfirmed, [job.id]: e.target.checked})}/>Worker 종료·기존 파일 확인</label>}
             <button className={buttonClass} disabled={busy || !note.trim() || ws.source_changed || (["hwp", "hwp_inspect"].includes(job.kind) && !recoveryConfirmed[job.id])} onClick={() => void mutate(`/jobs/${job.id}/recover`, {version: ws.version, idempotency_key: crypto.randomUUID(), note, external_state_confirmed: !!recoveryConfirmed[job.id], visible: hwpVisible}, "현재 입력으로 복구 작업 접수")}><RefreshCw size={16}/>복구·재생성</button>
           </div>}
           {job.parameters?.recovery_of && <p className="text-xs text-gray-500">이전 작업 복구: {job.parameters.recovery_of}</p>}
-          {!!job.result?.pages?.length && <details className="w-full"><summary className="cursor-pointer text-sm">한글 페이지 미리보기 · {job.result.pages.length}쪽 · 배치 검토 필요</summary><div className="grid gap-3 sm:grid-cols-2 mt-3">{job.result.pages.map(page => <a key={page.number} href={`/api/v2/jobs/${job.id}/pages/${page.number}`} target="_blank" rel="noreferrer" aria-label={`${page.number}쪽 크게 보기`}><img src={`/api/v2/jobs/${job.id}/pages/${page.number}`} alt={`생성 HWP ${page.number}쪽`} loading="lazy" width={page.width} height={page.height} className="w-full h-auto border"/></a>)}</div></details>}
+          {!!job.result?.pages?.length && <details className="w-full"><summary className="cursor-pointer text-sm">한글 페이지 미리보기 · {job.result.pages.length}쪽 · {layoutReviewed(job) ? "배치 검토 완료" : "배치 검토 필요"}</summary><div className="grid gap-3 sm:grid-cols-2 mt-3">{job.result.pages.map(page => <a key={page.number} href={`/api/v2/jobs/${job.id}/pages/${page.number}`} target="_blank" rel="noreferrer" aria-label={`${page.number}쪽 크게 보기`}><img src={`/api/v2/jobs/${job.id}/pages/${page.number}`} alt={`생성 HWP ${page.number}쪽`} loading="lazy" width={page.width} height={page.height} className="w-full h-auto border"/></a>)}</div></details>}
           <p className="text-sm">검토 상태: {({approved: "승인", rejected: "반려", ready: "제출 준비 확인", recovery_requested: "복구 요청"} as Record<string, string>)[ws.reviews.find(r => r.job_id === job.id)?.action || ""] || "검토 대기"}{job.input_version !== ws.version ? " · 이전 입력 기준" : ""}</p>
           <p className="text-xs text-gray-500">{ws.reviews.find(r => r.job_id === job.id)?.note || ""}</p>
+          {ws.reviews.some(r => r.job_id === job.id) && <p className="text-xs text-gray-500">기록 담당자: {actorLabel(ws.reviews.find(r => r.job_id === job.id)?.actor)}</p>}
         </article></details>)}
       </details>
-      <details><summary className="text-sm">변경·검토 이력</summary>{ws.reviews.map(r => <div className="border-t pt-2 text-sm" key={r.id}><strong>버전 {r.input_version}</strong> · {date(r.created_at)}<p>{r.note}</p></div>)}</details>
+      <details><summary className="text-sm">변경·검토 이력</summary>{ws.reviews.map(r => <div className="border-t pt-2 text-sm" key={r.id}><strong>버전 {r.input_version}</strong> · {date(r.created_at)}<p>{r.note}</p><p className="text-xs text-gray-500">{actorLabel(r.actor)}</p></div>)}</details>
       </section>
     </>}
   </div>;
@@ -389,15 +413,47 @@ function DocumentRow({doc, ws, prefix, busy, note, mutate}: {doc: SourceDocument
     {doc.extraction && <details className="text-sm"><summary>추출 내역 · {doc.extraction.complete ? "본문 확보" : "일부 미확인"}</summary>
       <p role="status">{doc.extraction.complete ? "본문 추출 완료 · 내용 승인은 별도입니다." : "읽지 못한 내용 또는 수식이 있습니다. 원본·변환본을 대조하세요."}</p>
       {doc.extraction.cells && <p>읽은 셀 {doc.extraction.cells.length}개 · 품목 후보 {doc.extraction.items?.length || 0}개</p>}
-      {doc.extraction.pages?.map(page=><p key={page.page_no}>{page.page_no}쪽 · {page.status === "unread" ? "본문 미확보 · OCR 설정 또는 변환본 확인" : page.review_required ? "OCR 본문 · 원문 대조 필요" : "텍스트 확보"}{page.confidence != null ? ` · OCR 신뢰도 ${page.confidence}%` : ""}</p>)}
+      {doc.extraction.pages && <ExtractionPages pages={doc.extraction.pages}/>}
       {doc.extraction.issues?.map((issue,i)=><p key={i}>{issue.sheet}!{issue.cell} · {issue.code === "formula_review" ? "수식 값 검토 필요" : "셀 오류 확인 필요"}</p>)}
-      {doc.extraction.members?.map(member=><p key={member.name} className="break-all">{member.name} · {member.complete ? "본문 확보" : member.status === "unsupported" ? "미지원 형식 · 변환본 필요" : "본문 확인 필요"}</p>)}
+      {doc.extraction.members && <ArchiveMembers members={doc.extraction.members}/>}
     </details>}
     <details><summary className="text-sm">본문 · {!doc.text ? "분석 불가" : doc.extraction?.complete === false && doc.text_origin !== "manual_confirmed" ? "일부 확인 가능" : "확인 가능"}</summary><textarea aria-label={`${doc.name} 본문`} className={`${inputClass} h-40 mt-2`} value={text} onChange={e => setText(e.target.value)}/>
       <button disabled={busy || !note.trim()} className={buttonClass} onClick={() => void mutate(`${prefix}/documents/${doc.id}/text`, {version: ws.version, text, note})}><Save size={16}/>확인된 본문 저장</button></details>
     {["company_evidence", "product_evidence"].includes(doc.role) && <div className="flex flex-wrap gap-2"><select aria-label={`${doc.name} 연결 서류`} className="border p-2 text-sm" value={item} onChange={e => setItem(e.target.value)}><option value="">필수 서류 연결 없음</option>{ws.inputs.checklist.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
       {[true,false].map(confirmed => <button key={String(confirmed)} disabled={busy || !note.trim()} className={buttonClass} onClick={() => void mutate(`${prefix}/documents/${doc.id}/review`, {version: ws.version, role: doc.role, confirmed, checklist_id: item || null, note})}>{confirmed ? <Check size={16}/> : <X size={16}/>} {confirmed ? "증빙 확인" : "증빙 반려"}</button>)}</div>}
   </div>;
+}
+
+const archiveIssues: Record<string, string> = {
+  archive_depth_limit: "중첩 ZIP 깊이 초과 · 개별 파일로 등록하세요",
+  hwp_worker_required: "HWP 실행기 연결 필요", hwp_worker_auth_missing: "HWP 실행기 인증 설정 필요",
+  hwp_worker_unavailable: "HWP 실행기 연결 확인 필요", hwp_member_limit: "HWP 처리 개수 초과 · 나누어 등록하세요",
+  member_format_mismatch: "확장자와 실제 파일 형식 불일치", unsupported_member_format: "미지원 형식 · 변환본 필요",
+  hwp_member_storage_unsafe: "HWP 임시 저장 경로 확인 필요", hwp_member_source_changed: "HWP 원본 변경 · 다시 등록하세요",
+};
+
+const ocrIssues: Record<string, string> = {
+  ocr_engine_missing: "OCR 프로그램 설치 필요", ocr_engine_unavailable: "OCR 프로그램 실행 확인 필요",
+  ocr_configuration_invalid: "OCR 설정 확인 필요", ocr_failed: "OCR 실패 · 원본 또는 변환본 확인 필요",
+  ocr_timeout: "OCR 시간 초과 · 페이지를 나누어 등록하세요", ocr_page_limit: "OCR 페이지 한도 초과 · 나누어 등록하세요",
+  ocr_disabled: "OCR 기능 설정 필요", ocr_output_limit: "OCR 결과 크기 초과 · 나누어 등록하세요",
+  ocr_language_missing: "OCR 언어 파일 설치 필요",
+};
+
+function ExtractionPages({pages}: {pages: ExtractedPage[]}) {
+  return <>{pages.map(page => <div key={page.page_no}>
+    <p>{page.page_no}쪽 · {page.status === "unread" ? "본문 미확보 · OCR 설정 또는 변환본 확인" : page.review_required ? "OCR 본문 · 원문 대조 필요" : "텍스트 확보"}{page.confidence != null ? ` · OCR 신뢰도 ${page.confidence}%` : ""}</p>
+    {page.code && ocrIssues[page.code] && <p className="text-amber-800">{ocrIssues[page.code]}{page.missing_languages?.length ? `: ${page.missing_languages.map(language => ({kor: "한국어", eng: "영어", chi_tra: "번체 중국어"} as Record<string, string>)[language] || language).join(", ")}` : ""}</p>}
+  </div>)}</>;
+}
+
+function ArchiveMembers({members}: {members: ExtractedArchiveMember[]}) {
+  return <ul className="space-y-1 pl-3 border-l mt-2">{members.map(member => <li key={member.name} className="break-all">
+    <p>{member.name} · {member.complete ? "본문 확보" : member.status === "unsupported" ? "미지원 형식 · 변환본 필요" : "본문 확인 필요"}</p>
+    {member.error_code && <p className="text-amber-800">{archiveIssues[member.error_code] || "추출 오류 · 원본 파일 확인 필요"}</p>}
+    {member.extraction?.pages && <ExtractionPages pages={member.extraction.pages}/>}
+    {!!member.extraction?.members?.length && <ArchiveMembers members={member.extraction.members}/>}
+  </li>)}</ul>;
 }
 
 function RequirementForm({req, ws, prefix, busy, mutate}: {req?: Requirement; ws: Workspace; prefix: string; busy: boolean; mutate: Mutate}) {

@@ -3,6 +3,7 @@
 import {useEffect, useRef, useState} from "react";
 import {Download, FileText, RefreshCw, Save} from "lucide-react";
 import {SourceDocument, Workspace, workspaceApi} from "@/lib/workspace";
+import NoticeFormReview from "./NoticeFormReview";
 
 type Reference = {document_id: string; quote: string};
 type WebReference = {title: string; url: string; quote: string};
@@ -150,6 +151,7 @@ export default function NoticeFormWorkspace({ws, prefix, busy, onSaved}: {
       </div>}
       <div className="flex flex-wrap items-center gap-3"><button className={`${button} border-red-700 bg-red-700 text-white`} disabled={disabled || !draft.dirty || conflicted || stale || ws.source_changed} onClick={() => void save()}><Save size={16}/>{saving ? "저장 중" : "양식 초안 저장"}</button>{canDownload && <a className={button} href={`/api/v2${prefix}/form-fillings/${encodeURIComponent(document.document_id)}/download`}><Download size={16}/>작성된 첨부 양식 다운로드 (HWPX)</a>}</div>
     </>}
+    {canDownload && document && !catalogError && <NoticeFormReview key={`${prefix}:${document.document_id}:${ws.version}`} prefix={prefix} documentId={document.document_id} version={ws.version} busy={disabled} onSaved={onSaved}/>}
     {catalogError && <p role="status" className="text-sm break-words text-red-700">{catalogError}</p>}
     {message && <p role="status" className={`text-sm break-words ${failed ? "text-red-700" : "text-green-800"}`}>{message}</p>}
   </section>;

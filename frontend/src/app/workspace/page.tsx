@@ -34,7 +34,10 @@ export default function WorkspacesPage() {
     event.preventDefault(); setBusy(true);
     const form = new FormData(event.currentTarget);
     try {
-      await workspaceApi("/notices", {notice_no: form.get("notice_no"), title: form.get("title"), source: "MANUAL", raw: {}});
+      const closeDate = String(form.get("close_date") || "");
+      await workspaceApi("/notices", {notice_no: form.get("notice_no"), title: form.get("title"), source: "MANUAL",
+        org_name: String(form.get("org_name") || "") || null,
+        close_date: closeDate ? `${closeDate}:00+09:00` : null, raw: {}});
       setStatus("공고 등록 완료"); await refresh(1);
     } catch(e) {setStatus((e as Error).message);} finally {setBusy(false);}
   }
@@ -61,7 +64,11 @@ export default function WorkspacesPage() {
     </div>
     <div className="flex gap-3"><button disabled={page <= 1} onClick={() => void refresh(page-1)}>이전</button><span>{page}</span><button disabled={!more} onClick={() => void refresh(page+1)}>다음</button></div>
     <details className="border-t pt-3"><summary>공고 수동 등록</summary><form className="flex flex-wrap gap-3 mt-3" onSubmit={register}>
-      <label>공고번호<input name="notice_no" required className="block border p-2"/></label><label>공고명<input name="title" required className="block border p-2"/></label><button disabled={busy} className="flex gap-1 items-center"><Plus size={18}/>등록</button>
+      <label>공고번호<input name="notice_no" required className="block border p-2"/></label><label>공고명<input name="title" required className="block border p-2"/></label>
+      <label>공고 기관<input name="org_name" className="block border p-2"/></label>
+      <label>입찰 마감일시 (한국시간)<input name="close_date" type="datetime-local" step="60" className="block border p-2"/></label>
+      <p className="basis-full text-sm text-gray-600">공식 공고에서 확인한 마감일시를 입력하세요. 미입력 시 검토용 작성은 가능하며 제출 준비 완료는 제한됩니다.</p>
+      <button disabled={busy} className="flex gap-1 items-center"><Plus size={18}/>등록</button>
     </form></details>
   </div>;
 }

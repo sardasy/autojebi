@@ -41,4 +41,15 @@ describe("WorkspaceSearch", () => {
     await screen.findByText("연결 실패");
     expect(screen.queryByText("신규 PLECS")).not.toBeInTheDocument();
   });
+  it("records a manually confirmed deadline with an explicit Korean timezone", async () => {
+    render(<WorkspacesPage/>);
+    fireEvent.change(screen.getByLabelText("공고번호"), {target: {value: "TEST-ONLY"}});
+    fireEvent.change(screen.getByLabelText("공고명"), {target: {value: "가상 공고"}});
+    fireEvent.change(screen.getByLabelText("공고 기관"), {target: {value: "시험 기관"}});
+    fireEvent.change(screen.getByLabelText("입찰 마감일시 (한국시간)"), {target: {value: "2099-10-03T14:30"}});
+    fireEvent.submit(screen.getByLabelText("공고번호").closest("form")!);
+    await waitFor(() => expect(workspaceApi).toHaveBeenCalledWith("/notices", expect.objectContaining({
+      notice_no: "TEST-ONLY", org_name: "시험 기관", close_date: "2099-10-03T14:30:00+09:00",
+    })));
+  });
 });

@@ -75,10 +75,17 @@ async function mockSpecifications(page: Page, baseURL: string | undefined, optio
     if (!url.pathname.startsWith("/api/")) return route.continue();
     const path = url.pathname;
     const method = request.method();
+    if (method === "GET" && path === "/api/workspace-session") return route.fulfill({json: {enabled: false, actor: null}});
     if (method === "GET" && path === `${prefix}/workspace`) {
       calls.workspace++;
       return route.fulfill({json: ws});
     }
+    if (method === "GET" && path === `${prefix}/form-fields`) return route.fulfill({json: {
+      version: ws.version, fillings: [], documents: ws.inputs.documents.filter(document => document.role === "notice_source").map(document => ({
+        document_id: document.id, name: document.name, sha256: sha, supported: false,
+        reason: "시험 규격서 텍스트는 원본 HWPX 작성 양식이 아닙니다.", fields: [],
+      })),
+    }});
     if (method === "GET" && path === "/api/v2/hwp-templates") return route.fulfill({json: {items: []}});
     if (method === "GET" && path === "/api/v2/worker/health") return route.fulfill({json: {available: true, state: "idle", heartbeat_at: null, last_failure: null}});
     if (method === "GET" && path === "/api/v2/hwp-worker") return route.fulfill({json: {code: "worker_connected"}});
