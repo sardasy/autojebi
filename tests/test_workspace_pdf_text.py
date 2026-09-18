@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from api.parsing import pdf_text
 from api.specifications.table_structure import TableStructure
-from api.workspace import pdf_text
 
 
 def page(number, text):

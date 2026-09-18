@@ -6,16 +6,16 @@ import hashlib
 import os
 from pathlib import Path
 
+from api.parsing import attachment_text, pdf_text
+from api.parsing.hwp_validation import (
+    HwpValidationError,
+    read_hwp_output,
+)
 from api.services.hwp_agent_client import (
     HwpAgentClient,
     HwpAgentError,
 )
-from api.workspace import attachment_text, pdf_text
 from api.workspace.errors import fail
-from api.workspace.hwp_validation import (
-    HwpValidationError,
-    read_hwp_output,
-)
 from api.workspace.storage import source_path, storage_root
 
 

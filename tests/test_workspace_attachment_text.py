@@ -8,14 +8,14 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from api.specifications.table_structure import TableStructure, build_table_chunks
-from api.workspace.attachment_text import (
+from api.parsing.attachment_text import (
     ExtractionError,
     extract_hwpx,
     extract_xlsx,
     extract_zip,
     text_only_table_metadata,
 )
+from api.specifications.table_structure import TableStructure, build_table_chunks
 from api.workspace.source_inventory import source_inventory, source_text_complete
 
 
@@ -110,7 +110,7 @@ def test_zip_rejects_symlinks_duplicates_and_keeps_unsupported_nested_members():
 
 
 def test_archive_size_limit_applies_before_member_read(monkeypatch):
-    monkeypatch.setattr("api.workspace.attachment_text.MAX_ENTRIES", 1)
+    monkeypatch.setattr("api.parsing.attachment_text.MAX_ENTRIES", 1)
     with pytest.raises(ExtractionError, match="archive_size_limit"):
         extract_zip(archive_bytes([("a.dwg", b"x"), ("b.dwg", b"y")]))
 
@@ -209,11 +209,11 @@ def test_nested_archive_rechecks_unsafe_paths_before_member_processing():
 
 def test_archive_office_members_share_expansion_and_entry_limits(monkeypatch):
     content = archive_bytes([("first.hwpx", hwpx_table_bytes()), ("second.hwpx", hwpx_table_bytes())])
-    monkeypatch.setattr("api.workspace.attachment_text.MAX_BYTES", len(content) + 10)
+    monkeypatch.setattr("api.parsing.attachment_text.MAX_BYTES", len(content) + 10)
     with pytest.raises(ExtractionError, match="archive_size_limit"):
         extract_zip(content)
-    monkeypatch.setattr("api.workspace.attachment_text.MAX_BYTES", 50_000_000)
-    monkeypatch.setattr("api.workspace.attachment_text.MAX_ENTRIES", 3)
+    monkeypatch.setattr("api.parsing.attachment_text.MAX_BYTES", 50_000_000)
+    monkeypatch.setattr("api.parsing.attachment_text.MAX_ENTRIES", 3)
     with pytest.raises(ExtractionError, match="archive_entry_limit"):
         extract_zip(content)
 
@@ -225,7 +225,7 @@ def test_nested_zip_shares_pdf_ocr_budget(monkeypatch):
         ocr_budget[0] -= 1
         return {"text": "recognized", "extraction": {"complete": False,
             **text_only_table_metadata(locator=locator)}}
-    monkeypatch.setattr("api.workspace.pdf_text.extract_pdf", pdf)
+    monkeypatch.setattr("api.parsing.pdf_text.extract_pdf", pdf)
     result = extract_zip(archive_bytes([("a.pdf", b"%PDF first"),
         ("nested.zip", archive_bytes([("b.pdf", b"%PDF second")]))]), ocr_budget=[2])
     assert budgets == [2, 1] and not result["extraction"]["complete"]
@@ -314,7 +314,7 @@ def test_hwp_text_does_not_assert_tables_without_positive_evidence(count, review
 
 
 def test_metadata_budget_failure_is_explicit_and_preserves_legacy_text(monkeypatch):
-    monkeypatch.setattr("api.workspace.attachment_text.MAX_TABLE_METADATA", 10)
+    monkeypatch.setattr("api.parsing.attachment_text.MAX_TABLE_METADATA", 10)
     result = extract_xlsx(workbook_bytes())
     assert "TEST ONLY simulator" in result["text"]
     assert result["extraction"]["complete"]
@@ -389,8 +389,8 @@ def test_execution_zip_hwp_uses_authenticated_worker_with_immutable_digest_sourc
 
 
 def test_archive_hwp_refuses_changed_retained_source_without_calling_worker(tmp_path, monkeypatch):
+    from api.parsing.attachment_text import ArchiveMemberError
     from api.workspace import execution
-    from api.workspace.attachment_text import ArchiveMemberError
 
     monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("HWP_AGENT_TOKEN", "test-only-token")
@@ -416,7 +416,8 @@ def test_archive_hwp_missing_auth_is_an_explicit_incomplete_member(tmp_path, mon
 
 
 def test_execution_cached_pdf_only_enriches_structure_keys(tmp_path, monkeypatch):
-    from api.workspace import execution, pdf_text
+    from api.parsing import pdf_text
+    from api.workspace import execution
 
     monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path))
     path = tmp_path / "source.pdf"

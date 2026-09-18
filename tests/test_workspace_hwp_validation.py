@@ -12,16 +12,16 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError, PutFieldsOutcome
-from api.workspace import execution
-from api.workspace.errors import WorkspaceError
-from api.workspace.hwp_validation import (
+from api.parsing.hwp_validation import (
     HWPML,
     OLE_MAGIC,
     OPF,
     HwpValidationError,
     validate_hwp_content,
 )
+from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError, PutFieldsOutcome
+from api.workspace import execution
+from api.workspace.errors import WorkspaceError
 
 
 def hwpx_bytes(changes=None):

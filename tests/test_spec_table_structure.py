@@ -762,10 +762,10 @@ def test_indexing_real_table_context_enriches_search_only(tmp_path, monkeypatch)
     import hashlib
     import io
 
+    from api.parsing.attachment_text import extract_xlsx
     from api.specifications import indexing
     from api.specifications.models import Specification
     from api.specifications.validation import sha, validate_spec
-    from api.workspace.attachment_text import extract_xlsx
 
     monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path))
     notice_text = "Device latency 1ms \uc774\ud558"

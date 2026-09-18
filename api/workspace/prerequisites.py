@@ -8,11 +8,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from api.parsing.hwp_validation import HwpValidationError, read_hwp_output, validate_hwp_content
 from api.services.hwp_agent_client import HwpAgentClient
 from api.workspace.errors import HANDLED_ERRORS
 from api.workspace.executors.hwp import hwp_preview
 from api.workspace.hwp_inspection import mapping_hash
-from api.workspace.hwp_validation import HwpValidationError, read_hwp_output, validate_hwp_content
 from api.workspace.provenance import requirement_valid
 from api.workspace.source_inventory import source_inventory_issues, source_text_complete
 

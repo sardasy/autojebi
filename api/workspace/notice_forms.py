@@ -12,8 +12,8 @@ from typing import Any
 from defusedxml.ElementTree import fromstring as safe_xml
 from pydantic import Field, HttpUrl
 
+from api.parsing.attachment_text import checked_archive
 from api.workspace import service
-from api.workspace.attachment_text import checked_archive
 from api.workspace.errors import HANDLED_ERRORS
 from api.workspace.models import StrictModel, VersionRequest
 from api.workspace.storage import source_path

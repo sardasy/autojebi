@@ -14,19 +14,19 @@ from typing import Any
 
 import pdfplumber
 
+from api.parsing.attachment_text import (
+    MAX_BYTES,
+    MAX_TABLES,
+    MAX_TEXT,
+    ExtractionError,
+    TableCollector,
+)
 from api.specifications.table_structure import (
     SourceLocator,
     TableCell,
     TableLimits,
     TableStructureError,
     table_from_pdf_cells,
-)
-from api.workspace.attachment_text import (
-    MAX_BYTES,
-    MAX_TABLES,
-    MAX_TEXT,
-    ExtractionError,
-    TableCollector,
 )
 
 

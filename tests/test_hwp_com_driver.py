@@ -229,7 +229,7 @@ def test_put_field_uses_crlf_without_mutating_requested_values(fake, text):
     writes = [args for name, args, _ in fake.calls if name == "write"]
     assert writes == [("body", driver._newline(text).replace("\n", "\r\n"))]
     assert values == {"body": text}
-    from api.workspace.hwp_readback import verify_readback
+    from api.parsing.hwp_readback import verify_readback
 
     assert verify_readback(report, values, report["verification"]["template_sha256"],
                            report["verification"]["output_sha256"])["verified"]

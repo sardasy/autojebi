@@ -11,6 +11,13 @@ from sqlalchemy import select
 
 from api.db.tables import document_field_mappings, hwp_templates
 from api.hwp_worker.layout import compile_markdown
+from api.parsing.hwp_readback import verify_readback
+from api.parsing.hwp_validation import (
+    OLE_MAGIC,
+    HwpValidationError,
+    read_hwp_output,
+    validate_hwp_content,
+)
 from api.services.hwp_agent_client import (
     HwpAgentClient,
     HwpAgentError,
@@ -21,13 +28,6 @@ from api.workspace.document_drafts import proposal_sections
 from api.workspace.errors import fail
 from api.workspace.hwp_inspection import inspect_template
 from api.workspace.hwp_layout import proposal_text, run_layout_hwp
-from api.workspace.hwp_readback import verify_readback
-from api.workspace.hwp_validation import (
-    OLE_MAGIC,
-    HwpValidationError,
-    read_hwp_output,
-    validate_hwp_content,
-)
 from api.workspace.service import blockers
 
 

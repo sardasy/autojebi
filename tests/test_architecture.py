@@ -17,7 +17,6 @@ ROOT = Path(__file__).resolve().parents[1]
 LOCAL_IMPORT_BUDGET = {
     "api/workspace/apply.py": 1,  # specifications.service <-> workspace.service
     "api/workspace/assets.py": 2,
-    "api/workspace/attachment_text.py": 1,
     "api/workspace/backup_audit.py": 1,
     "api/workspace/document_drafts.py": 3,
     "api/workspace/executors/__init__.py": 2,  # optional spec-search extra, heavy grading stack

@@ -2,8 +2,8 @@ from copy import deepcopy
 
 import pytest
 
-from api.workspace.hwp_readback import verify_readback
-from api.workspace.hwp_validation import HwpValidationError
+from api.parsing.hwp_readback import verify_readback
+from api.parsing.hwp_validation import HwpValidationError
 
 
 def report():

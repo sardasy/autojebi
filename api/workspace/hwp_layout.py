@@ -3,11 +3,11 @@ import hashlib
 from pathlib import Path
 
 from api.hwp_worker.layout import compile_markdown
+from api.parsing.hwp_readback import verify_readback
+from api.parsing.hwp_validation import read_hwp_output, validate_hwp_content
 from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError
 from api.workspace.document_drafts import proposal_sections
 from api.workspace.hwp_inspection import template_file
-from api.workspace.hwp_readback import verify_readback
-from api.workspace.hwp_validation import read_hwp_output, validate_hwp_content
 
 
 def proposal_text(inputs: dict) -> str:

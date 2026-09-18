@@ -97,3 +97,9 @@ ignore_imports = [
     # HTTP adapter (router + request identity); to be moved under api.routers later.
     "api.workspace.identity -> fastapi",
 ]
+
+[[tool.importlinter.contracts]]
+name = "parsers stay pure: api.parsing must not depend on workspace or HTTP layers"
+type = "forbidden"
+source_modules = ["api.parsing"]
+forbidden_modules = ["api.workspace", "api.routers", "fastapi"]

@@ -365,7 +365,7 @@ def _extract_zip(content: bytes, *, ocr_budget: list[int],
                  depth: int, locator: str) -> dict:
     from urllib.parse import quote
 
-    from api.workspace.pdf_text import extract_pdf
+    from api.parsing.pdf_text import extract_pdf
 
     members, texts, total = [], [], 0
     tables = TableCollector()

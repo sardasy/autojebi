@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from api.hwp_worker.field_text import normalize
-from api.workspace.hwp_validation import HwpValidationError
+from api.parsing.hwp_validation import HwpValidationError
 
 
 class Occurrence(BaseModel):

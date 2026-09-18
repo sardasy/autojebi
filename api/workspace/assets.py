@@ -104,8 +104,8 @@ def load(conn: Any, asset_id: str, version: int | None = None) -> dict:
 
 def create(conn: Any, stream: BinaryIO, name: str, mime: str | None, details: AssetDetails) -> dict:
     # This registry never runs COM or an LLM while accepting a file.
-    from api.workspace.attachment_text import checked_archive
-    from api.workspace.hwp_validation import validate_hwp_content
+    from api.parsing.attachment_text import checked_archive
+    from api.parsing.hwp_validation import validate_hwp_content
 
     if Path(name).suffix.lower() not in {".pdf", ".hwp", ".hwpx", ".xlsx"}:
         service.fail("asset_format", "중앙 자료는 PDF, HWP, HWPX, XLSX 원본을 등록하세요.", status=415)

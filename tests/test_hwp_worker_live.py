@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from api.parsing.hwp_readback import verify_readback
+from api.parsing.hwp_validation import read_hwp_output, validate_hwp_content
 from api.services.hwp_agent_client import HwpAgentClient
-from api.workspace.hwp_readback import verify_readback
-from api.workspace.hwp_validation import read_hwp_output, validate_hwp_content
 
 
 @pytest.mark.skipif(os.getenv("HWP_LIVE_SMOKE") != "true", reason="real Hancom smoke is opt-in")
