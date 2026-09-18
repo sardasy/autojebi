@@ -50,11 +50,12 @@ HWP 서식 모드는 기존 `fields`와 `proposal_layout_v1`을 구분한다. �
 | 3차 | M14 HWP 제안서 + v2 작업대 | 구현은 되어 있으나 **운영 전환 미완료**: `api/workspace`(영속 큐·입력 버전·사람 검토), `api/hwp_worker`(단일 COM 큐), 규격 검색(`api/specifications`, opt-in). 차단 조건은 아래 "운영 전환 잔여 조건". **자동 트리거 금지 — Human-in-the-loop** |
 | 4차 | M15 투찰 전략 추천 (낙찰률·경쟁사 패턴) | 예정. **AI는 추천만, 최종 결정·입력은 사람** |
 
-### 운영 전환 잔여 조건 (2026-09-11 문서 기준, 완료 전 기본 화면 전환 금지)
-- HWP Worker `recovery_required` 해제·재기동 후 CRLF 줄바꿈 수정의 실파일 저장값 검증 — `docs/production-readiness-progress-2026-09-11.md`.
+### 운영 전환 잔여 조건 (2026-09-13 갱신, 완료 전 기본 화면 전환 금지)
+- HWP Worker 복구·CRLF 실파일 재검증은 완료했다. 실제 공고 최종본 검토와 운영 전환은 별도 — `docs/hwp-recovery-e2e-2026-09-13.md`.
 - 실제 공고 3~5건 + 담당자 최종본 대조 (기존 "완료" 표기는 구현 이력이지 실공고 검증이 아님).
 - 규격 검색: 사람 채점 홀드아웃 확보 전 공개·운영 반영 금지 — `docs/specification-search-2026-09-11.md`.
-- OCR(Tesseract+kor) 실검증, 요구사항 등록→누락검사 루프 연결, RBAC/다단계 승인, 전용 Windows 인스턴스, 백업·복구 리허설은 미구현.
+- 요구사항 등록→누락검사 루프는 검증용 공고에서 확인했으며 실제 공고 누락률과 담당자 최종본 대조는 남아 있다. OCR(Tesseract+kor) 실검증, 전용 Windows 인스턴스, 백업·복구 리허설도 남아 있다.
+- v2 개인 인증·독립 역할·승인자 기록은 opt-in 구현/격리 테스트 완료. 실사용자 등록·토큰 발급·역할 배정과 팀 승인 리허설은 미완료이며 기존 호환 API의 공유 키 접근은 별도 제한해야 한다 — `docs/workspace-identity-2026-09-13.md`.
 
 ### 모델 선택 정책 (비용 최적화)
 v2 분석/제안서는 `WORKSPACE_LLM_PROVIDER=anthropic|gemini|openai`로 선택한다(기본 anthropic).
@@ -192,6 +193,7 @@ PR 머지 전 다음이 모두 그린이어야 한다:
   - LLM/RAG: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `QDRANT_URL`, `QDRANT_API_KEY`
   - 외부 API: `DATA_GO_KR_API_KEY`(G2B), `TEAMS_WEBHOOK_URL`, `SLACK_WEBHOOK_URL`
   - 인증: `API_KEY`(X-API-Key, 운영은 32+자 랜덤), `INTERNAL_API_KEY`(Server Action 주입), `APP_ENV`(production이면 API_KEY 필수)
+  - v2 개인 인증(opt-in): `WORKSPACE_AUTH_ENABLED`, `WORKSPACE_AUTH_USERS` 또는 `WORKSPACE_AUTH_REGISTRY` 중 하나. registry에는 개인 식별 정보·역할·토큰 SHA-256만 저장하며 원문 토큰과 registry를 커밋하지 않는다.
   - 인프라: `DATABASE_URL`
   - HWP Agent: `HWP_AGENT_BASE_URL`, `HWP_AGENT_TOKEN`
   - 회사 정보: `COMPANY_NAME`, `COMPANY_BUSINESS_NUMBER`, `COMPANY_CEO_NAME`, `COMPANY_ADDRESS`
@@ -203,6 +205,10 @@ PR 머지 전 다음이 모두 그린이어야 한다:
 ### 인증 게이트
 - 모든 non-healthz 엔드포인트는 [api/auth.py](api/auth.py) `verify_api_key` 적용.
 - **운영 환경에서 `API_KEY` 공란 금지** — 빈 값은 dev 전용 우회 모드. `APP_ENV=production`이면 [api/main.py](api/main.py) `enforce_auth_policy`가 공란 기동을 거부하고, 그 외 환경은 경고 로그만 남긴다.
+- `WORKSPACE_AUTH_ENABLED=true`인 `/v2/*`는 GET 포함 개인 Bearer 인증을 추가 검증한다. 공유 키만으로 우회할 수 없으며 설정 오류·미등록·비활성 계정은 차단한다. 비활성 기본값은 로컬 검증 호환용이며 팀 배포 전에 실사용자 발급과 역할 점검을 완료한다.
+- 역할은 독립: 작성/초안은 `writer`, 문서·요구사항·섹션·원본 양식·생성물 검토는 `reviewer`, 패키지 최종 `ready`는 `approver`, `viewer`는 조회만 허용한다. 신규 승인 경로는 [api/workspace/identity.py](api/workspace/identity.py) 역할 분류와 회귀 검증을 함께 추가한다.
+- 승인자 식별은 서버 인증 ContextVar에서 `service.audit`의 `details.actor`로 기록한다. 클라이언트 이름/역할/헤더를 신뢰하거나 기존 기록에 신원을 소급 생성하지 않는다. Next는 HttpOnly·SameSite 쿠키와 변경 요청 Origin 검증을 사용한다.
+- v2 개인 인증은 기존 호환 API의 공유 키 정책을 바꾸지 않는다. SSO/MFA·서버 세션 저장소·전체 시스템 RBAC 완료로 표시하지 않는다. 설정과 범위는 [docs/workspace-identity-2026-09-13.md](docs/workspace-identity-2026-09-13.md)를 따른다.
 
 ### 외부 액션은 dry_run 기본
 - Teams/Slack 알림 ([api/services/notifications.py](api/services/notifications.py))은 `dry_run=True`. 실 전송은 명시적 플래그.

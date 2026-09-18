@@ -396,6 +396,18 @@ G2B 연결 진단: [서비스 문서 비교 및 연결 검사](docs/g2b-connecti
 
 ## 7. API / CLI 레퍼런스
 
+### 문서 완결 흐름 (2026-09-13)
+
+- `POST /v2/notices`는 선택 입력 `org_name`, 시간대가 포함된 `close_date`를 보존한다. 수동 등록 화면은 한국시간을 명시하며 마감 미확인·경과 상태는 제출 준비 완료를 허용하지 않는다.
+- `PUT /v2/notices/{notice_no}/output-plan`은 `{version, template_keys, note}`를 받는다. 활성 HWP 서식을 하나 이상 선택하며 `inputs.output_plan`에 보존한다. 계획 변경 시 입력 버전이 올라가고 생성 파일을 다시 검토한다. 미설정 데이터는 기존 `bid_form/proposal` 요구를 유지한다.
+- `GET /v2/notices/{notice_no}/requirement-candidates?version=...`는 현재 공고 원문에서 의무·수량·기한·제출 표현을 포함한 행을 읽기 전용 후보로 반환한다. `{version, items, scanned_characters, source_document_count, limited, warnings}`이며 후보에 원문 인용, 파일/본문 해시, 문자 위치와 행 위치를 포함한다. 최대 100개·150,000자 범위로 제한하고 문장을 잘라 제안하지 않는다. 화면에서 문맥 확인 후 기존 요구사항 API로 `pending/unassessed` 저장하며 승인하거나 LLM을 호출하지 않는다.
+- 패키지는 선택한 최신 HWP와 Excel, 원문, 작성된 원본 양식을 포함한다. 입찰/기타 작성 대상은 실제 해당 원본 양식 작성·검토까지 확인하며 Markdown 초안만으로 제출 준비를 완료하지 않는다.
+- `POST /v2/notices/{notice_no}/reviews`의 HWP `approved`에는 검토한 `output_sha256`과 `layout_confirmed=true`가 필요하다. 저장값 미검증·미입력·내용 경고는 승인으로 해소할 수 없다. 파일에 연결된 배치 승인은 새 패키지에서 배치 경고를 해소한다.
+- `ready`는 현재 선택한 파일·해시·승인·패키지를 다시 대조한다. 파일 변경, 반려, 재생성, 입력 변경으로 기존 제출 준비 판정이 무효화되고 이력은 보존된다. `reviews[]`에는 `actor`, `output_sha256`, `layout_confirmed`가 노출된다.
+- `GET /v2/worker/health`의 `runtime`은 API 및 실행기의 시작 지문/현재 지문과 `current/mismatch/unknown`, `restart_required`, 프로세스별 진단을 반환한다. 시작 시 지문은 고정하며 현재 파일은 5초 캐시·60초 전체 재해시로 비교한다. 상태 조회가 작업을 중단하거나 재시작하지 않는다.
+- 개인 계정 로그인과 조회/작성/검토/최종승인 역할은 opt-in이다. `GET /v2/identity`와 [개인 인증 설정](docs/workspace-identity-2026-09-13.md)을 따른다. 기존 shared-key 환경은 개인 인증 완료로 간주하지 않는다.
+- ZIP 내부 HWP/HWPX와 깊이 제한 중첩 ZIP을 지원한다. 한국어 OCR은 검토 대기로 유지한다. [첨부 검증](docs/attachment-extraction-completion-2026-09-13.md)과 [완결 E2E 결과](docs/document-loop-completion-2026-09-13.md)에 실검증 범위를 기록한다.
+
 모든 엔드포인트는 `API_KEY`가 설정돼 있으면 `X-API-Key: <키>` 헤더 필요.
 
 ### `POST /notices/search` — G2B 실시간 검색 (M13)
@@ -1081,6 +1093,8 @@ curl -X POST http://localhost:8001/notices/search \
 `POST /v2/notices/{notice_no}/document-drafts`는 입력 버전과 중복방지 키를 받아 정성제안서·입찰서·기타서류 초안을 각각 저장한다. 회사 참고자료 인용과 웹 자료는 승인된 증빙이 아니며, `GET /v2/notices/{notice_no}/document-drafts/{draft_id}/download`로 Markdown 검토 초안을 받는다. 웹검색은 Google/네이버 새 탭 검색과 선택 자료 등록 방식이다. 응답의 `inputs.proposal_sections`에 `document_kind`, `title`, `references`, `web_references`가 추가된다. 상세 계약과 검증 결과는 [문서별 작성 작업대](docs/document-writing-ui-2026-09-11.md)를 따른다.
 
 공고에 첨부된 HWPX 원본은 `form-fields` 조회와 `form-fillings` 저장·다운로드로 항목별 작성한다. `inputs.form_fillings`에 작성 내용과 출처를 보존하며 원본 서식 사본을 내보낸다. 상세 지원 범위와 검증은 [공고 원본 양식 작성](docs/original-notice-forms-2026-09-11.md)을 참고한다.
+
+`GET /v2/notices/{notice_no}/form-fillings/{document_id}/review`는 검토할 작성본의 `version`, `output_sha256`, `unfilled_count`, `review_status`를 반환한다. 같은 경로의 `POST`는 해당 버전·파일 해시와 `approved`, `source_checked`, `content_checked`, `layout_checked`, `note`를 받아 사람의 양식 검토를 기록한다. `inputs.form_fillings[].review`에는 검토 의견·시각·입력 버전·입력/출력 해시가 보존된다. 승인에는 모든 확인과 빈칸 없는 작성본이 필요하며, 자료·작성 내용이 바뀌면 재검토한다. 자격증빙이나 제출 준비 승인은 별도다. [검토 경로 검증 기록](docs/original-form-review-2026-09-12.md)을 따른다.
 
 ## 14. 핵심 파일 맵
 

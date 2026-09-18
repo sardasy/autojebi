@@ -19,6 +19,7 @@ data/uploads/
 data/exports/
 data/downloads/
 data/workspace/
+data/ocr/
 data/spec-validation/
 
 *.log
