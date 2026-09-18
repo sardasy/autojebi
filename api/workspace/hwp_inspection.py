@@ -6,9 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException
-
 from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError
+from api.workspace.errors import WorkspaceError
 from api.workspace.hwp_validation import HwpValidationError, read_hwp_output, validate_hwp_content
 from api.workspace.service import fail
 
@@ -72,7 +71,7 @@ def inspect_template(template: dict, mappings: list[dict], client: Any = None, *
     except HwpAgentError:
         diagnosis = HwpAgentClient(retries=1, timeout_s=3).diagnostics()
         operation = diagnosis.get("operation", {})
-        raise HTTPException(502, detail={"code": "worker_inspection_failed",
+        raise WorkspaceError(502, {"code": "worker_inspection_failed",
             "message": "실제 템플릿 필드 조회를 완료하지 못했습니다.",
             "next_action": "Worker와 한글 창을 확인한 뒤 복구 절차를 진행하세요.",
             "operation": operation if operation.get("operation_id") == operation_id else {},

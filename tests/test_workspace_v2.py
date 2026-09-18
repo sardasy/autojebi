@@ -5,6 +5,7 @@ from sqlalchemy import select, update
 
 from api.routers.notices import bid_pipeline
 from api.workspace import service
+from api.workspace.errors import WorkspaceError
 from api.workspace.tables import jobs, workspaces
 from api.workspace.worker import run_once
 
@@ -357,7 +358,6 @@ def test_failed_hwp_visible_and_not_approvable(client, workspace, sqlite_engine)
 
 
 def test_llm_budget_is_durable_and_bounded(client, workspace, sqlite_engine, monkeypatch):
-    from fastapi import HTTPException
 
     from api.config import settings
     from api.workspace.execution import reserve_call
@@ -366,7 +366,7 @@ def test_llm_budget_is_durable_and_bounded(client, workspace, sqlite_engine, mon
     job = {"notice_no": "E2E-V2", "input_version": 1}
     reserve_call(sqlite_engine, job)
     reserve_call(sqlite_engine, job)
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         reserve_call(sqlite_engine, job)
     assert error.value.detail["code"] == "llm_budget_exhausted"
 

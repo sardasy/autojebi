@@ -7,7 +7,6 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from fastapi import HTTPException
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import (
     DBAPIError,
@@ -19,6 +18,7 @@ from sqlalchemy.exc import (
 
 from api.db import get_engine
 from api.workspace import receipts
+from api.workspace.errors import HANDLED_ERRORS, HandledError
 from api.workspace.execution import execute
 from api.workspace.lanes import LOCAL_KINDS, validate_lane
 from api.workspace.service import assert_source_current, load, now, uid
@@ -92,7 +92,7 @@ def persist_completion(conn: Any, receipt: receipts.Receipt) -> None:
         try:
             ws = load(conn, receipt.notice_no, receipt.input_version)
             assert_source_current(conn, ws)
-        except HTTPException as exc:
+        except HANDLED_ERRORS as exc:
             status, error = http_failure(exc)
         if error is not None:
             error = {**error, "job_id": receipt.job_id}
@@ -153,7 +153,7 @@ def recover(conn: Any, health: receipts.RuntimeHealth, lane: str = "all") -> boo
     return recovered
 
 
-def http_failure(exc: HTTPException) -> tuple[str, dict]:
+def http_failure(exc: HandledError) -> tuple[str, dict]:
     return (
         "blocked" if exc.status_code < 500 else "failed",
         exc.detail
@@ -206,7 +206,7 @@ def run_once(engine: Any, health: receipts.RuntimeHealth | None = None, lane: st
                     ws = load(conn, job["notice_no"], job["input_version"])
                     assert_source_current(conn, ws)
                 result = execute(engine, job)
-            except HTTPException as exc:
+            except HANDLED_ERRORS as exc:
                 status, error = http_failure(exc)
                 from api.workspace.quote_recovery import AnalysisFailure
                 if isinstance(exc, AnalysisFailure):

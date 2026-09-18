@@ -7,10 +7,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import update
 
 from api.workspace import execution, service
+from api.workspace.errors import WorkspaceError
 from api.workspace.output_plan import LAYOUT_WARNING
 from api.workspace.tables import jobs
 from tests.test_workspace_output_plan import approve, plan, seed_output
@@ -101,7 +101,7 @@ def test_source_changed_after_path_validation_is_rejected_before_packaging(
     folder = tmp_path / "rejected-package"
     folder.mkdir()
     try:
-        with pytest.raises(HTTPException) as failure:
+        with pytest.raises(WorkspaceError) as failure:
             execution.run_package(sqlite_engine, {"notice_no": "OUTPUT-TEST",
                 "input_version": state["version"], "snapshot": state["inputs"]}, folder)
         assert failure.value.detail["code"] == "source_file_changed"

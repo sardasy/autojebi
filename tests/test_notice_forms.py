@@ -4,12 +4,12 @@ import io
 import zipfile
 
 import pytest
-from fastapi import HTTPException
 from lxml import etree
 from sqlalchemy import update
 
 from api.workspace import notice_forms as forms
 from api.workspace import service
+from api.workspace.errors import WorkspaceError
 from api.workspace.tables import workspaces
 
 XML = '''<?xml version="1.0" encoding="UTF-8"?>
@@ -238,7 +238,7 @@ def test_export_rejects_changed_source_mapping_or_reference(client, form_workspa
         inputs["documents"][1]["text"] += " 변경됨"
     else:
         inputs["form_fillings"][0]["fields"][0]["reference"]["quote"] = "없는 인용"
-    with pytest.raises(HTTPException):
+    with pytest.raises(WorkspaceError):
         forms.export_filling(inputs, "form")
 
 

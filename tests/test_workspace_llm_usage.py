@@ -8,7 +8,6 @@ import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.util import load_python_file
-from fastapi import HTTPException
 from sqlalchemy import (
     Column,
     Integer,
@@ -23,6 +22,7 @@ from sqlalchemy import (
 
 from api.config import settings
 from api.workspace import anthropic_client, execution, llm_usage, proposal, service
+from api.workspace.errors import WorkspaceError
 from api.workspace.tables import budgets, jobs, reviews, workspaces
 
 
@@ -136,7 +136,7 @@ def test_gemini_analysis_cache_and_cross_provider_budget(sqlite_engine, state, m
     assert usage(sqlite_engine)[0]["calls"] == 2
     monkeypatch.setattr(settings, "workspace_llm_provider", "gemini")
     monkeypatch.setattr(settings, "gemini_model", "gemini-different")
-    with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+    with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
         execution.analyze(sqlite_engine, state)
     assert len(calls) == 1
 
@@ -144,7 +144,7 @@ def test_gemini_analysis_cache_and_cross_provider_budget(sqlite_engine, state, m
 def test_gemini_missing_key_does_not_fall_back_or_charge(sqlite_engine, state, monkeypatch):
     monkeypatch.setattr(settings, "workspace_llm_provider", "gemini")
     monkeypatch.setattr(settings, "google_api_key", "")
-    with pytest.raises(HTTPException, match="llm_not_configured"):
+    with pytest.raises(WorkspaceError, match="llm_not_configured"):
         execution.analyze(sqlite_engine, state)
     assert usage(sqlite_engine) == []
 
@@ -159,7 +159,7 @@ def test_openai_preserves_cross_provider_limit(sqlite_engine, state, monkeypatch
     monkeypatch.setattr(settings, "workspace_llm_provider", "openai")
     monkeypatch.setattr(settings, "openai_api_key", "no-network")
     monkeypatch.setattr(openai_client, "generate", lambda _: pytest.fail("No dispatch after budget exhausted"))
-    with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+    with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
         execution.analyze(sqlite_engine, state)
     assert usage(sqlite_engine)[0]["calls"] == 2
 
@@ -168,7 +168,7 @@ def test_openai_missing_key_does_not_use_google_key(sqlite_engine, state, monkey
     monkeypatch.setattr(settings, "workspace_llm_provider", "openai")
     monkeypatch.setattr(settings, "openai_api_key", "")
     monkeypatch.setattr(settings, "google_api_key", "other-provider-key")
-    with pytest.raises(HTTPException, match="llm_not_configured"):
+    with pytest.raises(WorkspaceError, match="llm_not_configured"):
         execution.analyze(sqlite_engine, state)
     assert usage(sqlite_engine) == []
 
@@ -214,7 +214,7 @@ def test_gemini_invalid_quote_keeps_debit(sqlite_engine, state, monkeypatch):
         "text": "invented", "document_id": "source", "quote": "not in source",
         "locator": "paragraph 1", "category": "technical", "mandatory": True,
     }]})
-    with pytest.raises(HTTPException, match="unverified_quote"):
+    with pytest.raises(WorkspaceError, match="unverified_quote"):
         execution.analyze(sqlite_engine, state)
     assert usage(sqlite_engine)[0]["calls"] == 1
 
@@ -381,7 +381,7 @@ def test_same_content_across_decision_review_and_apply_uses_two_total(sqlite_eng
     execution.reserve_call(sqlite_engine, state)
     for _ in range(3):
         advance(sqlite_engine, state)
-        with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+        with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
             execution.reserve_call(sqlite_engine, state)
     rows = usage(sqlite_engine)
     assert sum(r["calls"] for r in rows) == 2
@@ -392,7 +392,7 @@ def test_legacy_import_api_and_stale_snapshot(sqlite_engine, state):
     assert execution.reserve_call is llm_usage.reserve_call
     execution.reserve_call(sqlite_engine, {"notice_no": "BUDGET", "input_version": 1})
     state["snapshot"]["raw"]["original_body"] = "not synchronized"
-    with pytest.raises(HTTPException, match="version_conflict"):
+    with pytest.raises(WorkspaceError, match="version_conflict"):
         execution.reserve_call(sqlite_engine, state)
     assert sum(r["calls"] for r in usage(sqlite_engine)) == 1
 
@@ -407,7 +407,7 @@ def test_content_change_new_budget_and_return_to_original_still_exhausted(sqlite
     execution.reserve_call(sqlite_engine, state)
     state["snapshot"] = original
     advance(sqlite_engine, state)
-    with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+    with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
         execution.reserve_call(sqlite_engine, state)
     assert sum(r["calls"] for r in usage(sqlite_engine)) == 4
 
@@ -420,7 +420,7 @@ def test_legacy_counts_reconcile_without_reset_even_on_exhaustion(sqlite_engine,
                 budgets.insert().values(notice_no="BUDGET", input_version=version, calls=2)
             )
         advance(sqlite_engine, state)
-    with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+    with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
         execution.reserve_call(sqlite_engine, state)
     rows = usage(sqlite_engine)
     assert [r["calls"] for r in rows] == [2, 2]
@@ -444,7 +444,7 @@ def test_unknown_legacy_usage_remains_a_debit_for_all_content(sqlite_engine, sta
         conn.execute(budgets.insert().values(notice_no="BUDGET", input_version=1, calls=2))
     state["snapshot"]["documents"][0]["text"] += "new content"
     advance(sqlite_engine, state)
-    with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+    with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
         execution.reserve_call(sqlite_engine, state)
     assert usage(sqlite_engine)[0]["input_key"] is None
     assert usage(sqlite_engine)[0]["calls"] == 2
@@ -505,7 +505,7 @@ def test_cache_requires_exact_request_without_refilling_budget(sqlite_engine, st
     else:
         state["kind"] = "proposal"
     assert llm_usage.reuse_result(sqlite_engine, state, changed) is None
-    with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+    with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
         execution.reserve_call(sqlite_engine, state)
 
 
@@ -535,7 +535,7 @@ def test_failed_provider_dispatch_is_not_refunded(sqlite_engine, state, monkeypa
         with pytest.raises(RuntimeError):
             execution.analyze(sqlite_engine, state)
         advance(sqlite_engine, state)
-    with pytest.raises(HTTPException, match="llm_budget_exhausted"):
+    with pytest.raises(WorkspaceError, match="llm_budget_exhausted"):
         execution.analyze(sqlite_engine, state)
     assert len(calls) == 2
 

@@ -77,9 +77,23 @@ testpaths = ["tests"]
 # ADR 0001 fitness functions. Run: `lint-imports`
 [tool.importlinter]
 root_package = "api"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "v2 workspace must not depend on HTTP routers"
 type = "forbidden"
 source_modules = ["api.workspace"]
 forbidden_modules = ["api.routers"]
+
+[[tool.importlinter.contracts]]
+name = "v2 domain must not import fastapi directly (HTTP mapping stays in routers)"
+type = "forbidden"
+source_modules = ["api.workspace"]
+forbidden_modules = ["fastapi"]
+allow_indirect_imports = true
+ignore_imports = [
+    # Transitional: HANDLED_ERRORS still includes HTTPException raised by legacy services.
+    "api.workspace.errors -> fastapi",
+    # HTTP adapter (router + request identity); to be moved under api.routers later.
+    "api.workspace.identity -> fastapi",
+]

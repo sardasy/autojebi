@@ -25,6 +25,7 @@ def page_client(tmp_path, monkeypatch):
     monkeypatch.setattr(workspace, "storage_root", lambda: tmp_path)
     app = FastAPI()
     app.include_router(workspace.router)
+    workspace.install_error_handlers(app)
     app.dependency_overrides[verify_api_key] = lambda: None
     return TestClient(app), job, path
 

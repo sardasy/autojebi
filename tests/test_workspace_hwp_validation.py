@@ -11,10 +11,10 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
 from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError, PutFieldsOutcome
 from api.workspace import execution
+from api.workspace.errors import WorkspaceError
 from api.workspace.hwp_validation import (
     HWPML,
     OLE_MAGIC,
@@ -385,7 +385,7 @@ def test_run_hwp_rejects_inconsistent_readback_report(run_context, part):
         state.report["verification"]["readback"][0]["value"] = "Wrong notice"
     else:
         state.report["verification"]["output_sha256"] = "0" * 64
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "worker_invalid_document"
 
@@ -409,7 +409,7 @@ def test_run_hwp_preserves_warning_draft_and_required_field_failures(run_context
 def test_run_hwp_rejects_missing_or_invalid_artifact(run_context, content):
     state = run_context
     state.content = content
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.status_code == 502
     assert error.value.detail["code"] == "worker_invalid_document"
@@ -421,7 +421,7 @@ def test_run_hwp_rejects_missing_or_invalid_artifact(run_context, content):
 def test_run_hwp_rechecks_provider_partition_and_errors(run_context, report):
     state = run_context
     state.report = report
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "worker_invalid_response"
 
@@ -429,7 +429,7 @@ def test_run_hwp_rechecks_provider_partition_and_errors(run_context, report):
 def test_required_inputs_still_block_before_worker(run_context):
     state = run_context
     state.preview["required_missing"] = ["notice"]
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "required_missing"
     assert state.calls == 0
@@ -439,7 +439,7 @@ def test_stale_output_is_not_accepted_or_overwritten(run_context):
     state = run_context
     stale = state.folder / "draft.hwpx"
     stale.write_bytes(b"prior artifact")
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "worker_output_exists"
     assert stale.read_bytes() == b"prior artifact"
@@ -451,7 +451,7 @@ def test_mislabeled_template_is_blocked_before_com_write(run_context):
     template = Path(state.preview["template"]["template_path"])
     template.write_bytes(hwp_bytes(compressed=True, trailer=True))
     state.content = template.read_bytes()
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "template_path"
     assert state.calls == 0
@@ -461,7 +461,7 @@ def test_proposal_body_mapping_required_before_worker(run_context):
     state = run_context
     state.preview["template"]["kind"] = "proposal"
     state.preview["body_mapped"] = False
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "proposal_body_unmapped"
     assert state.calls == 0
@@ -470,7 +470,7 @@ def test_proposal_body_mapping_required_before_worker(run_context):
 def test_missing_actual_template_fields_blocks_before_put_field(run_context, monkeypatch):
     state = run_context
     monkeypatch.setattr(execution, "inspect_template", lambda *args: {"inspection_passed": False})
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.run_hwp(state.engine, state.job, state.folder)
     assert error.value.detail["code"] == "template_fields_missing"
     assert state.calls == 0

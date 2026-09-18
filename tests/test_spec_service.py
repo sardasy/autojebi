@@ -10,6 +10,7 @@ from api.specifications.models import SearchRequest, Specification
 from api.specifications.tables import active_indexes, generations, spec_events
 from api.specifications.validation import sha
 from api.workspace import service as workspace
+from api.workspace.errors import WorkspaceError
 from api.workspace.tables import jobs, workspaces
 
 
@@ -146,10 +147,9 @@ def test_partial_build_retries_only_failed_store_and_stale_search(sqlite_engine,
 def test_late_claim_cannot_publish_or_overwrite(sqlite_engine, spec_env, tmp_path, monkeypatch):
     job = prepare_job(sqlite_engine, spec_env[2], tmp_path)
     monkeypatch.setenv("SPEC_BGE_REVISION", "a" * 40)
-    from fastapi import HTTPException
     with sqlite_engine.begin() as conn:
         conn.execute(update(jobs).where(jobs.c.id == job["id"]).values(claim_token="replacement"))
-    with pytest.raises(HTTPException):
+    with pytest.raises(WorkspaceError):
         indexing.build(sqlite_engine, job)
     with sqlite_engine.begin() as conn:
         assert conn.execute(select(generations)).first() is None

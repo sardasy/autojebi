@@ -2,12 +2,12 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
 from PIL import Image
 
 from api.hwp_worker.layout import Layout
 from api.services.hwp_agent_client import PutFieldsOutcome
 from api.workspace import hwp_layout
+from api.workspace.errors import WorkspaceError
 from tests.test_workspace_hwp_validation import hwp_bytes
 
 
@@ -74,6 +74,6 @@ def test_layout_generation_keeps_logical_and_physical_proof(layout_run):
 def test_layout_generation_rejects_missing_body_or_page_proof(layout_run, kind):
     job, preview, folder, mutation = layout_run
     mutation["kind"] = kind
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(WorkspaceError) as caught:
         hwp_layout.run_layout_hwp(job, preview, folder)
     assert caught.value.detail["code"] == "layout_verification_failed"

@@ -11,12 +11,12 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
 from api.config import Settings, settings
 from api.services import uploads
 from api.services.g2b_attachments import iter_g2b_attachments
 from api.workspace import execution
+from api.workspace.errors import WorkspaceError
 
 OLE = bytes.fromhex("d0cf11e0a1b11ae1")
 
@@ -118,7 +118,7 @@ def test_four_declared_files_include_inert_xls_and_exact_references(transport):
 
 
 def test_unknown_extension_warns_without_losing_slot(transport):
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.fetch_sources(job_for(transport, [(1, "spec.unknown", b"inert")]))
     assert error.value.status_code == 502
     result = error.value.detail
@@ -133,7 +133,7 @@ def test_save_stream_415_is_accounted_and_sanitized(transport, monkeypatch):
         raise uploads.UploadError(415, "SECRET unsupported provider details")
 
     monkeypatch.setattr(uploads, "save_stream", unsupported)
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.fetch_sources(job_for(transport, [(1, "spec.pdf", b"data")]))
     assert error.value.status_code == 502
     result = error.value.detail
@@ -293,7 +293,7 @@ def test_all_declared_attachments_failed_remain_http_502_with_inventory(
             raw[f"ntceSpecDocUrl{index}"] = "https://evil.test/file"
         elif failure == "http":
             transport.responses[raw[f"ntceSpecDocUrl{index}"]] = (503, b"unavailable")
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.fetch_sources(job)
     assert error.value.status_code == 502
     detail = error.value.detail
@@ -349,7 +349,7 @@ def test_non_hwp_ole_is_never_sent_to_hwp_worker(tmp_path, extension):
         {"id": "manual", "text": "manual text", "format": "manual_confirmed"}
     ]
     assert len(result["warnings"]) == 1 and path.name in result["warnings"][0]
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.extract({"snapshot": {"documents": [unsupported]}})
     assert error.value.detail["code"] == "no_extracted_text"
 
@@ -358,7 +358,7 @@ def test_xls_named_document_sharing_hwp_storage_still_does_not_call_hwp(tmp_path
     path = Path(settings.upload_dir) / "shared.hwp"
     path.parent.mkdir()
     path.write_bytes(OLE + b"same bytes")
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         execution.extract(
             {
                 "snapshot": {

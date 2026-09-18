@@ -14,6 +14,7 @@ from api.routers.notices import router as notices_router
 from api.routers.ontology import router as ontology_router
 from api.routers.proposals import router as proposals_router
 from api.routers.skus import router as skus_router
+from api.routers.workspace import install_error_handlers as install_workspace_error_handlers
 from api.routers.workspace import router as workspace_router
 
 
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(skus_router)
     app.include_router(ontology_router)
     app.include_router(workspace_router)
+    install_workspace_error_handlers(app)
 
     @app.get("/healthz")
     def healthz() -> dict:

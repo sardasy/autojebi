@@ -6,6 +6,7 @@ from sqlalchemy import update
 
 from api.routers.notices import bid_pipeline
 from api.workspace import service
+from api.workspace.errors import WorkspaceError
 from api.workspace.provenance import proposal_coverage
 from api.workspace.tables import jobs, workspaces
 
@@ -192,8 +193,6 @@ def test_document_change_only_invalidates_linked_sections():
 def test_extract_cached_text_checks_original_hash(tmp_path, monkeypatch):
     import hashlib
 
-    from fastapi import HTTPException
-
     from api.workspace.execution import extract
 
     monkeypatch.setenv("WORKSPACE_DATA_DIR", str(tmp_path))
@@ -204,7 +203,7 @@ def test_extract_cached_text_checks_original_hash(tmp_path, monkeypatch):
     result = extract({"snapshot": {"documents": [document]}})
     assert result["documents"][0]["text"] == "cached"
     path.write_bytes(b"%PDF modified")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(WorkspaceError) as exc:
         extract({"snapshot": {"documents": [document]}})
     assert exc.value.detail["code"] == "source_file_changed"
 

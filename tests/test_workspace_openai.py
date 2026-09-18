@@ -2,10 +2,10 @@ import json
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
 from api.config import settings
 from api.workspace import openai_client, providers
+from api.workspace.errors import WorkspaceError
 from api.workspace.proposal import Draft
 
 
@@ -97,7 +97,7 @@ def test_safe_errors_no_retries(openai_settings, monkeypatch, status, body, code
         return httpx.Response(status, json={**body, "private": "test-private-key"})
 
     mock_http(monkeypatch, handler)
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         openai_client.generate(request())
     assert error.value.detail["code"] == code
     assert error.value.status_code >= 500
@@ -115,7 +115,7 @@ def test_transport_errors(openai_settings, monkeypatch, exception, code):
         raise exception("private details", request=req)
 
     mock_http(monkeypatch, handler)
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         openai_client.generate(request())
     assert error.value.detail["code"] == code
     assert "private details" not in str(error.value.detail)
@@ -124,10 +124,10 @@ def test_transport_errors(openai_settings, monkeypatch, exception, code):
 def test_missing_key_and_invalid_model(openai_settings, monkeypatch):
     monkeypatch.setattr(settings, "openai_api_key", "")
     assert providers.configured_key() == ""
-    with pytest.raises(HTTPException, match="llm_not_configured"):
+    with pytest.raises(WorkspaceError, match="llm_not_configured"):
         openai_client.generate({})
     monkeypatch.setattr(settings, "openai_model", "https://other-host/key")
-    with pytest.raises(HTTPException, match="llm_model_invalid"):
+    with pytest.raises(WorkspaceError, match="llm_model_invalid"):
         request()
 
 
@@ -136,7 +136,7 @@ def test_schema_is_copied_and_rejects_implicit_optional_fields():
     converted = openai_client.strict_schema(original)
     assert "additionalProperties" not in original
     assert converted["additionalProperties"] is False
-    with pytest.raises(HTTPException, match="llm_schema_invalid"):
+    with pytest.raises(WorkspaceError, match="llm_schema_invalid"):
         openai_client.strict_schema({"type": "object", "properties": {"value": {"type": "string"}}})
 
 

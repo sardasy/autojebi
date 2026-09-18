@@ -1,11 +1,11 @@
 import pytest
-from fastapi import HTTPException
 
 from api.workspace import execution
+from api.workspace.errors import WorkspaceError
 
 
 def test_empty_extraction_explains_unapplied_attachments():
-    with pytest.raises(HTTPException) as raised:
+    with pytest.raises(WorkspaceError) as raised:
         execution.extract({"snapshot": {"documents": []}})
     assert raised.value.detail["code"] == "no_source_files"
     assert "결과 반영" in raised.value.detail["next_action"]
@@ -22,7 +22,7 @@ def test_empty_source_analysis_blocks_before_paid_call(monkeypatch, documents):
         pytest.fail("An empty source must not reserve a paid call")
 
     monkeypatch.setattr(execution, "reserve_call", unexpected_call)
-    with pytest.raises(HTTPException) as raised:
+    with pytest.raises(WorkspaceError) as raised:
         execution.analyze(None, {"snapshot": {"documents": documents}})
     assert raised.value.detail["code"] == "no_source_text"
     assert "결과 반영" in raised.value.detail["next_action"]

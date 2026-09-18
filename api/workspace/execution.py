@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import HTTPException
 from sqlalchemy import select
 
 from api.config import settings
@@ -22,6 +21,7 @@ from api.services.hwp_agent_client import (
 from api.services.hwp_fields import resolve_hwp_fields
 from api.services.uploads import base_dir
 from api.workspace import providers
+from api.workspace.errors import WorkspaceError
 from api.workspace.hwp_inspection import inspect_template
 from api.workspace.hwp_readback import verify_readback
 from api.workspace.hwp_validation import (
@@ -504,9 +504,9 @@ def fetch_sources(job: dict) -> dict:
                 f"{attachment.filename}: 다운로드 실패. 원본을 직접 등록할 수 있습니다."
             )
     if attachments and not documents:
-        raise HTTPException(
-            status_code=502,
-            detail={
+        raise WorkspaceError(
+            502,
+            {
                 "code": "attachment_fetch_failed",
                 "message": "첨부파일을 가져오지 못했습니다.",
                 "next_action": "나라장터 공식 파일을 내려받아 직접 등록하세요.",

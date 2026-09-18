@@ -7,16 +7,16 @@ import hashlib
 import re
 from typing import Any
 
-from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
 
 from api.workspace import service
+from api.workspace.errors import WorkspaceError
 from api.workspace.models import RequirementRequest
 from api.workspace.tables import jobs, reviews
 
 
-class AnalysisFailure(HTTPException):
+class AnalysisFailure(WorkspaceError):
     def __init__(self, result: dict) -> None:
         super().__init__(502, {"code": "unverified_quote",
             "message": "AI 인용 검증에 실패한 항목이 있습니다.",

@@ -17,6 +17,7 @@ from api.specifications.retrieval import (
     Neo4jEvidenceAdapter,
     ensure_graph_schema,
 )
+from api.workspace.errors import WorkspaceError
 
 
 class FakeDriver:
@@ -238,7 +239,6 @@ def test_graph_schema_cli_uses_explicit_provisioning(monkeypatch, capsys):
 
 
 def test_provisioning_requires_validation_environment(monkeypatch):
-    from fastapi import HTTPException
 
     from api.specifications import indexing
 
@@ -251,7 +251,7 @@ def test_provisioning_requires_validation_environment(monkeypatch):
     monkeypatch.setattr(indexing, "graph_driver", configured_driver)
     monkeypatch.setenv("SPEC_SEARCH_ENABLED", "true")
     monkeypatch.setenv("SPEC_SEARCH_ENV", "production")
-    with pytest.raises(HTTPException):
+    with pytest.raises(WorkspaceError):
         indexing.provision_graph_schema()
     assert driver.calls == []
     monkeypatch.setenv("SPEC_SEARCH_ENV", "validation")

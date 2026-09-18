@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import HTTPException
 from pydantic import BaseModel
 
 from api.services.hwp_agent_client import HwpAgentClient
+from api.workspace.errors import HANDLED_ERRORS
 from api.workspace.execution import hwp_preview
 from api.workspace.hwp_inspection import mapping_hash
 from api.workspace.hwp_validation import HwpValidationError, read_hwp_output, validate_hwp_content
@@ -232,7 +232,7 @@ def check_prerequisites(
         add("hwp_field_inspection", "실제 템플릿 필드 대조", fields_ok,
             "현재 파일·매핑 기준 필수 필드 확인" if fields_ok else "템플릿 필드 검사를 실행하고 필수 누락을 확인하세요.",
             "서류 확인에서 템플릿 필드 검사", "review", True)
-    except (HTTPException, ValueError, OSError):
+    except (*HANDLED_ERRORS, ValueError, OSError):
         add(
             "hwp_mapping",
             "HWP 매핑",

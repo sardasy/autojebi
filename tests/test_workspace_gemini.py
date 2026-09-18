@@ -2,10 +2,10 @@ import json
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
 from api.config import settings
 from api.workspace import gemini, providers
+from api.workspace.errors import WorkspaceError
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ def test_safe_errors_without_retries(gemini_settings, monkeypatch, status, body,
         return httpx.Response(status, json={**body, "private": "test-private-key"})
 
     mock_http(monkeypatch, handler)
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         gemini.generate(request())
     assert error.value.detail["code"] == code
     if code == "llm_provider_error":
@@ -107,7 +107,7 @@ def test_transport_errors(gemini_settings, monkeypatch, exception, code):
         raise exception("private details", request=req)
 
     mock_http(monkeypatch, handler)
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(WorkspaceError) as error:
         gemini.generate(request())
     assert error.value.detail["code"] == code
     assert "private details" not in str(error.value.detail)
@@ -115,11 +115,11 @@ def test_transport_errors(gemini_settings, monkeypatch, exception, code):
 
 def test_invalid_model_and_no_key_do_not_send(gemini_settings, monkeypatch):
     monkeypatch.setattr(settings, "gemini_model", "../../other-host?key=secret")
-    with pytest.raises(HTTPException, match="llm_model_invalid"):
+    with pytest.raises(WorkspaceError, match="llm_model_invalid"):
         request()
     monkeypatch.setattr(settings, "google_api_key", "")
     assert providers.configured_key() == ""
-    with pytest.raises(HTTPException, match="llm_not_configured"):
+    with pytest.raises(WorkspaceError, match="llm_not_configured"):
         gemini.generate({})
 
 

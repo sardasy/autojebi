@@ -7,7 +7,18 @@ import os
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select, update
 
@@ -23,6 +34,7 @@ from api.routers.specifications import router as specifications_router
 from api.services.uploads import build_metadata, save_stream
 from api.workspace import service
 from api.workspace.assets import AssetLink
+from api.workspace.errors import WorkspaceError
 from api.workspace.execution import hwp_preview, source_path, storage_root
 from api.workspace.identity import router as identity_router
 from api.workspace.models import (
@@ -69,6 +81,16 @@ router.include_router(notice_forms_router)
 router.include_router(specifications_router)
 router.include_router(identity_router)
 router.include_router(requirement_candidates_router)
+
+
+async def _workspace_error_handler(request: Request, exc: WorkspaceError):
+    # Same response (status, {"detail": ...}, headers) as FastAPI's HTTPException handler.
+    return await http_exception_handler(request, exc)
+
+
+def install_error_handlers(app: FastAPI) -> None:
+    """Map v2 domain errors to HTTP responses. Call on every app that mounts ``router``."""
+    app.add_exception_handler(WorkspaceError, _workspace_error_handler)
 
 
 @router.post("/notices/{notice_no}/company-assets/{asset_id}", response_model=WorkspaceRecord)
@@ -203,7 +225,7 @@ def create_job(notice_no: str, body: JobRequest) -> JobRecord:
     with require_engine().begin() as conn:
         try:
             return JobRecord(**service.enqueue(conn, notice_no, body))
-        except HTTPException as exc:
+        except (HTTPException, WorkspaceError) as exc:
             if (
                 body.kind not in {"hwp", "hwp_inspect"}
                 or not conn.execute(
@@ -551,7 +573,7 @@ def preview_source(notice_no: str, document_id: str, page: int = Query(1, ge=1, 
             output = io.BytesIO()
             rendered.original.save(output, format="PNG")
             return Response(output.getvalue(), media_type="image/png", headers={"X-Page-Count": str(len(pdf.pages)), "Cache-Control": "no-store"})
-    except HTTPException:
+    except (HTTPException, WorkspaceError):
         raise
     except Exception:
         service.fail("preview_unavailable", "PDF 미리보기를 만들 수 없습니다.", "추출 본문 또는 원본 다운로드로 확인하세요.", status=422)

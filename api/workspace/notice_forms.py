@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from defusedxml.ElementTree import fromstring as safe_xml
-from fastapi import HTTPException
 from pydantic import Field, HttpUrl
 
 from api.workspace import service
 from api.workspace.attachment_text import checked_archive
+from api.workspace.errors import HANDLED_ERRORS
 from api.workspace.models import StrictModel, VersionRequest
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -324,7 +324,7 @@ def inspect_document(doc: dict) -> dict:
         result["supported"] = bool(result["fields"])
         if not result["fields"]:
             result["reason"] = "명확한 서식 번호 아래 작성 칸 또는 산출내역서 금액 칸을 찾지 못했습니다. 원문을 검토하세요."
-    except HTTPException as exc:
+    except HANDLED_ERRORS as exc:
         result["reason"] = (exc.detail.get("message", "원본 양식 확인 실패")
                             if isinstance(exc.detail, dict) else str(exc.detail))
     except (ValueError, KeyError, zipfile.BadZipFile, OSError, SyntaxError) as exc:
@@ -450,7 +450,7 @@ def filling_issues(inputs: dict) -> list[str]:
             _, _, report = export_filling(inputs, filling["document_id"])
             if report["review_status"] != "approved" or report["unfilled_count"]:
                 issues.append("원본 양식 작성 사본의 실제 배치·내용 재검토 필요")
-        except (HTTPException, ValueError, KeyError, OSError):
+        except (*HANDLED_ERRORS, ValueError, KeyError, OSError):
             issues.append("원본 양식 작성 근거 또는 위치 재검토 필요")
     return list(dict.fromkeys(issues))
 

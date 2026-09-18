@@ -30,6 +30,7 @@ from api.specifications.tables import active_indexes, chunks, generations
 from api.specifications.validation import VERSION, compare, parse_numeric, sha, validate_spec
 from api.workspace import service
 from api.workspace.asset_policy import document_issue
+from api.workspace.errors import HANDLED_ERRORS
 from api.workspace.execution import source_path
 from api.workspace.tables import jobs
 
@@ -252,8 +253,7 @@ def build(engine, job: dict) -> dict:
             stores[store] = {"status": "succeeded", "count": len(rows), "content_hash": manifest["content_hash"]}
         except Exception as exc:
             # Only classified codes are persisted, not credentials, source text or SDK responses.
-            from fastapi import HTTPException
-            if isinstance(exc, HTTPException):
+            if isinstance(exc, HANDLED_ERRORS):
                 raise
             stores[store] = {"status": "failed", "code": f"{store}_unavailable"}
         with engine.begin() as conn:

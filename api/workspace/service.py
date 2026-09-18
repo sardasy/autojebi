@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException
 from sqlalchemy import select, update
 
 from api.db.tables import (
@@ -19,6 +18,7 @@ from api.db.tables import (
     hwp_templates,
 )
 from api.services.notice_facts import normalize_notice_facts
+from api.workspace.errors import HANDLED_ERRORS, WorkspaceError
 from api.workspace.models import JobRecord, WorkspaceRecord
 from api.workspace.provenance import (
     commercial_valid,
@@ -52,9 +52,9 @@ def digest(value: Any) -> str:
 def fail(
     code: str, message: str, next_action: str = "입력과 최신 상태를 확인하세요.", status: int = 409
 ) -> None:
-    raise HTTPException(
-        status_code=status,
-        detail={"code": code, "message": message, "next_action": next_action, "job_id": None},
+    raise WorkspaceError(
+        status,
+        {"code": code, "message": message, "next_action": next_action, "job_id": None},
     )
 
 
@@ -384,7 +384,7 @@ def input_file_issues(inputs: dict) -> list[str]:
             source_path(doc)
             if not doc.get("sha256"):
                 issues.append(f"원본 체크섬 확인 필요: {doc.get('name', doc['id'])}")
-        except HTTPException:
+        except HANDLED_ERRORS:
             issues.append(f"원본 파일 무결성 확인 필요: {doc.get('name', doc['id'])}")
     return issues
 
