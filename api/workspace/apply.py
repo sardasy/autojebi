@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 
 from api.workspace import service
+from api.workspace.quote_recovery import is_duplicate_requirement
 from api.workspace.tables import jobs
 
 
@@ -60,25 +61,22 @@ def apply_job_result(conn: Any, notice_no: str, job_id: str, version: int) -> No
             service.fail("draft_conflict", "작성한 서류와 생성 결과의 식별자가 겹칩니다.")
         inputs["proposal_sections"] = written + generated
     elif job["kind"] == "analyze":
-
-        def identity(requirement: dict) -> tuple:
-            return tuple(
-                requirement.get(key) for key in ("document_id", "quote", "category", "text")
-            )
-
-        seen = {identity(r) for r in inputs["requirements"]}
-        additions = []
+        # Same rule as candidate adoption and the "기존 항목과 중복" label, so a candidate the
+        # screen refuses to adopt cannot enter through 결과 반영 either.
+        added = False
         for requirement in job["result"]["requirements"]:
-            key = identity(requirement)
-            if key not in seen:
-                additions.append(
-                    {**requirement, "id": service.uid(), "review_status": "pending",
-                     "compliance": "unassessed"}
-                )
-                seen.add(key)
-        if not additions:
+            if is_duplicate_requirement(
+                inputs["requirements"], requirement.get("document_id"),
+                requirement.get("quote"), requirement.get("text"),
+            ):
+                continue
+            inputs["requirements"].append(
+                {**requirement, "id": service.uid(), "review_status": "pending",
+                 "compliance": "unassessed"}
+            )
+            added = True
+        if not added:
             return
-        inputs["requirements"].extend(additions)
     else:
         service.fail("not_applicable", "반영 대상 작업이 아닙니다.")
     if job["kind"] != "extract":

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, Save } from "lucide-react";
 import { QuoteDiagnostic, SourceNeed, Workspace, WorkspaceJob, workspaceApi } from "@/lib/workspace";
+import { isDuplicateRequirement } from "@/lib/requirementDuplicates";
 
 const input = "block w-full min-w-0 border rounded p-2 text-sm bg-white";
 const button = "inline-flex items-center gap-2 border rounded px-3 py-2 text-sm disabled:opacity-40";
@@ -46,7 +47,7 @@ function Candidate({candidate, job, ws, prefix, reload}: {candidate: QuoteDiagno
   const locations = useMemo(() => exactLocations(doc?.text || "", quote), [doc?.text, quote]);
   const suggestions = [...new Set(candidate.matches.map(match => match.quote))];
   const start = locations.length === 1 ? locations[0].start : selectedStart;
-  const duplicate = ws.inputs.requirements.some(r => r.document_id === req?.document_id && (r.quote === quote || r.text === req?.text));
+  const duplicate = isDuplicateRequirement(ws.inputs.requirements, {document_id: req?.document_id, quote, text: req?.text});
   const valid = locations.some(location => location.start === start);
   const canAdopt = valid && !!note.trim() && !duplicate && !ws.source_changed && !pending;
   const changeQuote = (value: string) => {setQuote(value); setSelectedStart(-1); setStatus("");};

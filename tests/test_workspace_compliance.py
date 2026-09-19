@@ -207,7 +207,9 @@ def test_analysis_candidate_cannot_supply_manual_compliance(client, sqlite_engin
         },
     )
     job_id = result.json()["id"]
-    candidate = {**workspace["inputs"]["requirements"][0], "text": "New candidate"}
+    # A different quote too: same document + same quote is a duplicate and is not applied.
+    candidate = {**workspace["inputs"]["requirements"][0], "text": "New candidate",
+                 "quote": "New candidate quote"}
     with sqlite_engine.begin() as conn:
         conn.execute(
             update(jobs)

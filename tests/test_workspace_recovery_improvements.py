@@ -183,3 +183,39 @@ def test_timeout_keeps_first_stage_during_cleanup(tmp_path):
     state = progress.snapshot()
     assert state["failure_stage"] == "open" and state["stage"] == "quit"
     assert state["failed_at"] and state["finished_at"] and progress.uncertain
+
+
+def _analyze_job(sqlite_engine, recovery_job, existing, results):
+    """Turn the fixture job into a succeeded analyze result on top of `existing` requirements."""
+    with sqlite_engine.begin() as conn:
+        ws = service.load(conn, "E2E-V2")
+        ws["inputs"]["requirements"] = existing
+        conn.execute(update(workspaces).values(inputs=ws["inputs"]))
+        conn.execute(update(jobs).where(jobs.c.id == recovery_job).values(
+            status="succeeded", error=None, result={"requirements": results}))
+    return f"/v2/notices/E2E-V2/jobs/{recovery_job}/apply"
+
+
+@pytest.mark.parametrize("result,added", [
+    ({"text": "다른 표현", "quote": "납기 90일"}, 0),          # same quote, reworded text
+    ({"text": "납기 확인", "quote": "제안요청서를 확인하세요."}, 0),  # same text, other quote
+    ({"text": "납기 확인", "quote": "납기 90일"}, 0),          # exact duplicate
+    ({"text": "제안요청서 확인", "quote": "제안요청서를 확인하세요."}, 1),
+])
+def test_apply_uses_the_adoption_duplicate_rule(client, recovery_job, sqlite_engine, result, added):
+    existing = [{**candidate(), "id": "manual", "review_status": "pending", "compliance": "unassessed"}]
+    path = _analyze_job(sqlite_engine, recovery_job, existing, [{**candidate(), **result}])
+    response = client.post(path, json={"version": 1})
+    assert response.status_code == 200, response.text
+    ws = response.json()
+    assert len(ws["inputs"]["requirements"]) == 1 + added
+    assert ws["version"] == 1 + added  # nothing new must not create an input version
+
+
+def test_apply_skips_duplicates_inside_one_result(client, recovery_job, sqlite_engine):
+    first = candidate()
+    path = _analyze_job(sqlite_engine, recovery_job, [], [first, {**first, "text": "다른 표현"},
+        {**first, "text": "제안요청서 확인", "quote": "제안요청서를 확인하세요."}])
+    ws = client.post(path, json={"version": 1}).json()
+    assert [r["text"] for r in ws["inputs"]["requirements"]] == ["납기 확인", "제안요청서 확인"]
+    assert all(r["review_status"] == "pending" for r in ws["inputs"]["requirements"])

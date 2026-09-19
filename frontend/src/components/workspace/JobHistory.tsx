@@ -4,6 +4,7 @@ import WorkspaceArtifactReview from "../WorkspaceArtifactReview";
 import { QuoteRecovery } from "../WorkspaceRecovery";
 import { buttonClass, tabs, readableError, actorLabel, date, type Mutate, type Tab } from "./ui";
 import { layoutReviewed as isLayoutReviewed } from "./derive";
+import { applyResultMessage } from "@/lib/requirementDuplicates";
 interface Props {ws: Workspace; tab: Tab; prefix: string; busy: boolean; note: string; mutate: Mutate; reload: () => Promise<boolean>;
   hwpVisible: boolean; reviewNotes: Record<string, string>; setReviewNotes: (value: Record<string, string>) => void;
   recoveryConfirmed: Record<string, boolean>; setRecoveryConfirmed: (value: Record<string, boolean>) => void}
@@ -31,7 +32,7 @@ export default function JobHistory({ws, tab, prefix, busy, note, mutate, reload,
           {job.result?.qualification_references && <div className="text-sm"><p>{job.result.qualification_references.reason}</p>{job.result.qualification_references.references && <dl className="space-y-1 mt-2">{Object.entries(job.result.qualification_references.references).map(([key,values]) => <div key={key}><dt className="font-medium">{{licenses: "면허", regions: "지역", permitted_industries: "업종"}[key] || key}</dt><dd>{values.join(", ") || "조회 항목 없음"}</dd></div>)}</dl>}</div>}
           {job.result?.sections?.map((s,i) => <p key={i} className="text-sm whitespace-pre-wrap">{s.text}</p>)}
           <div className="flex flex-wrap gap-2">
-            {job.status === "succeeded" && job.input_version === ws.version && ["fetch", "extract", "analyze", "proposal"].includes(job.kind) && <button disabled={busy || ws.source_changed} className={buttonClass} onClick={() => void mutate(`${prefix}/jobs/${job.id}/apply`, {version: ws.version}, "검토 대상으로 반영 완료")}><Check size={16}/>결과 반영</button>}
+            {job.status === "succeeded" && job.input_version === ws.version && ["fetch", "extract", "analyze", "proposal"].includes(job.kind) && <button disabled={busy || ws.source_changed} className={buttonClass} onClick={() => void mutate(`${prefix}/jobs/${job.id}/apply`, {version: ws.version}, job.kind === "analyze" ? applyResultMessage(ws.inputs.requirements, job.result?.requirements) : "검토 대상으로 반영 완료")}><Check size={16}/>결과 반영</button>}
             {job.result?.artifact && job.status === "succeeded" && <><a className={buttonClass} href={`/api/v2/jobs/${job.id}/download`}><Download size={16}/>다운로드</a>
               <WorkspaceArtifactReview key={`${job.id}-${ws.version}-${job.result.sha256}-${ws.reviews.find(r => r.job_id === job.id)?.id || "pending"}`} job={job} version={ws.version} sourceChanged={ws.source_changed} busy={busy}
                 note={reviewNotes[job.id] ?? note} onNote={value => setReviewNotes({...reviewNotes, [job.id]: value})}

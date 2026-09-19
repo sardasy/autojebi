@@ -29,6 +29,12 @@ def text_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def is_duplicate_requirement(existing: list[dict], document_id: str, quote: str, text: str) -> bool:
+    """One rule for adopt, apply and the UI label: same source document and same quote or text."""
+    return any(r.get("document_id") == document_id and (r.get("quote") == quote or r.get("text") == text)
+               for r in existing)
+
+
 def matches(text: str, quote: str) -> list[dict]:
     if not quote.strip():
         return []
@@ -112,10 +118,7 @@ def adopt(conn: Any, notice_no: str, job_id: str, body: Any) -> None:
         quote = selected.quote
         if not quote.strip() or text[selected.start:selected.start + len(quote)] != quote:
             service.fail("unverified_quote", "선택 위치와 원문 인용이 일치하지 않습니다.")
-        duplicate = any(r.get("document_id") == req["document_id"] and
-                        (r.get("quote") == quote or r.get("text") == req["text"])
-                        for r in inputs["requirements"])
-        if duplicate:
+        if is_duplicate_requirement(inputs["requirements"], req["document_id"], quote, req["text"]):
             continue
         inputs["requirements"].append({**req, "id": service.uid(), "quote": quote,
             "source_start": selected.start, "locator": selected.locator,

@@ -35,7 +35,7 @@ export interface WorkspaceJob {
   execution_lane?: "local" | "external";
   id: string; kind: string; input_version: number; status: string; quality: string | null;
   result: { artifact?: string; sha256?: string; warnings?: string[]; sections?: { text: string }[]; required_missing?: string[];
-    quote_diagnostics?: QuoteDiagnostic[];
+    quote_diagnostics?: QuoteDiagnostic[]; requirements?: Pick<Requirement, "document_id" | "quote" | "text">[];
     pages?: {number: number; width: number; height: number; sha256: string}[];
     documents?: {id: string; role?: SourceDocument["role"]; text?: string; format?: string; attachment_index?: number | null}[];
     inspection_passed?: boolean; fields?: string[]; unmapped?: string[];
