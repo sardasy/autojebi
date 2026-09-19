@@ -6,7 +6,7 @@ import {buildNoticeBrief, type BriefExcerpt} from "@/lib/noticeBrief";
 
 function Excerpts({items, prefix}: {items: BriefExcerpt[]; prefix: string}) {
   return <ul className="divide-y">{items.map((item,index) => <li key={`${item.documentId}-${index}`} className="py-2 flex gap-3 items-start min-w-0">
-    <p className="text-sm leading-6 break-words min-w-0 flex-1">{item.text}</p>
+    <p className="text-sm leading-6 break-words min-w-0 flex-1 max-h-60 overflow-y-auto">{item.text}</p>
     <a href={`/api/v2${prefix}/documents/${item.documentId}/download`} className="p-2 shrink-0 text-gray-500 hover:text-red-700" title={item.documentName} aria-label={`${item.documentName} 원문 다운로드`}><FileText size={16}/></a>
   </li>)}</ul>;
 }

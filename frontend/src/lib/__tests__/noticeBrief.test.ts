@@ -31,4 +31,31 @@ describe("source-only notice brief", () => {
     expect(value.points.find(p=>p.label==="제출 일정")?.items[0].text).toContain("10:00");
     expect(value.points.find(p=>p.label==="제출 방법·유의사항")?.items[0].text).toContain("zip 파일 업로드 불가");
   });
+  // HWPX extraction has no paragraph breaks: a real 19,486-character notice arrived as one line and
+  // every key fact showed the whole document (108,324 characters, 72,045px tall).
+  const flat = ["조달물자[물품] 제조 입찰 공고", "이 입찰 설명서는 입찰자와 낙찰자가 숙지하고 준수하여야 할 사항을 기재한 것입니다.".repeat(60),
+    "1. 입찰개요 ----------", "○ 입찰공고번호: R26BK01715307-000", "○ 사업금액: 810,000,000 원(부가가치세 포함)", "○ 납품기한: 계약 후 90일 이내",
+    "2. 입찰(개찰) 일시 및 장소 ----------", "○ 제안서ㆍ가격 전자입찰서 제출 마감일시: 2026/09/29 10:00", "○ 공고일: 2026. 9. 19. 오전 10:00 게시",
+    "◇ 사업예산 및 입찰금액은 부가가치세를 포함한 가격입니다.", "① 사업자등록증 사본 1부", "② 사용인감계 1부 (미등록된 사용인감일 경우 제출)"].join(" ");
+  it("splits a single-line HWPX text into bounded, exact excerpts", () => {
+    expect(flat).not.toContain("\n");
+    const value = buildNoticeBrief([doc(flat,"공고서.hwpx")]);
+    const point = (label:string) => value.points.find(p=>p.label===label)?.items || [];
+    expect(point("제출 일정").map(i=>i.text)).toEqual(["○ 제안서ㆍ가격 전자입찰서 제출 마감일시: 2026/09/29 10:00"]);
+    expect(point("예산").map(i=>i.text)).toEqual(["○ 사업금액: 810,000,000 원(부가가치세 포함)"]);
+    expect(point("계약·수행 기간").map(i=>i.text)).toEqual(["○ 납품기한: 계약 후 90일 이내"]);
+    expect(value.submissions.map(i=>i.text)).toEqual(["① 사업자등록증 사본 1부","② 사용인감계 1부 (미등록된 사용인감일 경우 제출)"]);
+    for (const item of [...value.submissions, ...value.points.flatMap(p=>p.items)]) {expect(flat).toContain(item.quote); expect(item.text.length).toBeLessThan(200);}
+  });
+  it("does not break spaced dates and leaves ordinary short lines untouched", () => {
+    const value = buildNoticeBrief([doc(flat.replace("제출 마감일시: 2026/09/29 10:00","제출 마감일시: 2026. 9. 29. 오전 10:00"),"공고서.hwpx")]);
+    expect(value.points.find(p=>p.label==="제출 일정")?.items[0].text).toContain("2026. 9. 29. 오전 10:00");
+    const short = "제출 마감일시: 2026.09.22. 10:00 ○ 사업금액: 100원";
+    expect(buildNoticeBrief([doc(short)]).points.find(p=>p.label==="제출 일정")?.items[0].text).toBe(short);
+  });
+  it("prefers the same-name copy that kept its line structure", () => {
+    const lined = "○ 사업금액: 810,000,000 원\n○ 납품기한: 계약 후 90일 이내";
+    for (const docs of [[doc(flat,"공고서.hwpx","hwpx"),doc(lined,"공고서.pdf","pdf")],[doc(lined,"공고서.pdf","pdf"),doc(flat,"공고서.hwpx","hwpx")]])
+      expect(buildNoticeBrief(docs).points.find(p=>p.label==="예산")?.items.map(i=>i.documentId)).toEqual(["pdf"]);
+  });
 });

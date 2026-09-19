@@ -5,12 +5,20 @@ export interface NoticeBriefData {submissions: BriefExcerpt[]; points: {label: s
 
 const clean = (value: string) => value.replace(/\0/g, " ").replace(/\s+/g, " ").trim();
 
+// HWPX extraction joins every paragraph with a space (kept as is: stored quotes and hashes depend on
+// it), so a whole notice can arrive as one line. Re-split only such lines, at the same bullets,
+// numbering and sentence ends the loop below flushes on; every piece stays an exact source substring.
+const LONG_LINE = 400;
+const BREAK = /(?<!\d\.)\s+(?=[①-⑳○※•◇]|\d{1,2}[.)]\s+[가-힣「]|[가나다라마바사아자차카타파하]\.\s)|(?<=[다요][.!])\s+/;
+const sourceLines = (text: string) => text.split(/\r?\n/).flatMap(line => line.length > LONG_LINE ? line.split(BREAK) : [line]);
+const flattened = (text: string) => text.split(/\r?\n/).some(line => line.length > LONG_LINE * 5);
+
 // Keep complete source blocks, including conditions and exceptions. Never use AI paraphrases.
 function blocks(text: string): string[] {
   const result: string[] = [];
   let current: string[] = [];
   const flush = () => {if (current.length) result.push(current.join("\n")); current = [];};
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of sourceLines(text)) {
     const value = clean(line);
     if (!value || /^\[페이지 \d+\]$/.test(value)) {flush(); continue;}
     if (/^(?:[①-⑳○※•◇-]|\d+[.)]|[가-힣]\.\s)/.test(value)) flush();
@@ -28,7 +36,8 @@ export function buildNoticeBrief(documents: SourceDocument[]): NoticeBriefData {
   for (const doc of documents.filter(d => d.role === "notice_source" && d.text?.trim())) {
     const key = doc.name.replace(/\.(pdf|hwpx?|txt)$/i, "");
     const old = sources.get(key);
-    if (!old || (doc.text.match(/\0/g)?.length || 0) < (old.text.match(/\0/g)?.length || 0)) sources.set(key, doc);
+    const nulls = (d: SourceDocument) => d.text.match(/\0/g)?.length || 0;
+    if (!old || nulls(doc) < nulls(old) || (nulls(doc) === nulls(old) && flattened(old.text) && !flattened(doc.text))) sources.set(key, doc);
   }
   const all: BriefExcerpt[] = [];
   const seen = new Set<string>();
