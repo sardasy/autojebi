@@ -27,6 +27,7 @@ from api.workspace.forms.schemas import (
     FormReviewRequest,
     FormWebReference,
 )
+from api.workspace.readiness_issues import IssueCode, ReadinessIssue, issue, render_blockers
 from api.workspace.storage import source_path
 
 WARNINGS = [
@@ -226,18 +227,22 @@ def _validate_filling(inputs: dict, filling: dict) -> tuple[dict, dict]:
 
 
 def filling_issues(inputs: dict) -> list[str]:
+    return render_blockers(filling_readiness_issues(inputs), deduplicate=True)
+
+
+def filling_readiness_issues(inputs: dict) -> list[ReadinessIssue]:
     issues = []
     for filling in inputs.get("form_fillings", []):
         if filling.get("review_status") != "approved":
-            issues.append("원본 양식 작성값·근거 및 한글 배치 검토 필요")
+            issues.append(issue(IssueCode.FORM_REVIEW_REQUIRED, "form", filling["document_id"]))
             continue
         try:
             _, _, report = export_filling(inputs, filling["document_id"])
             if report["review_status"] != "approved" or report["unfilled_count"]:
-                issues.append("원본 양식 작성 사본의 실제 배치·내용 재검토 필요")
+                issues.append(issue(IssueCode.FORM_LAYOUT_STALE, "form", filling["document_id"]))
         except (*HANDLED_ERRORS, ValueError, KeyError, OSError):
-            issues.append("원본 양식 작성 근거 또는 위치 재검토 필요")
-    return list(dict.fromkeys(issues))
+            issues.append(issue(IssueCode.FORM_REFERENCE_STALE, "form", filling["document_id"]))
+    return issues
 
 
 def export_filling(inputs: dict, document_id: str) -> tuple[bytes, str, dict]:

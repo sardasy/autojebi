@@ -49,5 +49,6 @@ data/templates/*.hwp
 data/templates/*.hwpx
 # Runtime template origin records include local reviewer/source details.
 .template-provenance/
+data/company-pilot/
 *.hwp.provenance.json*
 *.hwpx.provenance.json*

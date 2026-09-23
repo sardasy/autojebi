@@ -3199,6 +3199,48 @@
     "title": "IngestResult",
     "type": "object"
    },
+   "IssueCode": {
+    "enum": [
+     "source_changed",
+     "deadline_unknown",
+     "deadline_timezone_unknown",
+     "deadline_passed",
+     "attachment_missing",
+     "attachment_unread",
+     "source_need_unresolved",
+     "form_review_required",
+     "form_layout_stale",
+     "form_reference_stale",
+     "writing_output_missing",
+     "spec_review_required",
+     "writing_plan_stale",
+     "writing_target_empty",
+     "source_review_required",
+     "asset_stale",
+     "asset_disabled",
+     "asset_expired",
+     "asset_not_yet_valid",
+     "asset_validity_unknown",
+     "asset_subject_mismatch",
+     "source_extraction_required",
+     "evidence_unconfirmed",
+     "requirements_missing",
+     "requirement_review_required",
+     "requirement_compliance_required",
+     "commercial_review_required",
+     "proposal_review_required",
+     "proposal_coverage_missing",
+     "source_checksum_missing",
+     "source_file_invalid",
+     "hwp_output_missing",
+     "excel_output_missing",
+     "artifact_review_required",
+     "artifact_warning",
+     "form_retired"
+    ],
+    "title": "IssueCode",
+    "type": "string"
+   },
    "JobRecord": {
     "properties": {
      "created_at": {
@@ -5716,6 +5758,73 @@
     "title": "ProposalVerifyResponse",
     "type": "object"
    },
+   "ReadinessIssue": {
+    "additionalProperties": false,
+    "properties": {
+     "blocking": {
+      "default": true,
+      "title": "Blocking",
+      "type": "boolean"
+     },
+     "code": {
+      "$ref": "#/components/schemas/IssueCode"
+     },
+     "entity_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entity Id"
+     },
+     "message": {
+      "readOnly": true,
+      "title": "Message",
+      "type": "string"
+     },
+     "message_params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Message Params",
+      "type": "object"
+     },
+     "next_action": {
+      "readOnly": true,
+      "title": "Next Action",
+      "type": "string"
+     },
+     "scope": {
+      "enum": [
+       "workspace",
+       "notice",
+       "attachment",
+       "source_need",
+       "document",
+       "form",
+       "writing_target",
+       "requirement",
+       "checklist",
+       "commercial",
+       "proposal",
+       "artifact"
+      ],
+      "title": "Scope",
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "scope",
+     "message",
+     "next_action"
+    ],
+    "title": "ReadinessIssue",
+    "type": "object"
+   },
    "RecoveryRequest": {
     "additionalProperties": false,
     "properties": {
@@ -7838,6 +7947,25 @@
       "additionalProperties": true,
       "title": "Proposal Coverage",
       "type": "object"
+     },
+     "readiness_checked_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Readiness Checked At"
+     },
+     "readiness_issues": {
+      "items": {
+       "$ref": "#/components/schemas/ReadinessIssue"
+      },
+      "title": "Readiness Issues",
+      "type": "array"
      },
      "ready": {
       "title": "Ready",

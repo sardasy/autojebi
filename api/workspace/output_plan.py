@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from api.db.tables import hwp_templates
 from api.workspace.errors import HANDLED_ERRORS
+from api.workspace.readiness_issues import IssueCode, ReadinessIssue, issue, render_blockers
 from api.workspace.template_provenance import review_provenance_issues
 
 LAYOUT_WARNING = "한글 페이지 배치는 담당자 검토가 필요합니다."
@@ -72,6 +73,10 @@ def selected_artifacts(records: list, inputs: dict) -> list:
 
 
 def writing_output_issues(inputs: dict) -> list[str]:
+    return render_blockers(writing_output_readiness_issues(inputs), deduplicate=True)
+
+
+def writing_output_readiness_issues(inputs: dict) -> list[ReadinessIssue]:
     """Require an approved original form for each non-proposal writing target.
 
     A reference to a file containing several forms does not identify which form
@@ -126,5 +131,6 @@ def writing_output_issues(inputs: dict) -> list[str]:
                     validated[document_id] = False
             if validated[document_id]:
                 continue
-        issues.append(f"제출 양식 작성·검토 필요: {item.get('title') or item.get('id', '')}")
-    return list(dict.fromkeys(issues))
+        issues.append(issue(IssueCode.WRITING_OUTPUT_MISSING, "writing_target", item.get("id"),
+                            title=item.get("title") or item.get("id", "")))
+    return issues

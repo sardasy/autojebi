@@ -6,6 +6,7 @@ import WorkspaceDecision from "../WorkspaceDecision";
 import WorkspaceOutputPlan from "../WorkspaceOutputPlan";
 import WorkspaceWorkerStatus from "../WorkspaceWorkerStatus";
 import WorkspaceHwpStatus from "../WorkspaceHwpStatus";
+import WorkspaceReadiness from "../WorkspaceReadiness";
 import TemplateProvenanceNotice from "../TemplateProvenanceNotice";
 import {templateLabel, type TemplateProvenance, type WorkspaceTemplate} from "@/lib/templateProvenance";
 import CommercialForm from "./CommercialForm";
@@ -56,7 +57,7 @@ export default function ReviewTab({ws, tab, prefix, busy, note, mutate, run, goT
           {preview && <><dl className="grid sm:grid-cols-2 gap-2 text-sm">{Object.entries(preview.values).map(([key,value]) => <div key={key} className="border-b py-2 min-w-0"><dt className="text-gray-500">{key}</dt><dd className="break-words whitespace-pre-wrap">{value || "미입력"}</dd></div>)}</dl><p className="text-amber-800 text-sm">필수 누락 {preview.required_missing.length}개: {preview.required_missing.join(", ") || "없음"}</p></>}
           <button disabled={busy || !preview || !!preview.required_missing.length || preview.input_version !== ws.version || ws.source_changed || !prerequisites?.hwp_request_available || prerequisites.input_version !== ws.version || prerequisites.template_key !== template} className={buttonClass} onClick={() => void run("hwp")}><Play size={16}/>HWP 생성</button>
         </div>
-        <ul className="text-sm text-amber-800 list-disc pl-5">{ws.blockers.map(b => <li key={b}>{b}</li>)}</ul>
+        <WorkspaceReadiness ws={ws}/>
       </>}
   </>;
 }

@@ -4,6 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, computed_field, field_validator
 
 from api.models.notices import NoticeUpsertRequest
+from api.workspace.readiness_issues import ReadinessIssue
 
 JobKind = Literal[
     "fetch",
@@ -245,6 +246,8 @@ class WorkspaceRecord(BaseModel):
     decision: str
     inputs: dict[str, Any]
     blockers: list[str]
+    readiness_issues: list[ReadinessIssue] = Field(default_factory=list)
+    readiness_checked_at: datetime | None = None
     next_action: str
     jobs: list[JobRecord]
     reviews: list[dict[str, Any]]

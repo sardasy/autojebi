@@ -2,6 +2,8 @@
 import re
 from datetime import UTC, date, datetime, timedelta, timezone
 
+from api.workspace.readiness_issues import IssueCode, issue
+
 KST = timezone(timedelta(hours=9))
 
 
@@ -32,17 +34,22 @@ def validity(details: dict, on: date | None = None) -> str:
 
 
 def document_issue(doc: dict, company: dict | None = None, on: date | None = None) -> str:
+    code = document_issue_code(doc, company, on)
+    return issue(code, "document").message if code else ""
+
+
+def document_issue_code(doc: dict, company: dict | None = None, on: date | None = None) -> IssueCode | None:
     asset = doc.get("company_asset")
     if not asset:
-        return ""
+        return None
     if asset.get("stale"):
-        return "중앙 자료 변경: 다시 연결·검토 필요"
+        return IssueCode.ASSET_STALE
     state = validity(asset, on)
     if state not in {"valid", "expiring"}:
-        return {"disabled":"중앙 자료 비활성", "expired":"중앙 자료 유효기간 만료",
-                "not_yet_valid":"중앙 자료 발급일 미도래"}.get(state, "중앙 자료 유효기간 미확인")
+        return {"disabled": IssueCode.ASSET_DISABLED, "expired": IssueCode.ASSET_EXPIRED,
+                "not_yet_valid": IssueCode.ASSET_NOT_YET_VALID}.get(state, IssueCode.ASSET_VALIDITY_UNKNOWN)
     if company is not None and doc.get("role") == "company_evidence":
         number = business_number(str(company.get("business_number") or ""))
         if not number or number != asset.get("subject_business_number"):
-            return "중앙 자료 회사 주체 불일치·미확인"
-    return ""
+            return IssueCode.ASSET_SUBJECT_MISMATCH
+    return None

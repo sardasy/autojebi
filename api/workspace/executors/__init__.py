@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from api.workspace.errors import fail
@@ -10,7 +11,8 @@ from api.workspace.errors import fail
 from api.workspace.executors import analyze, excel, extract, fetch, hwp, package
 from api.workspace.hwp_inspection import inspect_template
 from api.workspace.proposal import generate_proposal
-from api.workspace.service import blockers
+from api.workspace.readiness import readiness_issues
+from api.workspace.readiness_issues import render_blockers
 from api.workspace.storage import storage_root
 
 
@@ -56,8 +58,12 @@ def execute(engine: Any, job: dict) -> dict:
         return grade(engine, job)
     if job["kind"] == "proposal":
         return generate_proposal(engine, job)
+    reasons = readiness_issues(job["snapshot"])
     return {
-        "warnings": blockers(job["snapshot"]),
+        "warnings": render_blockers(reasons),
+        "readiness_issues": [item.model_dump(mode="json") for item in reasons],
+        "readiness_input_version": job["input_version"],
+        "readiness_checked_at": datetime.now(UTC).isoformat(),
         "verified": False,
         "message": "자동 검사는 사람의 사실 확인을 대체하지 않습니다.",
     }

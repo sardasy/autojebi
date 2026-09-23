@@ -18,22 +18,18 @@ from api.db.tables import (
     hwp_templates,
 )
 from api.services.notice_facts import normalize_notice_facts
-from api.workspace import asset_policy, identity, output_plan, writing_plan
-from api.workspace.errors import HANDLED_ERRORS, fail
+from api.workspace import asset_policy, identity, output_plan, readiness, writing_plan
+from api.workspace.errors import fail
 from api.workspace.models import JobRecord, WorkspaceRecord
 from api.workspace.provenance import (
-    commercial_valid,
     invalidate_document_dependents,
     proposal_coverage,
-    requirement_valid,
-    section_valid,
 )
+from api.workspace.readiness_issues import IssueCode, issue, render_blockers
 from api.workspace.source_inventory import (
     source_inventory,
     source_inventory_issues,
-    source_text_complete,
 )
-from api.workspace.storage import source_path
 from api.workspace.tables import jobs, reviews, workspaces
 
 
@@ -46,18 +42,13 @@ def uid() -> str:
 
 
 def digest(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, default=str, ensure_ascii=False).encode()
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(value, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
 
 
 def notice_facts(source: dict) -> dict:
     normalized = normalize_notice_facts(source.get("raw"))
     for key in (
-        "notice_no",
-        "title",
-        "org_name",
-        "org_code",
+        "notice_no", "title", "org_name", "org_code",
         "close_date",
         "open_date",
         "base_price",
@@ -293,88 +284,16 @@ def initialize(conn: Any, notice_no: str, version: int | None = None) -> dict:
 
 
 def deadline_issues(inputs: dict) -> list[str]:
-    value = (inputs.get("notice") or {}).get("close_date")
-    try:
-        deadline = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return ["입찰 마감일시 미확인: 공식 공고에서 확인 필요"]
-    if deadline.tzinfo is None:
-        return ["입찰 마감일시 시간대 미확인: 공식 공고에서 확인 필요"]
-    if deadline <= now():
-        return ["입찰 마감 경과: 제출 준비 완료 불가, 최신 공고 확인 필요"]
-    return []
+    return render_blockers(readiness.deadline_readiness_issues(inputs, at=now()))
 
 
 def blockers(inputs: dict) -> list[str]:
-    from api.workspace.source_needs import issues as source_need_issues
-    issues = source_inventory_issues(inputs)
-    issues.extend(source_need_issues(inputs))
-    from api.workspace.forms.filling import filling_issues
-    issues.extend(filling_issues(inputs))
-    issues.extend(output_plan.writing_output_issues(inputs))
-    from api.specifications.service import enabled, summary
-    if inputs.get("specifications") or enabled():
-        if summary(inputs)["spec_compliance"] != "충족":
-            issues.append("필수 기술사양 검증·사람 검토 필요")
-    if inputs.get("writing_plan"):
-        if not writing_plan.current(inputs):
-            issues.append("공고 작성 대상 재확인 필요")
-        written = {s["id"] for s in inputs.get("proposal_sections", []) if s.get("text", "").strip()}
-        issues.extend(f"작성 대상 미작성: {item['title']}" for item in inputs["writing_plan"]["items"]
-                      if item["action"] == "write" and item["id"] not in written)
-    if not inputs.get("source_reviewed"):
-        issues.append("원문 전체 및 필수 요구사항 대조 확인 필요")
-    docs = inputs.get("documents") or []
-    for doc in docs:
-        issue = asset_policy.document_issue(doc, inputs.get("company") or {})
-        if issue:
-            issues.append(f"{issue}: {doc.get('name', doc['id'])}")
-    if not source_text_complete(inputs):
-        issues.append("공고 원문 본문 추출/확인 필요")
-    for item in inputs.get("checklist") or []:
-        if not any(
-            d.get("confirmed")
-            and not asset_policy.document_issue(d, inputs.get("company") or {})
-            and d.get("role") in {"company_evidence", "product_evidence"}
-            and str(d.get("text") or "").strip()
-            and d.get("item_id") == item["id"]
-            for d in docs
-        ):
-            issues.append(f"필수 증빙 미확인: {item['name']}")
-    reqs = inputs.get("requirements") or []
-    if not reqs:
-        issues.append("원문 근거가 있는 요구사항 등록 필요")
-    documents = {d["id"]: d for d in docs}
-    for req in reqs:
-        if req.get("mandatory") and not requirement_valid(req, documents):
-            issues.append(f"필수 요구사항 검토 필요: {req['text'][:80]}")
-        if req.get("mandatory", True) and req.get("compliance", "unassessed") != "meets":
-            issues.append(f"필수 요구사항 충족 판정 필요: {req['text'][:80]}")
-    if inputs.get("commercial") is not None and not commercial_valid(inputs["commercial"], documents):
-        issues.append("제안 총액의 원화 금액·증빙·인용 위치 재확인 필요")
-    sections = inputs.get("proposal_sections") or []
-    if not sections or any(
-        s.get("review_status") != "approved" or not section_valid(s, inputs) for s in sections
-    ):
-        issues.append("제안서 본문 작성 및 사실 확인 필요")
-    missing = set(proposal_coverage(inputs)["missing_ids"])
-    for req in reqs:
-        if req["id"] in missing:
-            issues.append(f"제안서 필수 요구사항 대응 누락: {req['text'][:80]}")
-    return issues
+    return render_blockers(readiness.readiness_issues(inputs))
 
 
 def input_file_issues(inputs: dict) -> list[str]:
+    return render_blockers(readiness.file_readiness_issues(inputs))
 
-    issues = []
-    for doc in inputs.get("documents") or []:
-        try:
-            source_path(doc)
-            if not doc.get("sha256"):
-                issues.append(f"원본 체크섬 확인 필요: {doc.get('name', doc['id'])}")
-        except HANDLED_ERRORS:
-            issues.append(f"원본 파일 무결성 확인 필요: {doc.get('name', doc['id'])}")
-    return issues
 
 
 def view(conn: Any, notice_no: str) -> WorkspaceRecord:
@@ -396,11 +315,13 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
         .mappings()
         .all()
     )
-    issues = deadline_issues(ws["inputs"]) + blockers(ws["inputs"])
+    checked_at = now()
+    reasons = readiness.deadline_readiness_issues(ws["inputs"], at=checked_at) + readiness.readiness_issues(ws["inputs"])
     if ws["source_hash"] != signature:
-        issues.insert(0, "원문/회사 정보가 변경됨: 동기화 필요")
-    if not issues:
-        issues.extend(input_file_issues(ws["inputs"]))
+        reasons.insert(0, issue(IssueCode.SOURCE_CHANGED, "workspace"))
+    if not reasons:
+        reasons.extend(readiness.file_readiness_issues(ws["inputs"]))
+    issues = render_blockers(reasons)
     latest_reviews = {}
     for item in history:
         if item["input_version"] == ws["version"] and item["job_id"]:
@@ -435,6 +356,8 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
         decision=ws["decision"],
         inputs=public_inputs,
         blockers=issues,
+        readiness_issues=reasons,
+        readiness_checked_at=checked_at,
         next_action=issues[0] if issues else "제출 준비 확인 완료 · 최종 패키지를 다운로드하세요" if ready else "생성물 검토 및 제출 준비 확인",
         jobs=[JobRecord(**r) for r in records],
         reviews=[
@@ -511,15 +434,9 @@ def package_current(conn: Any, ws: dict, package: dict) -> bool:
 
 def create_job_record(conn: Any, ws: dict, kind: str, key: str, params: dict) -> dict:
     record = dict(
-        id=uid(),
-        notice_no=ws["notice_no"],
-        kind=kind,
-        input_version=ws["version"],
-        idempotency_key=key,
-        status="queued",
-        snapshot=ws["inputs"],
-        parameters=params,
-        created_at=now(),
+        id=uid(), notice_no=ws["notice_no"], kind=kind,
+        input_version=ws["version"], idempotency_key=key, status="queued",
+        snapshot=ws["inputs"], parameters=params, created_at=now(),
     )
     conn.execute(jobs.insert().values(**record))
     return record

@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,8 @@ from api.workspace.output_plan import (
     selected_artifacts,
     template_keys,
 )
-from api.workspace.service import blockers
+from api.workspace.readiness import readiness_issues
+from api.workspace.readiness_issues import IssueCode, issue, render_blockers
 from api.workspace.storage import artifact, source_path
 from api.workspace.tables import jobs, reviews
 
@@ -48,18 +50,19 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
             ).mappings()
         ]
     artifacts = selected_artifacts(artifacts, job["snapshot"])
-    warnings = blockers(job["snapshot"])
+    reasons = readiness_issues(job["snapshot"])
     for template_key in template_keys(job["snapshot"]):
         if not any(
             a["kind"] == "hwp" and a["parameters"].get("template_key") == template_key
             for a in artifacts
         ):
-            warnings.append(f"HWP 생성물 없음: {template_key}")
+            reasons.append(issue(IssueCode.HWP_OUTPUT_MISSING, "artifact", template_key, template_key=template_key))
     if not any(a["kind"] == "excel" for a in artifacts):
-        warnings.append("Excel 생성물 없음")
+        reasons.append(issue(IssueCode.EXCEL_OUTPUT_MISSING, "artifact", "excel"))
     manifest = {
         "notice_no": job["notice_no"],
         "input_version": job["input_version"],
+        "readiness_checked_at": datetime.now(UTC).isoformat(),
         "inputs": copy.deepcopy(job["snapshot"]),
         "reviews": history,
         "files": [],
@@ -96,8 +99,8 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
             )
             approved = review_matches(item, latest_review)
             if not approved:
-                warnings.append(f"생성물 검토 승인 필요: {item['id']}")
-            warnings.extend(w for w in result.get("warnings") or []
+                reasons.append(issue(IssueCode.ARTIFACT_REVIEW_REQUIRED, "artifact", item["id"], job_id=item["id"]))
+            reasons.extend(issue(IssueCode.ARTIFACT_WARNING, "artifact", item["id"], message=w) for w in result.get("warnings") or []
                             if not (approved and item["kind"] == "hwp" and w == LAYOUT_WARNING))
             manifest["files"].append({"job_id": item["id"], "sha256": checksum})
         for filling in job["snapshot"].get("form_fillings") or []:
@@ -107,7 +110,8 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
             manifest["files"].append({"name": name, "title": filename,
                                       "sha256": hashlib.sha256(content).hexdigest(),
                                       "original_form": report})
-            warnings.extend(report.get("warnings") or [])
+            reasons.extend(issue(IssueCode.ARTIFACT_WARNING, "form", filling["document_id"], message=w)
+                           for w in report.get("warnings") or [])
         # Keep source paths and historical snapshots out of the portable manifest.
         for doc in manifest["inputs"]["documents"]:
             doc.pop("storage_path", None)
@@ -120,6 +124,9 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
                 archive.writestr(name, content)
                 manifest["files"].append({"name": name, "title": section["title"],
                                           "sha256": hashlib.sha256(content).hexdigest()})
+        warnings = render_blockers(reasons, deduplicate=True)
+        manifest["readiness_issues"] = [item.model_dump(mode="json") for item in reasons]
+        manifest["warnings"] = warnings
         archive.writestr(
             "manifest.json", json.dumps(manifest, ensure_ascii=False, default=str, indent=2)
         )
@@ -129,5 +136,7 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
             "\n\n".join(s.get("text", "") for s in proposal_sections(job["snapshot"])),
         )
     return artifact(
-        output, list(dict.fromkeys(warnings)), included_jobs=[item["id"] for item in artifacts]
+        output, warnings, included_jobs=[item["id"] for item in artifacts],
+        readiness_issues=manifest["readiness_issues"], readiness_input_version=job["input_version"],
+        readiness_checked_at=manifest["readiness_checked_at"],
     )

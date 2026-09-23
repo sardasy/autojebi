@@ -396,6 +396,15 @@ G2B 연결 진단: [서비스 문서 비교 및 연결 검사](docs/g2b-connecti
 
 ## 7. API / CLI 레퍼런스
 
+### 준비 사유 코드·실무 평가 (2026-09-22)
+
+`GET /v2/notices/{notice_no}/workspace`는 `readiness_issues[]`와 `readiness_checked_at`을 추가 제공한다.
+각 사유는 `code/scope/entity_id/blocking/message_params/message/next_action`을 포함하며 기존 `blockers`는 같은 결과의 한국어 투영이다.
+verify 작업 결과와 검토 패키지 manifest에도 구조화된 사유·확인 시각·입력 버전을 보존한다. 조회는 승인이나 입력 버전을 변경하지 않는다.
+`python -m tools.company_pilot init|freeze|lock-validation|report <폴더>`는 5건 실무 평가의 빈 양식 생성·목표 고정·검증 버전 고정·집계를 지원한다.
+실무자와 실제 증빙은 아직 확보 전이며 합성 테스트 결과는 실무 성과가 아니다.
+[측정 절차](docs/company-pilot-runbook.md)와 [ADR 0003](docs/adr/0003-readiness-issues-and-pilot-protocol.md)을 따른다.
+
 ### 문서 완결 흐름 (2026-09-13)
 
 - `POST /v2/notices`는 선택 입력 `org_name`, 시간대가 포함된 `close_date`를 보존한다. 수동 등록 화면은 한국시간을 명시하며 마감 미확인·경과 상태는 제출 준비 완료를 허용하지 않는다.

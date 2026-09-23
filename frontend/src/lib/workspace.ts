@@ -7,6 +7,7 @@ export interface ExtractedArchiveMember {
   extraction?: {members?: ExtractedArchiveMember[]; pages?: ExtractedPage[]};
 }
 import type {TemplateProvenance} from "./templateProvenance";
+import type {ReadinessIssue} from "./readiness";
 
 export interface SourceDocument {
   id: string; name: string; role: "notice_source" | "company_evidence" | "product_evidence" | "company_reference";
@@ -83,6 +84,7 @@ export interface Workspace {
     commercial?: {offer_price: number; quantity: number; document_id: string; quote: string; locator: string; note: string};
     proposal_sections?: {id: string; text: string; review_status: string; evidence_ids: string[]; requirement_ids?: string[]; reference?: {document_id: string; name?: string; quote: string; input_version: number}; document_kind?: DocumentKind; title?: string; references?: WritingReference[]; web_references?: WebWritingReference[]}[] };
   proposal_coverage?: {mandatory_count: number; covered_count: number; evidence_only_count: number; missing_ids: string[]};
+  readiness_issues?: ReadinessIssue[]; readiness_checked_at?: string | null;
   blockers: string[]; next_action: string; jobs: WorkspaceJob[];
   reviews: {id: string; job_id: string | null; action: string; note: string; input_version: number; created_at: string; actor?: WorkspaceActor | null; output_sha256?: string | null; layout_confirmed?: boolean}[];
 }

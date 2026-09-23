@@ -6,6 +6,7 @@ from typing import Any
 
 from api.workspace import service
 from api.workspace.quote_recovery import text_hash
+from api.workspace.readiness_issues import IssueCode, ReadinessIssue, issue, render_blockers
 from api.workspace.storage import source_path
 
 LABELS = ("과업내용서", "과업지시서", "제안요청서", "평가표", "제출 서식")
@@ -45,7 +46,11 @@ def inventory(inputs: dict) -> list[dict]:
 
 
 def issues(inputs: dict) -> list[str]:
-    return [f"별도 원문 확보·해당 여부 확인 필요: {item['name']}"
+    return render_blockers(readiness_issues(inputs))
+
+
+def readiness_issues(inputs: dict) -> list[ReadinessIssue]:
+    return [issue(IssueCode.SOURCE_NEED_UNRESOLVED, "source_need", item["id"], name=item["name"])
             for item in inventory(inputs) if item["state"] == "missing"]
 
 

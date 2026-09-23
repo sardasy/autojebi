@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from api.workspace.readiness_issues import IssueCode, ReadinessIssue, issue, render_blockers
+
 
 def readable_document(document: dict) -> bool:
     return bool(isinstance(document.get("text"), str) and document["text"].strip()
@@ -52,9 +54,13 @@ def source_inventory(inputs: dict) -> list[dict[str, Any]]:
 
 
 def source_inventory_issues(inputs: dict) -> list[str]:
+    return render_blockers(source_readiness_issues(inputs))
+
+
+def source_readiness_issues(inputs: dict) -> list[ReadinessIssue]:
     return [
-        ("공고 첨부 누락: " if item["state"] == "missing" else "공고 첨부 본문 확인 필요: ")
-        + item["name"]
+        issue(IssueCode.ATTACHMENT_MISSING if item["state"] == "missing" else IssueCode.ATTACHMENT_UNREAD,
+              "attachment", str(item["index"]), name=item["name"])
         for item in source_inventory(inputs)
         if item["state"] != "ready"
     ]

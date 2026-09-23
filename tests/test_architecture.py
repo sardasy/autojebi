@@ -25,7 +25,7 @@ LOCAL_IMPORT_BUDGET = {
     "api/workspace/output_plan.py": 2,
     "api/workspace/quote_recovery.py": 2,
     "api/workspace/receipts.py": 3,
-    "api/workspace/service.py": 7,  # forms.filling / source_needs / specifications cycles
+    "api/workspace/service.py": 4,
     "api/workspace/supervisor.py": 1,
     "api/workspace/worker.py": 1,
     "api/workspace/writing_plan.py": 1,
@@ -112,7 +112,7 @@ TS_MAX_BYTES = 24_000
 SIZE_BUDGET: dict[str, int | tuple[int, int]] = {
     "api/routers/notices.py": 3049,
     "api/specifications/table_structure.py": 818,
-    "api/workspace/service.py": 777,
+    "api/workspace/service.py": 694,
     "api/models/notices.py": 715,
     "api/specifications/retrieval.py": 689,
     "api/routers/workspace.py": 655,
