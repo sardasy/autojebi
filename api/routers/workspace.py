@@ -25,6 +25,7 @@ from api.auth import verify_api_key
 from api.db import require_engine
 from api.models.notices import NoticeSearchRequest, NoticeSearchResponse, NoticeUpsertRequest
 from api.routers.company_assets import router as company_assets_router
+from api.routers.hwp_health import router as hwp_health_router
 from api.routers.notice_forms import router as notice_forms_router
 from api.routers.notices import search_notices_endpoint, upsert_notice
 from api.routers.requirement_candidates import router as requirement_candidates_router
@@ -83,6 +84,7 @@ router.include_router(specifications_router)
 router.include_router(identity_router)
 router.include_router(requirement_candidates_router)
 router.include_router(source_display_reviews_router)
+router.include_router(hwp_health_router)
 
 
 async def _workspace_error_handler(request: Request, exc: WorkspaceError):
@@ -106,12 +108,6 @@ def link_company_asset(notice_no: str, asset_id: str, body: AssetLink) -> Worksp
 @router.get("/hwp-templates", response_model=WorkspaceTemplateList)
 def workspace_templates():
     return list_workspace_templates()
-
-
-@router.get("/hwp-worker")
-def workspace_hwp_worker():
-    from api.services.hwp_agent_client import HwpAgentClient
-    return HwpAgentClient(timeout_s=3, retries=1).diagnostics()
 
 
 @router.get("/jobs/{job_id}/pages/{number}")

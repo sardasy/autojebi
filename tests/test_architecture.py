@@ -115,7 +115,7 @@ SIZE_BUDGET: dict[str, int | tuple[int, int]] = {
     "api/workspace/service.py": 696,
     "api/models/notices.py": 715,
     "api/specifications/retrieval.py": 689,
-    "api/routers/workspace.py": 657,
+    "api/routers/workspace.py": 653,
     "api/services/document_automation.py": 608,
     "frontend/src/components/DocumentPreparationPanel.tsx": (656, 27184),
     "frontend/src/components/HwpComposeDialog.tsx": (405, 17687),

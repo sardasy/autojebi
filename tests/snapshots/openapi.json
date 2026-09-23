@@ -13317,7 +13317,11 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Workspace Hwp Worker V2 Hwp Worker Get",
+         "type": "object"
+        }
        }
       },
       "description": "Successful Response"

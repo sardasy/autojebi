@@ -1120,6 +1120,7 @@ curl -X POST http://localhost:8001/notices/search \
 `form-fields`는 ZIP 내부 HWPX를 별도 `document_id`로 반환한다. `parent_document_id`, `container_sha256`, `member_path`, `member_hashes`가 목록·저장 기록·내보내기 출처에 추가된다. 기존 `form-fillings` 저장/검토/다운로드를 재사용하며 부모 ZIP 변경 시 새 대상이다. 바이너리 HWP 자동기입은 지원하지 않는다. `source_needs.candidates`는 원문/내부 위치 후보이며 직접 확인 전 상태를 바꾸지 않는다. `SourceNeedResolution.locator`는 선택 필드다.
 
 현재 양식의 `fillings`와 정정 전 참고용 `retired_fillings`를 구분한다. 과거 초안은 이력에서 읽을 수 있으며 새 대상에 자동 이관하지 않는다. [실공고 재검증 결과](docs/notice-document-provenance-e2e-2026-09-22.md)에 검토 사본·미완료 조건을 기록한다.
+`GET /v2/hwp-worker`는 재시도 없이 전체 3초 기한을 적용한다. 브라우저는 본문 처리 포함 5초 후 취소하고 실패 backoff를 적용한다. 계약과 적합도 함수는 [ADR 0002](docs/adr/0002-notice-document-provenance.md)를 따른다.
 
 ## 14. 핵심 파일 맵
 
