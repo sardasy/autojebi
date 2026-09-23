@@ -4,6 +4,7 @@ import NoticeBrief from "../NoticeBrief";
 import WritingPlanReview from "../WritingPlanReview";
 import WorkspaceDocumentViewer from "../WorkspaceDocumentViewer";
 import WorkspaceRequirementCandidates from "../WorkspaceRequirementCandidates";
+import SourceDisplayReview from "../SourceDisplayReview";
 import CompanyAssets from "../CompanyAssets";
 import { SourceNeeds } from "../WorkspaceRecovery";
 import SourceInventory from "./SourceInventory";
@@ -17,7 +18,8 @@ interface Props {ws: Workspace; prefix: string; noticeNo: string; busy: boolean;
 /** Tab "2. 공고 서류 검토": source files, extraction state and requirements. */
 export default function SourceReviewTab({ws, prefix, noticeNo, busy, note, derived: {sourceDocuments, hasSourceText, pendingFetch, pendingExtract}, mutate, run, reload, setWs, goTo, activateTab}: Props) {
   return <>
-        {hasSourceText && <NoticeBrief documents={ws.inputs.documents} prefix={prefix}/>}
+        {hasSourceText && <NoticeBrief documents={ws.inputs.documents} prefix={prefix} serverBrief={ws.notice_brief}/>}
+        {hasSourceText && <SourceDisplayReview key={`display-${ws.version}`} ws={ws} prefix={prefix} onSaved={setWs}/>}
         {hasSourceText && <WritingPlanReview key={`plan-${ws.version}`} ws={ws} prefix={prefix} onSaved={setWs} onWriting={()=>goTo(tabs[1])}/>}
         <details id="source-details" className="border-y py-3" open={!hasSourceText}><summary className="text-sm cursor-pointer font-medium">원문·상세 검토</summary><div className="space-y-4 pt-4">
         <details className="border-b pb-3" open={hasSourceText}><summary className="text-sm font-medium cursor-pointer">다른 원문 작업</summary><div className="space-y-3 pt-3">

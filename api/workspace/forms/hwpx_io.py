@@ -13,7 +13,7 @@ from api.workspace.errors import fail
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 NS = {"hp": HP}
-FORM = re.compile(r"^[<\[〈【]\s*서식\s*\d+(?:\s*[-–]\s*\d+)?\s*[>\]〉】]$")
+FORM = re.compile(r"^([<\[〈【]\s*서식\s*\d+(?:\s*[-–]\s*\d+)?\s*[>\]〉】])\s*(.{0,200})$")
 PROTECTED = re.compile(r"주민\s*등록|서명|날인|직인|인감|\(\s*인\s*\)|증명서|확인서")
 MAX_XML = 8_000_000
 
@@ -91,8 +91,8 @@ def _fields(roots: dict, sha256: str) -> list[dict]:
     for member, root in sorted(roots.items()):
         for paragraph in root.findall("hp:p", NS):
             plain = _paragraph_text(paragraph).strip()
-            if FORM.fullmatch(plain):
-                context, heading, item_label = plain, "", ""
+            if match := FORM.fullmatch(plain):
+                context, heading, item_label = match[1], match[2].strip(), ""
                 continue
             if not context:
                 continue

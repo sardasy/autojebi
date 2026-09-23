@@ -38,7 +38,7 @@ def client(monkeypatch):
     for path in ["/notices/N/reviews", "/notices/N/sections/S/review",
                  "/notices/N/documents/D/review", "/notices/sections/documents/D/review", "/notices/N/form-fillings/F/review",
                  "/notices/N/requirements", "/notices/N/source-review", "/notices/N/documents",
-                 "/notices/N/decision", "/notices/N/output-plan", "/company-assets/A", "/search"]:
+                 "/notices/N/decision", "/notices/N/output-plan", "/company-assets/A", "/search", "/notices/N/source-display-reviews"]:
         router.add_api_route(path, mutation, methods=["POST", "PUT"])
     app.include_router(router)
 
@@ -86,6 +86,8 @@ def test_disabled_mode_and_legacy_remain_compatible(client, monkeypatch):
     ("/notices/N/requirements", {"compliance": "meets"}, "reviewer"),
     ("/notices/N/requirements", {"review_status": "pending", "compliance": "unassessed"}, "writer"),
     ("/notices/N/source-review", {}, "reviewer"),
+    ("/notices/N/source-display-reviews", {"kind": "absent"}, "reviewer"),
+    ("/notices/N/source-display-reviews", {"kind": "equivalent"}, "reviewer"),
     ("/notices/N/documents", {}, "writer"),
     ("/notices/N/decision", {}, "writer"),
     ("/notices/N/output-plan", {}, "writer"),

@@ -4,7 +4,7 @@ import copy
 import re
 from typing import Any
 
-from api.workspace import service
+from api.workspace import notice_brief, service
 from api.workspace.quote_recovery import text_hash
 from api.workspace.readiness_issues import IssueCode, ReadinessIssue, issue, render_blockers
 from api.workspace.storage import source_path
@@ -37,8 +37,19 @@ def inventory(inputs: dict) -> list[dict]:
         linked = docs.get(old.get("linked_document_id"), {})
         if old.get("state") == "linked":
             valid = valid and bool(linked.get("text")) and old.get("linked_text_sha256") == text_hash(linked.get("text", ""))
+        if old.get("resolution_sha256"):
+            valid = valid and docs.get(old.get("document_id"), {}).get("sha256") == old["resolution_sha256"]
+        candidates = []
+        for doc in docs.values():
+            spans, _ = notice_brief.chunks(doc)
+            pattern = "평가표|평가기준|평가항목" if label == "평가표" else re.escape(label).replace(r"\ ", r"\s*")
+            for span in spans:
+                quote = doc.get("text", "")[span["start"]:span["end"]]
+                if len(quote) <= 4000 and re.search(pattern, re.sub(r"\s+", "", quote)):
+                    candidates.append({"document_id": doc["id"], "quote": quote,
+                                       "locator": span["locator"], "member_path": span.get("member_path", [])})
         result.append({"id": identity, "name": label, "mentions": mentions,
-                       "source_signature": signature,
+                       "source_signature": signature, "candidates": candidates[:30],
                        "state": old.get("state", "missing") if valid else "missing",
                        "linked_document_id": old.get("linked_document_id", "") if valid else "",
                        "note": old.get("note", ""), "resolution_quote": old.get("resolution_quote", "")})
@@ -72,6 +83,11 @@ def update(conn: Any, notice_no: str, body: Any) -> None:
             if not doc or not item.resolution_quote.strip() or item.resolution_quote not in str(doc.get("text") or ""):
                 service.fail("unverified_quote", "확인 근거가 공고 원문과 일치하지 않습니다.")
             source_path(doc)
+            if item.locator and not any(c["document_id"] == doc["id"] and c["quote"] == item.resolution_quote
+                    and c["locator"] == item.locator for c in current[item.id]["candidates"]):
+                service.fail("unverified_locator", "후보 위치와 원문 인용을 다시 확인하세요.")
+            value["resolution_sha256"] = doc.get("sha256")
+            value.pop("candidates", None)
             value["resolution_text_sha256"] = text_hash(doc["text"])
             if item.state == "linked":
                 value["linked_document_id"] = doc["id"]

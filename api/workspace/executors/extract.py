@@ -95,6 +95,17 @@ def extract(job: dict) -> dict:
         if (doc.get("sha256") and doc.get("text") and doc.get("text_origin") in {"hwpx", "hwp_ole"}
             and (doc["text_origin"] == "hwp_ole" or
                  metadata.get("text_rule_version") == TEXT_RULE_VERSION and metadata.get("complete") is True)):
+            if doc["text_origin"] == "hwpx" and "presentation" not in metadata:
+                try:
+                    enriched = attachment_text.extract_hwpx(path.read_bytes())
+                    display = enriched["extraction"]["presentation"]
+                    if enriched["text"] != doc["text"]:
+                        display = {"version": 1, "status": "partial", "spans": [],
+                                   "issues": ["기존 본문과 구조 위치 연결 실패"]}
+                except (ValueError, OSError, KeyError):
+                    display = {"version": 1, "status": "partial", "spans": [],
+                               "issues": ["기존 HWPX 구조 추출 실패"]}
+                metadata = {**metadata, "presentation": display}
             if metadata.get("table_structure", {}).get("version") != 1 or "tables" not in metadata:
                 addition = attachment_text.text_only_table_metadata(locator=f"sha256:{doc['sha256']}/{doc['text_origin']}")
                 if (doc["text_origin"] == "hwpx" and path.suffix.lower() == ".hwpx"

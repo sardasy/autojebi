@@ -68,6 +68,7 @@ class SourceNeedResolution(StrictModel):
     state: Literal["missing", "linked", "not_applicable"]
     document_id: str = ""
     resolution_quote: str = Field(default="", max_length=4000)
+    locator: str = Field(default="", max_length=2000)
     note: str = Field(min_length=1, max_length=2000)
 
 
@@ -237,6 +238,7 @@ class JobRecord(BaseModel):
 
 
 class WorkspaceRecord(BaseModel):
+    notice_brief: dict[str, Any] = Field(default_factory=dict)
     spec_compliance: str = "미확인"
     unresolved_spec_count: int = 0
     spec_source_complete: bool = False

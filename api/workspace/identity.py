@@ -103,7 +103,7 @@ async def required_role(request: Request) -> Role | None:
         return None
     if request.method == "POST" and (path == "/v2/search" or path.endswith("/spec-search")):
         return None
-    if path.endswith("/source-review"):
+    if path.endswith(("/source-review", "/source-display-reviews")):
         return "reviewer"
     if path.endswith("/review") and not re.search(r"/sections/[^/]+/review$", path):
         return "reviewer"

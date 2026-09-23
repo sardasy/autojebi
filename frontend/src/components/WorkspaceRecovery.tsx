@@ -88,18 +88,20 @@ function Need({need, ws, prefix, reload}: {need: SourceNeed; ws: Workspace; pref
   const [state, setState] = useState(need.state);
   const [documentId, setDocumentId] = useState(need.linked_document_id || "");
   const [quote, setQuote] = useState(need.resolution_quote || "");
+  const [locator, setLocator] = useState("");
   const [note, setNote] = useState(need.note || "");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   return <details className="border-b py-2"><summary className="text-sm cursor-pointer">{need.name} · {{missing: "확보·해당 여부 확인 필요", linked: "원문 연결 확인", not_applicable: "해당 없음 확인"}[need.state]}</summary>
     <form className="space-y-2 pt-3" onSubmit={async e => {e.preventDefault(); setBusy(true); try {
-      await workspaceApi(`${prefix}/source-needs`, {version: ws.version, items: [{id: need.id, state, document_id: documentId, resolution_quote: quote, note}]}, "PUT");
+      await workspaceApi(`${prefix}/source-needs`, {version: ws.version, items: [{id: need.id, state, document_id: documentId, resolution_quote: quote, note, locator}]}, "PUT");
       setStatus("확인 기록 저장 완료"); await reload();
     } catch(error) {setStatus((error as Error).message);} finally {setBusy(false);}}}>
       {need.mentions.map(m => <blockquote key={m.document_id} className="border-l-2 pl-3 whitespace-pre-wrap text-sm">{m.quote}</blockquote>)}
+      {!!need.candidates?.length && <label className="block text-sm">내부 파일·원문 연결 후보<select className={input} defaultValue="" onChange={e => {const candidate = need.candidates?.[Number(e.target.value)]; if (candidate && e.target.value !== "") {setDocumentId(candidate.document_id); setQuote(candidate.quote); setLocator(candidate.locator);}}}><option value="">후보 선택 · 확보 상태는 직접 확인하세요</option>{need.candidates.map((c, i) => <option key={`${c.document_id}-${i}`} value={i}>{c.member_path.join(" / ") || c.locator} · {c.quote.slice(0, 100)}</option>)}</select>{locator && <p className="break-all">위치: {locator}</p>}</label>}
       <label className="block text-sm">확보 상태<select className={input} value={state} onChange={e => setState(e.target.value as SourceNeed["state"])}><option value="missing">미확보·확인 필요</option><option value="linked">파일 연결 확인</option><option value="not_applicable">해당 없음 확인</option></select></label>
-      <label className="block text-sm">확인 원문<select className={input} value={documentId} onChange={e => setDocumentId(e.target.value)}><option value="">선택</option>{ws.inputs.documents.filter(d => d.role === "notice_source").map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-      <label className="block text-sm">확인 근거 인용<textarea className={input} value={quote} onChange={e => setQuote(e.target.value)}/></label>
+      <label className="block text-sm">확인 원문<select className={input} value={documentId} onChange={e => {setDocumentId(e.target.value); setLocator("");}}><option value="">선택</option>{ws.inputs.documents.filter(d => d.role === "notice_source").map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+      <label className="block text-sm">확인 근거 인용<textarea className={input} value={quote} onChange={e => {setQuote(e.target.value); setLocator("");}}/></label>
       <label className="block text-sm">확인 의견<input className={input} required value={note} onChange={e => setNote(e.target.value)}/></label>
       <button className={button} disabled={busy || ws.source_changed || !note.trim()}><Save size={16}/>문서 확인 저장</button><p role="status" className="text-sm">{status}</p>
     </form>

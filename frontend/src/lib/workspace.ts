@@ -8,14 +8,18 @@ export interface ExtractedArchiveMember {
 }
 import type {TemplateProvenance} from "./templateProvenance";
 import type {ReadinessIssue} from "./readiness";
+import type {ServerNoticeBrief} from "./noticeBrief";
 
 export interface SourceDocument {
   id: string; name: string; role: "notice_source" | "company_evidence" | "product_evidence" | "company_reference";
   confirmed: boolean; text: string; text_origin: string; item_id?: string | null;
+  sha256?: string;
   attachment_index?: number; attachment_url?: string;
   company_asset?: {id:string; version:number; expires_on:string|null; no_expiry:boolean; stale:boolean};
   asset_issue?: string;
   extraction?: {version?: number; complete: boolean;
+    table_structure?: {status: string};
+    presentation?: {version: number; status: string; text_sha256: string; issues: string[]; spans: {start: number; end: number; locator: string; kind?: string; member_path?: string[]}[]};
     pages?: ExtractedPage[];
     cells?: {sheet: string; cell: string; value: string | number | boolean | null; formula: string | null}[];
     items?: {sheet: string; row: string; review_status: string}[];
@@ -68,6 +72,7 @@ export type DocumentKind = "qualitative_proposal" | "bid_document" | "other_docu
 export interface WritingPlanItem {id:string; title:string; document_kind:DocumentKind; action:"write"|"attach"|"electronic"; document_id:string; quote:string}
 export interface WorkspaceActor {id: string; name: string; role: "viewer" | "writer" | "reviewer" | "approver"}
 export interface Workspace {
+  notice_brief?: ServerNoticeBrief;
   spec_compliance?: "충족" | "불충족" | "미확인" | "일부미확인";
   unresolved_spec_count?: number;
   spec_source_complete?: boolean;
@@ -97,6 +102,7 @@ export interface QuoteDiagnostic {
   matches: {start: number; end: number; quote: string}[];
 }
 export interface SourceNeed {
+  candidates?: {document_id: string; quote: string; locator: string; member_path: string[]}[];
   id: string; name: string; state: "missing" | "linked" | "not_applicable";
   linked_document_id: string; note: string; resolution_quote: string;
   mentions: {document_id: string; quote: string; start: number}[];

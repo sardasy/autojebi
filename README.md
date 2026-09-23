@@ -1111,6 +1111,16 @@ curl -X POST http://localhost:8001/notices/search \
 
 `GET /v2/notices/{notice_no}/form-fillings/{document_id}/review`는 검토할 작성본의 `version`, `output_sha256`, `unfilled_count`, `review_status`를 반환한다. 같은 경로의 `POST`는 해당 버전·파일 해시와 `approved`, `source_checked`, `content_checked`, `layout_checked`, `note`를 받아 사람의 양식 검토를 기록한다. `inputs.form_fillings[].review`에는 검토 의견·시각·입력 버전·입력/출력 해시가 보존된다. 승인에는 모든 확인과 빈칸 없는 작성본이 필요하며, 자료·작성 내용이 바뀌면 재검토한다. 자격증빙이나 제출 준비 승인은 별도다. [검토 경로 검증 기록](docs/original-form-review-2026-09-12.md)을 따른다.
 
+### 공고 표시·ZIP 내부 양식 계약 (ADR 0002)
+
+작업대 응답의 `notice_brief`는 정확한 원문 인용·위치·해시, 항목 판정, 전체 추출 경고, 동일 문서 그룹, 요약 검토 비교 상태를 제공한다. `extraction.presentation`은 기존 본문을 바꾸지 않는 표시 구조이며 JEV·양식 승인 해시에서 제외한다. 과거 자료에는 없어도 된다.
+
+`POST /v2/notices/{notice_no}/source-display-reviews`는 reviewer 전용이며 `version`, `kind=absent|equivalent`, `label`, `document_ids`, `source_signature`, `original_checked=true`, `note`를 받는다. 서버 신원·시각과 파일 해시로 대조 기록을 저장한다. 부재 확인 범위는 전체 공고 원본이고, 동등성 확인은 두 원본이다. 증빙 승인이나 제출 준비 승인이 아니다.
+
+`form-fields`는 ZIP 내부 HWPX를 별도 `document_id`로 반환한다. `parent_document_id`, `container_sha256`, `member_path`, `member_hashes`가 목록·저장 기록·내보내기 출처에 추가된다. 기존 `form-fillings` 저장/검토/다운로드를 재사용하며 부모 ZIP 변경 시 새 대상이다. 바이너리 HWP 자동기입은 지원하지 않는다. `source_needs.candidates`는 원문/내부 위치 후보이며 직접 확인 전 상태를 바꾸지 않는다. `SourceNeedResolution.locator`는 선택 필드다.
+
+현재 양식의 `fillings`와 정정 전 참고용 `retired_fillings`를 구분한다. 과거 초안은 이력에서 읽을 수 있으며 새 대상에 자동 이관하지 않는다. [실공고 재검증 결과](docs/notice-document-provenance-e2e-2026-09-22.md)에 검토 사본·미완료 조건을 기록한다.
+
 ## 14. 핵심 파일 맵
 
 | 영역 | 파일 |

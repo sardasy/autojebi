@@ -28,6 +28,7 @@ from api.routers.company_assets import router as company_assets_router
 from api.routers.notice_forms import router as notice_forms_router
 from api.routers.notices import search_notices_endpoint, upsert_notice
 from api.routers.requirement_candidates import router as requirement_candidates_router
+from api.routers.source_display_reviews import router as source_display_reviews_router
 from api.routers.specifications import router as specifications_router
 from api.routers.template_catalog import WorkspaceTemplateList, list_workspace_templates
 from api.services.uploads import build_metadata, save_stream
@@ -81,6 +82,7 @@ router.include_router(notice_forms_router)
 router.include_router(specifications_router)
 router.include_router(identity_router)
 router.include_router(requirement_candidates_router)
+router.include_router(source_display_reviews_router)
 
 
 async def _workspace_error_handler(request: Request, exc: WorkspaceError):

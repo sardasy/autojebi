@@ -210,6 +210,7 @@ PR 머지 전 다음이 모두 그린이어야 한다:
 - **운영 환경에서 `API_KEY` 공란 금지** — 빈 값은 dev 전용 우회 모드. `APP_ENV=production`이면 [api/main.py](api/main.py) `enforce_auth_policy`가 공란 기동을 거부하고, 그 외 환경은 경고 로그만 남긴다.
 - `WORKSPACE_AUTH_ENABLED=true`인 `/v2/*`는 GET 포함 개인 Bearer 인증을 추가 검증한다. 공유 키만으로 우회할 수 없으며 설정 오류·미등록·비활성 계정은 차단한다. 비활성 기본값은 로컬 검증 호환용이며 팀 배포 전에 실사용자 발급과 역할 점검을 완료한다.
 - 역할은 독립: 작성/초안은 `writer`, 문서·요구사항·섹션·원본 양식·생성물 검토는 `reviewer`, 패키지 최종 `ready`는 `approver`, `viewer`는 조회만 허용한다. 신규 승인 경로는 [api/workspace/identity.py](api/workspace/identity.py) 역할 분류와 회귀 검증을 함께 추가한다.
+- 원문 부재·동일 문서 대조 기록(`/source-display-reviews`)도 `reviewer`만 저장한다. 파일 해시 집합·확인 범위를 검증하며 증빙/제출 승인으로 사용하지 않는다. 표시 정보와 ZIP 작성 대상의 출처 규칙은 [ADR 0002](docs/adr/0002-notice-document-provenance.md)를 따른다.
 - 승인자 식별은 서버 인증 ContextVar에서 `service.audit`의 `details.actor`로 기록한다. 클라이언트 이름/역할/헤더를 신뢰하거나 기존 기록에 신원을 소급 생성하지 않는다. Next는 HttpOnly·SameSite 쿠키와 변경 요청 Origin 검증을 사용한다.
 - v2 개인 인증은 기존 호환 API의 공유 키 정책을 바꾸지 않는다. SSO/MFA·서버 세션 저장소·전체 시스템 RBAC 완료로 표시하지 않는다. 설정과 범위는 [docs/workspace-identity-2026-09-13.md](docs/workspace-identity-2026-09-13.md)를 따른다.
 

@@ -6949,6 +6949,65 @@
     "title": "SourceAttachmentRecord",
     "type": "object"
    },
+   "SourceDisplayReview": {
+    "additionalProperties": false,
+    "properties": {
+     "document_ids": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Document Ids",
+      "type": "array"
+     },
+     "kind": {
+      "enum": [
+       "absent",
+       "equivalent"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Label",
+      "type": "string"
+     },
+     "note": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Note",
+      "type": "string"
+     },
+     "original_checked": {
+      "const": true,
+      "title": "Original Checked",
+      "type": "boolean"
+     },
+     "source_signature": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Signature",
+      "type": "string"
+     },
+     "version": {
+      "minimum": 1.0,
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "version",
+     "kind",
+     "document_ids",
+     "source_signature",
+     "original_checked",
+     "note"
+    ],
+    "title": "SourceDisplayReview",
+    "type": "object"
+   },
    "SourceLinkRequest": {
     "additionalProperties": false,
     "properties": {
@@ -6988,6 +7047,12 @@
      },
      "id": {
       "title": "Id",
+      "type": "string"
+     },
+     "locator": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Locator",
       "type": "string"
      },
      "note": {
@@ -8007,6 +8072,11 @@
      "next_action": {
       "title": "Next Action",
       "type": "string"
+     },
+     "notice_brief": {
+      "additionalProperties": true,
+      "title": "Notice Brief",
+      "type": "object"
      },
      "notice_no": {
       "title": "Notice No",
@@ -15699,6 +15769,74 @@
      }
     },
     "summary": "Review Section",
+    "tags": [
+     "workspace"
+    ]
+   }
+  },
+  "/v2/notices/{notice_no}/source-display-reviews": {
+   "post": {
+    "operationId": "review_source_display_v2_notices__notice_no__source_display_reviews_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "notice_no",
+      "required": true,
+      "schema": {
+       "title": "Notice No",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "X-API-Key",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Api-Key"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SourceDisplayReview"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceRecord"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Review Source Display",
     "tags": [
      "workspace"
     ]

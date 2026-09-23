@@ -10,8 +10,8 @@ type WebReference = {title: string; url: string; quote: string};
 type FieldValue = {field_id: string; value: string; reference?: Reference; web_reference?: WebReference};
 type Filling = {document_id: string; source_sha256: string; fields: FieldValue[]; input_version: number; review_status: string};
 type FormField = {id: string; label: string; context: string; original: string; location: string};
-type FormDocument = {document_id: string; name: string; sha256: string; supported: boolean; reason?: string; fields: FormField[]};
-type Catalog = {version: number; documents: FormDocument[]; fillings?: Filling[]};
+type FormDocument = {document_id: string; name: string; sha256: string; parent_document_id?: string; member_path?: string[]; supported: boolean; reason?: string; fields: FormField[]};
+type Catalog = {version: number; documents: FormDocument[]; fillings?: Filling[]; retired_fillings?: Filling[]};
 type Draft = {documentId: string; sourceHash: string; version: number; fields: FieldValue[]; dirty: boolean; baseline: string};
 const input = "block w-full min-w-0 rounded border border-gray-300 bg-white p-2 text-sm";
 const button = "inline-flex items-center justify-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-40";
@@ -130,10 +130,12 @@ export default function NoticeFormWorkspace({ws, prefix, busy, onSaved}: {
     <p className="text-sm text-gray-600">공고에 첨부된 양식의 항목을 회사 자료와 노션 자료를 참고해 작성합니다. 저장한 내용은 해당 HWPX 양식에 채워 다운로드합니다.</p>
     {loading && <p role="status" className="text-sm">첨부 양식 항목을 불러오는 중입니다.</p>}
     {!loading && !catalog?.documents.length && <p className="text-sm">작성할 첨부 양식이 없습니다. 공고 원문 파일을 먼저 가져오세요.</p>}
+    {!!catalog?.retired_fillings?.length && <details className="rounded bg-amber-50 p-3 text-sm"><summary>정정 전 양식 초안 이력 · {catalog.retired_fillings.length}개</summary><p>이전 초안은 참고용으로 보존됩니다. 최신 대상에 입력하고 근거를 다시 연결하세요.</p>{catalog.retired_fillings.map((old, i) => <textarea key={old.document_id} aria-label={`정정 전 양식 초안 ${i + 1}`} className={`${input} min-h-40`} readOnly value={old.fields.map((f, n) => `항목 ${n + 1}\n${f.value}\n근거: ${f.reference?.quote || f.web_reference?.quote || "미확인"}`).join("\n\n")}/>)}</details>}
     {drafts.filter(item => item.dirty && !catalog?.documents.some(source => source.document_id === item.documentId)).map((item, index) => <details key={item.documentId} className="space-y-2 rounded bg-amber-50 p-3 text-sm"><summary>목록에서 사라진 양식의 작성 내용 {index + 1} · 보관됨</summary><p>이 양식은 현재 첨부 목록에 없어 저장할 수 없습니다. 아래 작성 내용을 복사해 보관하세요.</p><textarea aria-label={`보관된 양식 작성 내용 ${index + 1}`} className={`${input} min-h-40`} readOnly value={item.fields.map((entry, fieldIndex) => `항목 ${fieldIndex + 1}\n${entry.value}\n${entry.reference?.quote || entry.web_reference?.quote || ""}`).join("\n\n")}/></details>)}
     {!!catalog?.documents.length && <label className="block text-sm">작성할 첨부 양식<select className={input} value={selectedDocument} disabled={busy || saving} onChange={event => {setSelectedDocument(event.target.value); setSelectedField(""); setSectionId(""); setMessage("");}}>{catalog.documents.map(item => <option key={item.document_id} value={item.document_id}>{item.name}{!item.supported ? " · 직접 확인 필요" : ""}</option>)}</select></label>}
     {document && !document.supported && <p className="rounded bg-amber-50 p-3 text-sm text-amber-900">{document.reason || "이 파일은 항목별 자동 작성이 지원되지 않습니다. 원본 양식을 직접 확인하세요."}</p>}
-    {document && <a className="inline-block text-sm underline" href={`/api/v2${prefix}/documents/${encodeURIComponent(document.document_id)}/download`}>첨부 원본 다운로드</a>}
+    {document && <a className="inline-block text-sm underline" href={`/api/v2${prefix}/documents/${encodeURIComponent(document.parent_document_id || document.document_id)}/download`}>{document.parent_document_id ? "ZIP 원본 다운로드" : "첨부 원본 다운로드"}</a>}
+    {document?.member_path && <p className="text-sm">내부 파일: {document.member_path.join(" / ")} · 정정 ZIP은 새 작성 대상으로 확인합니다.</p>}
     {document?.supported && draft && <>
       <p className="text-sm">입력된 항목 {filled} / {document.fields.length}개 · 미작성 {document.fields.length - filled}개{draft.dirty ? " · 저장하지 않은 변경" : ""}</p>
       <p className="text-xs text-amber-800">빈 항목은 결과물에서 확인 필요로 표시합니다. 참고자료 연결은 자격증빙 승인이나 내용 확인을 뜻하지 않습니다. 다운로드 후 표·쪽 나눔·서명란을 검토하세요.</p>

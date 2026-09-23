@@ -112,10 +112,10 @@ TS_MAX_BYTES = 24_000
 SIZE_BUDGET: dict[str, int | tuple[int, int]] = {
     "api/routers/notices.py": 3049,
     "api/specifications/table_structure.py": 818,
-    "api/workspace/service.py": 694,
+    "api/workspace/service.py": 696,
     "api/models/notices.py": 715,
     "api/specifications/retrieval.py": 689,
-    "api/routers/workspace.py": 655,
+    "api/routers/workspace.py": 657,
     "api/services/document_automation.py": 608,
     "frontend/src/components/DocumentPreparationPanel.tsx": (656, 27184),
     "frontend/src/components/HwpComposeDialog.tsx": (405, 17687),

@@ -18,7 +18,14 @@ from api.db.tables import (
     hwp_templates,
 )
 from api.services.notice_facts import normalize_notice_facts
-from api.workspace import asset_policy, identity, output_plan, readiness, writing_plan
+from api.workspace import (
+    asset_policy,
+    identity,
+    notice_brief,
+    output_plan,
+    readiness,
+    writing_plan,
+)
 from api.workspace.errors import fail
 from api.workspace.models import JobRecord, WorkspaceRecord
 from api.workspace.provenance import (
@@ -153,7 +160,7 @@ def audit(
             job_id=job_id,
             action=action,
             note=note.strip(),
-            details=identity.audit_details(details),
+            details=identity.audit_details(notice_brief.audit_snapshot(action, ws["inputs"], details)),
             created_at=now(),
         )
     )
@@ -166,7 +173,7 @@ def change(conn: Any, ws: dict, inputs: dict, action: str, note: str, **extra: A
     if action == "decision" and extra.get("decision") == ws["decision"] and inputs == ws["inputs"]:
         return ws
     invalidate_document_dependents(ws["inputs"], inputs)
-    if action not in {"decision", "source_review", "section_review", "notice_form_review", "extract_result", "reference_upload", "reference_text", "reference_draft", "output_plan"}:
+    if action not in {"decision", "source_review", "section_review", "notice_form_review", "extract_result", "reference_upload", "reference_text", "reference_draft", "output_plan", "source_display_review"}:
         for section in inputs.get("proposal_sections") or []:
             if section.get("review_status") != "rejected":
                 section["review_status"] = "pending"
@@ -349,6 +356,7 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
                 doc["confirmed"] = False
     from api.workspace.source_needs import inventory as needs_inventory
     return WorkspaceRecord(
+        notice_brief=notice_brief.public_brief(ws["inputs"], history),
         **_spec_summary(ws["inputs"]),
         writing_plan_current=writing_plan.current(ws["inputs"]),
         notice_no=notice_no,
@@ -360,13 +368,7 @@ def view(conn: Any, notice_no: str) -> WorkspaceRecord:
         readiness_checked_at=checked_at,
         next_action=issues[0] if issues else "제출 준비 확인 완료 · 최종 패키지를 다운로드하세요" if ready else "생성물 검토 및 제출 준비 확인",
         jobs=[JobRecord(**r) for r in records],
-        reviews=[
-            {**{k: r[k] for k in ("id", "job_id", "action", "note", "input_version", "created_at")},
-             "actor": (r["details"] or {}).get("actor"),
-             "output_sha256": (r["details"] or {}).get("sha256"),
-             "layout_confirmed": bool((r["details"] or {}).get("layout_confirmed"))}
-            for r in history
-        ],
+        reviews=notice_brief.public_reviews(history),
         source_changed=ws["source_hash"] != signature,
         ready=ready,
         proposal_coverage=proposal_coverage(ws["inputs"]),

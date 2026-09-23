@@ -27,6 +27,8 @@ from api.workspace.forms.schemas import (
     FormReviewRequest,
     FormWebReference,
 )
+from api.workspace.forms.targets import archive_targets, provenance, resolve, retired
+from api.workspace.notice_brief import presentation_free
 from api.workspace.readiness_issues import IssueCode, ReadinessIssue, issue, render_blockers
 from api.workspace.storage import source_path
 
@@ -40,7 +42,7 @@ WARNINGS = [
 
 def review_basis(inputs: dict) -> str:
     """Review-only actions may advance the version without changing reviewed content."""
-    content = copy.deepcopy(inputs)
+    content = presentation_free(inputs)
     content.pop("source_reviewed", None)
     for filling in content.get("form_fillings", []):
         for key in ("review", "review_status", "save_key", "save_hash", "input_version", "note"):
@@ -74,10 +76,7 @@ def review_filling(conn: Any, notice_no: str, document_id: str, body: FormReview
 
 
 def _document(inputs: dict, document_id: str) -> dict:
-    doc = next((d for d in inputs.get("documents", []) if d["id"] == document_id), None)
-    if not doc or doc.get("role") != "notice_source":
-        service.fail("form_source_missing", "공고에 연결된 원본 양식을 선택하세요.", status=404)
-    return doc
+    return resolve(inputs, document_id)
 
 
 def _source(doc: dict) -> bytes:
@@ -85,6 +84,11 @@ def _source(doc: dict) -> bytes:
         service.fail("form_unsupported", "원본 HWPX 양식만 자동 기입을 지원합니다.")
     if not re.fullmatch(r"[0-9a-f]{64}", doc.get("sha256") or ""):
         service.fail("form_source_hash_missing", "원본 파일 해시를 먼저 확보하세요.")
+    if "_content" in doc:
+        content = doc["_content"]
+        if hashlib.sha256(content).hexdigest() != doc["sha256"]:
+            service.fail("form_source_changed", "내부 파일 해시가 변경되었습니다.")
+        return content
     if Path(doc.get("storage_path") or "").is_file() and Path(doc["storage_path"]).stat().st_size > 50_000_000:
         service.fail("form_archive_limit", "원본 양식 크기가 처리 한도를 넘었습니다.")
     path = source_path(doc)
@@ -98,10 +102,10 @@ def _source(doc: dict) -> bytes:
 
 def inspect_document(doc: dict) -> dict:
     result = {"document_id": doc["id"], "name": doc.get("name", ""),
-              "sha256": doc.get("sha256"), "supported": False, "fields": []}
+              "sha256": doc.get("sha256"), "supported": False, "fields": [], **provenance(doc)}
     suffix = Path(doc.get("name") or "").suffix.lower()
     if suffix != ".hwpx":
-        result["reason"] = ("HWP 원본은 한글 Worker 기반 원본 양식 기입이 필요합니다."
+        result["reason"] = ("HWP 바이너리는 수동 작성 대상입니다. 원본 다운로드·본문 추출은 유지됩니다."
                             if suffix == ".hwp" else "PDF·기타 형식은 원본 양식 자동 기입을 지원하지 않습니다.")
         return result
     try:
@@ -121,9 +125,22 @@ def inspect_document(doc: dict) -> dict:
 
 
 def inventory(ws: dict) -> dict:
-    return {"version": ws["version"], "documents": [inspect_document(d)
-            for d in ws["inputs"].get("documents", []) if d.get("role") == "notice_source"],
-            "fillings": copy.deepcopy(ws["inputs"].get("form_fillings", []))}
+    documents = []
+    for doc in ws["inputs"].get("documents", []):
+        if doc.get("role") != "notice_source":
+            continue
+        documents.append(inspect_document(doc))
+        if str(doc.get("name", "")).lower().endswith(".zip"):
+            try:
+                documents.extend(inspect_document(d) for d in archive_targets(
+                    doc, str(ws["inputs"].get("notice", {}).get("notice_no") or "")))
+            except (*HANDLED_ERRORS, ValueError, OSError, zipfile.BadZipFile):
+                documents[-1]["reason"] = "ZIP 경로·해시·압축 한도를 확인하지 못했습니다. 원본 확인 필요"
+    return {"version": ws["version"], "documents": documents,
+            "retired_fillings": copy.deepcopy([f for f in ws["inputs"].get("form_fillings", [])
+                                               if retired(ws["inputs"], f)]),
+            "fillings": copy.deepcopy([f for f in ws["inputs"].get("form_fillings", [])
+                                       if not retired(ws["inputs"], f)])}
 
 
 def _reference(ref: FormReference, inputs: dict, version: int) -> dict:
@@ -188,6 +205,7 @@ def save_filling(conn: Any, notice_no: str, body: FormFillingRequest) -> None:
             item["web_reference"] = {**field.web_reference.model_dump(mode="json"), "verified": False}
         saved.append(item)
     filling = {"document_id": body.document_id, "source_sha256": body.source_sha256,
+               **provenance(doc),
                "fields": saved, "mapping_sha256": service.digest(source["fields"]),
                "input_version": ws["version"], "review_status": "pending", "note": body.note,
                "save_key": body.idempotency_key, "save_hash": digest}
@@ -201,6 +219,8 @@ def save_filling(conn: Any, notice_no: str, body: FormFillingRequest) -> None:
 
 def _validate_filling(inputs: dict, filling: dict) -> tuple[dict, dict]:
     doc = _document(inputs, filling["document_id"])
+    if provenance(doc) != provenance(filling):
+        service.fail("form_target_changed", "작성 대상의 ZIP 출처가 변경되었습니다.")
     if doc.get("sha256") != filling.get("source_sha256"):
         service.fail("form_source_changed", "원본 양식이 변경되어 작성 내용을 다시 확인해야 합니다.")
     source = inspect_document(doc)
@@ -233,6 +253,8 @@ def filling_issues(inputs: dict) -> list[str]:
 def filling_readiness_issues(inputs: dict) -> list[ReadinessIssue]:
     issues = []
     for filling in inputs.get("form_fillings", []):
+        if retired(inputs, filling):
+            continue
         if filling.get("review_status") != "approved":
             issues.append(issue(IssueCode.FORM_REVIEW_REQUIRED, "form", filling["document_id"]))
             continue
@@ -292,7 +314,7 @@ def export_filling(inputs: dict, document_id: str) -> tuple[bytes, str, dict]:
                 service.fail("form_readback_failed", "작성된 양식의 저장값 재확인이 실패했습니다.")
     filename = Path(doc["name"]).stem + "_작성사본_검토필요.hwpx"
     filled = sum(bool(values.get(f["id"], "").strip()) for f in source["fields"])
-    report = {"source_sha256": doc["sha256"], "output_sha256": hashlib.sha256(result).hexdigest(),
+    report = {"source_sha256": doc["sha256"], **provenance(doc), "output_sha256": hashlib.sha256(result).hexdigest(),
               "field_count": len(source["fields"]), "filled_count": filled,
               "unfilled_count": len(source["fields"]) - filled, "review_status": "pending",
               "readback_verified": True, "layout_verified": False, "preview_invalidated": True,

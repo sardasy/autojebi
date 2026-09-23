@@ -15,6 +15,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.cell_range import CellRange
 
 from api.parsing.hwpx_text import OFFSET_UNIT, TEXT_RULE_VERSION, section_content
+from api.parsing.presentation_spans import presentation
 from api.specifications.table_structure import (
     SourceLocator,
     TableLimits,
@@ -314,6 +315,7 @@ def extract_hwpx(content: bytes, *, locator: str | None = None,
     """Versioned text and exact ranges; specification table policy stays separate."""
     locator = locator or f"sha256:{hashlib.sha256(content).hexdigest()}/hwpx"
     texts, length = [], 0
+    spans, presentation_issues = [], []
     tables = TableCollector()
     controls, comparison_tables = [], []
     with checked_archive(content, expansion_budget, entry_budget) as archive:
@@ -325,6 +327,7 @@ def extract_hwpx(content: bytes, *, locator: str | None = None,
             layout = section_content(root, f"{locator}/{entry.filename}",
                                      length + bool(texts), rule_version)
             text = layout["text"]
+            spans.extend(layout["spans"])
             controls.extend(layout["excluded"])
             comparison_tables.extend(layout["tables"])
             if len(json.dumps([controls, comparison_tables], ensure_ascii=False).encode()) > MAX_TABLE_METADATA:
@@ -351,6 +354,7 @@ def extract_hwpx(content: bytes, *, locator: str | None = None,
         "text_rule_version": rule_version, "offset_unit": OFFSET_UNIT,
         "excluded_controls": controls, "comparison_tables": comparison_tables,
         **tables.metadata(),
+        "presentation": presentation(spans, presentation_issues, "\n".join(texts)),
     }}
 
 
@@ -379,6 +383,7 @@ def _extract_zip(content: bytes, *, ocr_budget: list[int],
     from api.parsing.pdf_text import extract_pdf
 
     members, texts, total = [], [], 0
+    spans, presentation_issues = [], []
     tables = TableCollector()
     with checked_archive(content, expansion_budget, entry_budget) as archive:
         for entry in archive.infolist():
@@ -434,6 +439,13 @@ def _extract_zip(content: bytes, *, ocr_budget: list[int],
                         tables.reject("table_collection_limit", SourceLocator.model_validate(table["source"]))
                 if result["text"].strip():
                     block = f"[ZIP 파일 {entry.filename}]\n{result['text']}"
+                    offset = sum(len(t) + 2 for t in texts) + len(f"[ZIP 파일 {entry.filename}]\n")
+                    layout = result["extraction"].get("presentation", {})
+                    presentation_issues.extend(layout.get("issues", []))
+                    for span in layout.get("spans", []):
+                        spans.append({**span, "start": span["start"] + offset,
+                                      "end": span["end"] + offset,
+                                      "member_path": [entry.filename, *span.get("member_path", [])]})
                     total += len(block) + 2
                     if total > MAX_TEXT:
                         raise ExtractionError("extracted_text_limit")
@@ -451,4 +463,5 @@ def _extract_zip(content: bytes, *, ocr_budget: list[int],
         "version": 1, "complete": bool(members) and all(m["complete"] for m in members),
         "members": members,
         **tables.metadata(),
+        "presentation": presentation(spans, presentation_issues, "\n\n".join(texts)),
     }}

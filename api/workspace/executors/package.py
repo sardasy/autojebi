@@ -15,6 +15,7 @@ from sqlalchemy import select
 from api.workspace.document_drafts import draft_markdown, proposal_sections
 from api.workspace.errors import fail
 from api.workspace.forms.filling import export_filling
+from api.workspace.forms.targets import retired
 from api.workspace.output_plan import (
     LAYOUT_WARNING,
     review_matches,
@@ -104,6 +105,9 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
                             if not (approved and item["kind"] == "hwp" and w == LAYOUT_WARNING))
             manifest["files"].append({"job_id": item["id"], "sha256": checksum})
         for filling in job["snapshot"].get("form_fillings") or []:
+            if retired(job["snapshot"], filling):
+                reasons.append(issue(IssueCode.FORM_RETIRED, "form", filling["document_id"]))
+                continue
             content, filename, report = export_filling(job["snapshot"], filling["document_id"])
             name = f"forms/{hashlib.sha256(filling['document_id'].encode()).hexdigest()[:16]}.hwpx"
             archive.writestr(name, content)
@@ -113,6 +117,9 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
             reasons.extend(issue(IssueCode.ARTIFACT_WARNING, "form", filling["document_id"], message=w)
                            for w in report.get("warnings") or [])
         # Keep source paths and historical snapshots out of the portable manifest.
+        if "form_fillings" in manifest["inputs"]:
+            manifest["inputs"]["form_fillings"] = [f for f in manifest["inputs"]["form_fillings"]
+                                                      if not retired(job["snapshot"], f)]
         for doc in manifest["inputs"]["documents"]:
             doc.pop("storage_path", None)
         for review in history:
