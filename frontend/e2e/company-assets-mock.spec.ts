@@ -1,5 +1,10 @@
 import {expect,test} from "@playwright/test";
 
+const category_catalog={version:"test-v1",sha256:"test-hash",items:[
+  {code:"business_registration",label:"사업자등록증",role:"company_evidence"},
+  {code:"previous_proposal",label:"기존 제안서 · 참고용",role:"company_reference"},
+]};
+
 test("company registry upload, expiry edit, history and soft-disable",async({page},testInfo)=>{
   let asset:Record<string,unknown>|null=null;
   await page.route("**/api/v2/company-assets**",async route=>{
@@ -17,7 +22,7 @@ test("company registry upload, expiry edit, history and soft-disable",async({pag
       asset={...asset,version:2,details:body.details,validity:"disabled"};
       return route.fulfill({json:asset});
     }
-    return route.fulfill({json:{items:asset?[asset]:[],page:1,has_more:false,alerts:{expiring:asset?1:0}}});
+    return route.fulfill({json:{items:asset?[asset]:[],page:1,has_more:false,alerts:{expiring:asset?1:0},category_catalog}});
   });
   await page.goto("/admin#assets");
   await page.getByRole("button",{name:"회사 자료 보관소",exact:true}).click();

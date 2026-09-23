@@ -405,6 +405,10 @@ verify 작업 결과와 검토 패키지 manifest에도 구조화된 사유·확
 실무자와 실제 증빙은 아직 확보 전이며 합성 테스트 결과는 실무 성과가 아니다.
 [측정 절차](docs/company-pilot-runbook.md)와 [ADR 0003](docs/adr/0003-readiness-issues-and-pilot-protocol.md)을 따른다.
 
+`GET /v2/company-assets`에는 `category_catalog: {version, sha256, items:[{code,label,role}]}`가 추가된다.
+기존 9개 분류의 코드·한국어 표시명·자료 역할은 이 카탈로그를 공유한다. 분류 조회는 증빙 검토나 공고 승인이 아니다.
+새 화면에서 카탈로그를 가져오지 못하면 원본 조회/다운로드를 유지하고 등록·분류 수정은 재조회 후 진행한다.
+
 ### 문서 완결 흐름 (2026-09-13)
 
 - `POST /v2/notices`는 선택 입력 `org_name`, 시간대가 포함된 `close_date`를 보존한다. 수동 등록 화면은 한국시간을 명시하며 마감 미확인·경과 상태는 제출 준비 완료를 허용하지 않는다.

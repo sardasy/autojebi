@@ -4,20 +4,22 @@ from __future__ import annotations
 import copy
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, BinaryIO, Literal
+from typing import Any, BinaryIO
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select, update
 
 from api.services.uploads import build_metadata, save_stream
 from api.workspace import service
+from api.workspace.asset_catalog import (
+    AssetCategory,
+    AssetCategoryCatalog,
+    category_catalog,
+    category_role,
+)
 from api.workspace.asset_policy import business_number, validity
 from api.workspace.storage import source_path
 from api.workspace.tables import company_asset_events, company_assets, workspaces
-
-AssetCategory = Literal["business_registration", "corporate_register", "credit_rating",
-    "sme_certificate", "insurance_payment", "seal_certificate", "other_evidence",
-    "previous_proposal", "product_catalogue"]
 
 
 class AssetDetails(BaseModel):
@@ -72,6 +74,7 @@ class AssetRecord(BaseModel):
 
 
 class AssetList(BaseModel):
+    category_catalog: AssetCategoryCatalog = Field(default_factory=category_catalog)
     items: list[AssetRecord]
     page: int
     has_more: bool
@@ -79,11 +82,7 @@ class AssetList(BaseModel):
 
 
 def role(details: dict) -> str:
-    if details["category"] == "previous_proposal":
-        return "company_reference"
-    if details["category"] == "product_catalogue":
-        return "product_evidence"
-    return "company_evidence"
+    return category_role(details["category"])
 
 
 def public(row: dict) -> AssetRecord:

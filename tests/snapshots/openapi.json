@@ -181,6 +181,72 @@
     "title": "Assertion",
     "type": "object"
    },
+   "AssetCategoryCatalog": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AssetCategoryRecord"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "sha256": {
+      "title": "Sha256",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "string"
+     }
+    },
+    "required": [
+     "version",
+     "sha256",
+     "items"
+    ],
+    "title": "AssetCategoryCatalog",
+    "type": "object"
+   },
+   "AssetCategoryRecord": {
+    "additionalProperties": false,
+    "properties": {
+     "code": {
+      "enum": [
+       "business_registration",
+       "corporate_register",
+       "credit_rating",
+       "sme_certificate",
+       "insurance_payment",
+       "seal_certificate",
+       "other_evidence",
+       "previous_proposal",
+       "product_catalogue"
+      ],
+      "title": "Code",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "role": {
+      "enum": [
+       "company_evidence",
+       "company_reference",
+       "product_evidence"
+      ],
+      "title": "Role",
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "label",
+     "role"
+    ],
+    "title": "AssetCategoryRecord",
+    "type": "object"
+   },
    "AssetDetails": {
     "additionalProperties": false,
     "properties": {
@@ -308,6 +374,9 @@
       },
       "title": "Alerts",
       "type": "object"
+     },
+     "category_catalog": {
+      "$ref": "#/components/schemas/AssetCategoryCatalog"
      },
      "has_more": {
       "title": "Has More",
