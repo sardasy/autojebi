@@ -28,26 +28,24 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
-from api.hwp_worker.field_text import mismatch_summary, normalize, wire_text
+from api.hwp_worker.errors import ComDriverError
+from api.hwp_worker.field_text import normalize, wire_text
+from api.hwp_worker.use_cases import (
+    field_names,
+    generate_document,
+    inspect_document,
+    remaining_fields,
+)
+
+# Compatibility imports used by existing verification helpers.
+_remaining = remaining_fields
+_newline = normalize
 
 PROG_ID = "HWPFrame.HwpObject"
 PROG_IDS = (PROG_ID, PROG_ID + ".1", PROG_ID + ".2")
 MUTEX_NAME = r"Global\autojebi.HwpComDriver.v1"
 MAX_DOCUMENT_BYTES = 50_000_000
-RESIDUAL = re.compile(r"\{\{[^{}]+\}\}|\[검증필요\]")
 _uncertain = False
-
-
-class ComDriverError(RuntimeError):
-    """Only fixed error codes escape COM; never native exception descriptions."""
-
-    def __init__(self, code: str, stage: str, *, cleanup_errors: list[str] | None = None) -> None:
-        self.code = code
-        self.stage = stage
-        self.cleanup_errors = cleanup_errors or []
-        self.lifecycle: list[str] = []
-        self.verification_detail: dict[str, int] = {}
-        super().__init__(f"{code} ({stage})")
 
 
 def _registered_progid(registry: Any) -> str:
@@ -140,35 +138,47 @@ def _digest(path: Path, stage: str) -> str:
         raise ComDriverError("document_hash_failed", stage) from None
 
 
-def _names(fields: list[dict[str, Any]]) -> list[str]:
-    return list(dict.fromkeys(item["field"] for item in fields))
-
-
 def _refuse_existing_output(output: Path) -> None:
     if output.exists() or output.is_symlink():
         raise ComDriverError("output_exists", "output")
 
 
-def _newline(value: str) -> str:
-    return normalize(value)
-
-
-def _remaining(readback: list[dict[str, Any]]) -> list[str]:
-    return list(
-        dict.fromkeys(
-            item["field"]
-            for item in readback
-            if not item["value"].strip() or RESIDUAL.search(item["value"])
-        )
-    )
-
-
 @dataclass
 class _Session:
+    """Native adapter implementing DocumentSession on the Worker's COM object."""
+
     hwp: Any = None
     opened: bool = False
     cleanup_needed: bool = False
     lifecycle: list[str] = field(default_factory=list)
+
+    @staticmethod
+    def fingerprint(path: Path, stage: str) -> str:
+        return _digest(path, stage)
+
+    @staticmethod
+    def require_new_output(output: Path) -> None:
+        _refuse_existing_output(output)
+
+    def write(self, name: str, value: str) -> None:
+        _void("write", self.hwp.PutFieldText, name, wire_text(value))
+
+    def save(self, output: Path, output_format: str) -> None:
+        if not _success(_call("save", self.hwp.SaveAs, str(output), output_format, "")):
+            raise ComDriverError("document_save_failed", "save")
+
+    def text(self) -> str:
+        text = _call("analyze", self.hwp.GetTextFile, "UNICODE", "")
+        if not isinstance(text, str):
+            raise ComDriverError("invalid_document_text", "analyze")
+        if len(text) > 200_000:
+            raise ComDriverError("document_text_too_large", "analyze")
+        return text
+
+    def page_images(self, output: Path) -> list[dict[str, Any]]:
+        from api.hwp_worker.page_images import render
+
+        return render(self.hwp, output)
 
     def open(self, path: Path, *, reopen: bool = False) -> None:
         stage = "reopen" if reopen else "open"
@@ -325,73 +335,7 @@ class ComDriver:
         ):
             raise ComDriverError("invalid_field_input", "input")
         with _operation(visible) as session:
-            _refuse_existing_output(output)
-            template_sha256 = _digest(template, "template_hash")
-            session.open(template)
-            template_fields = session.enumerate()
-            template_names = _names(template_fields)
-            replaced = [name for name in values if name in template_names]
-            missing = [name for name in values if name not in template_names]
-            for name in replaced:
-                _void("write", session.hwp.PutFieldText, name, wire_text(values[name]))
-            session.lifecycle.append("written")
-            _refuse_existing_output(output)
-            if not _success(_call("save", session.hwp.SaveAs, str(output), output_format, "")):
-                raise ComDriverError("document_save_failed", "save")
-            session.lifecycle.append("saved")
-            session.close()
-            output_sha256 = _digest(output, "output_hash")
-            session.open(output, reopen=True)
-            saved_fields = session.enumerate()
-            if saved_fields != template_fields:
-                raise ComDriverError("saved_fields_mismatch", "verify")
-            readback = session.read(saved_fields)
-            for index, item in enumerate(readback):
-                if item["field"] in values and _newline(item["value"]) != _newline(
-                    values[item["field"]]
-                ):
-                    error = ComDriverError("saved_value_mismatch", "verify")
-                    error.verification_detail = {
-                        "field_index": index,
-                        "occurrence": item["occurrence"],
-                        **mismatch_summary(values[item["field"]], item["value"]),
-                    }
-                    raise error
-            pages = []
-            if render_pages:
-                from api.hwp_worker.page_images import render
-                pages = render(session.hwp, output)
-            session.close()
-            if _digest(output, "output_hash") != output_sha256:
-                raise ComDriverError("saved_file_changed", "verify")
-            if _digest(template, "template_hash") != template_sha256:
-                raise ComDriverError("template_changed", "verify")
-            remaining = _remaining(readback)
-            warnings = []
-            if missing:
-                warnings.append("요청한 필드 중 템플릿에 없는 항목이 있습니다.")
-            if any(name not in values for name in template_names) or not template_fields:
-                warnings.append("입력 매핑이 없는 템플릿 필드 또는 빈 필드 목록을 확인하세요.")
-            if remaining:
-                warnings.append("비어 있거나 검증이 필요한 필드가 있습니다.")
-            result = {
-                "output_path": str(output),
-                "replaced": replaced,
-                "missing": missing,
-                "remaining_placeholders": remaining,
-                "fields": _names(saved_fields),
-                "warnings": warnings,
-                "pages": pages,
-                "verification": {
-                    "contract_version": 1,
-                    "template_sha256": template_sha256,
-                    "output_sha256": output_sha256,
-                    "template_fields": template_fields,
-                    "saved_fields": saved_fields,
-                    "readback": readback,
-                    "lifecycle": session.lifecycle,
-                },
-            }
+            result = generate_document(session, template, output, values, render_pages=render_pages)
         return result
 
     def inspect(self, path: Path, *, visible: bool = False) -> dict:
@@ -402,26 +346,20 @@ class ComDriver:
 
     def _inspect(self, path: Path, *, extract_text: bool, visible: bool = False) -> dict:
         with _operation(visible) as session:
-            checksum = _digest(path, "source_hash")
-            session.open(path)
-            fields = session.enumerate()
+            inspection = inspect_document(session, path)
+            checksum, fields = inspection.sha256, inspection.fields
             readback = session.read(fields)
             result = {
                 "path": str(path),
                 "sha256": checksum,
-                "fields": _names(fields),
+                "fields": field_names(fields),
                 "field_occurrences": fields,
                 "readback": readback,
                 "remaining_placeholders": _remaining(readback),
                 "lifecycle": session.lifecycle,
             }
             if extract_text:
-                text = _call("analyze", session.hwp.GetTextFile, "UNICODE", "")
-                if not isinstance(text, str):
-                    raise ComDriverError("invalid_document_text", "analyze")
-                if len(text) > 200_000:
-                    raise ComDriverError("document_text_too_large", "analyze")
-                result["text"] = text
+                result["text"] = session.text()
             session.close()
             if _digest(path, "source_hash") != checksum:
                 raise ComDriverError("source_changed", "verify")

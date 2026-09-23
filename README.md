@@ -794,6 +794,8 @@ fit_score   = int(score_total × 100)                           # 0~100
 
 [저장소 내 Windows HWP Worker](docs/hwp-worker.md)는 필드 조회, 본문 추출, `/document/create-template`, `/document/put-fields`를 제공한다. v2 작업 실행기는 사람이 요청한 생성만 전달하고 저장 결과를 재검증한다. 2026-09-10 PLECS 제안서의 실제 HWP 16쪽, 표 20개, 필드 510개 저장값과 페이지 이미지를 확인했다. 담당자 내용 승인 및 기존 입찰양식 두 종 전체 검증은 별개다. [실생성 결과와 검증 범위](docs/hwp-layout-implementation-2026-09-10.md)를 따른다.
 
+2026-09-23: Worker에 호환 진입점 `/document/generate`를 추가하고 내부 inspect/mapping/render/validate/convert를 분리했다. 기존 `/document/put-fields`와 요청·응답·단일 COM 큐·복구 계약이 같으며 현재 변환은 PNG 미리보기다. pyhwpx는 어댑터 경계만 준비했고 런타임에 활성화하지 않았다. [1단계 범위와 후속 연결 조건](docs/hwp-document-engine-stage1-2026-09-23.md).
+
 `hwp_templates.render_mode`는 기존 `fields`와 새 `proposal_layout_v1`만 허용한다. 새 모드는 제한된 Markdown을 실제 제목·문단·표·페이지 나눔과 개별 필드로 구성하고 `PutFieldText`로 입력한다. `python -m api.hwp_fields prepare-template`은 인증된 Worker에서 저장·재열기·필드 검사를 통과한 새 서식만 등록하며 기존 템플릿을 덮어쓰지 않는다.
 
 - `GET /v2/hwp-templates`: 활성 템플릿과 `render_mode`, 매핑, `provenance`(출처 상태·해시·생성/승인 가능 여부).
@@ -1133,6 +1135,7 @@ curl -X POST http://localhost:8001/notices/search \
 `form-fields`는 ZIP 내부 HWPX를 별도 `document_id`로 반환한다. `parent_document_id`, `container_sha256`, `member_path`, `member_hashes`가 목록·저장 기록·내보내기 출처에 추가된다. 기존 `form-fillings` 저장/검토/다운로드를 재사용하며 부모 ZIP 변경 시 새 대상이다. 바이너리 HWP 자동기입은 지원하지 않는다. `source_needs.candidates`는 원문/내부 위치 후보이며 직접 확인 전 상태를 바꾸지 않는다. `SourceNeedResolution.locator`는 선택 필드다.
 
 현재 양식의 `fillings`와 정정 전 참고용 `retired_fillings`를 구분한다. 과거 초안은 이력에서 읽을 수 있으며 새 대상에 자동 이관하지 않는다. [실공고 재검증 결과](docs/notice-document-provenance-e2e-2026-09-22.md)에 검토 사본·미완료 조건을 기록한다.
+
 `GET /v2/hwp-worker`는 재시도 없이 전체 3초 기한을 적용한다. 브라우저는 본문 처리 포함 5초 후 취소하고 실패 backoff를 적용한다. 계약과 적합도 함수는 [ADR 0002](docs/adr/0002-notice-document-provenance.md)를 따른다.
 
 ## 14. 핵심 파일 맵

@@ -201,6 +201,7 @@ def create_app(
             "operation": progress.snapshot(),
         }
 
+    @app.post("/document/generate")
     @app.post("/document/put-fields")
     async def put_fields(body: FieldsRequest):
         def operation():

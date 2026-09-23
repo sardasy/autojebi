@@ -67,6 +67,7 @@ Worker는 전용 경로만 사용하고, 임의 디렉터리를 생성하지 않
 | `POST /document/fields` `{path}` | 템플릿 필드명, 중복 필드 번호, 현재 값 |
 | `POST /document/analyze-file` `{path}` | 허용 원문에서 한글 본문 추출, 해시/필드 정보 |
 | `POST /document/put-fields` `{template_path,output_path,values,visible,operation_id?,render_pages?}` | 필드별 생성 결과 및 버전 1 저장값 검증 보고. 페이지 요청 시 저장 후 한글 페이지 PNG/해시 반환 |
+| `POST /document/generate` | `put-fields`와 동일한 요청·응답 및 인증·직렬화·복구 계약. 내부 UseCase 오케스트레이션 진입점 |
 | `POST /document/create-template` `{operation_id,base_template_path?,output_path,layout,visible?}` | 검증된 서식 명세로 새 작업용 HWP 제작. 저장·재열기·필드 확인, 기존 파일 덮어쓰기 거부 |
 
 값은 문자열 사전이며 최대 2,000개 필드다. 필드 인덱스 직접 지정과 프로토콜 구분자 삽입은 거부한다.

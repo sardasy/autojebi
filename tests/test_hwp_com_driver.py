@@ -435,6 +435,63 @@ def test_analyze_failure_still_closes_and_quits(fake):
     assert fake.operations[-5:] == ["clear", "quit", "uninitialize", "release", "handle_close"]
 
 
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_conversion_uses_owned_reopened_session_only_after_value_validation(fake, monkeypatch, mismatch):
+    from api.hwp_worker import page_images
+
+    calls = []
+    if mismatch:
+        fake.overrides[("title", 1)] = "wrong saved value"
+
+    def preview(hwp, output):
+        assert hwp is fake.hwp and output == fake.output
+        assert fake.open_count == 2 and fake.clear_count == 1
+        assert fake.operations[-1] == "read"
+        calls.append(threading.get_ident())
+        return [{"number": 1, "sha256": "a" * 64}]
+
+    monkeypatch.setattr(page_images, "render", preview)
+
+    def generate():
+        return driver.ComDriver().put_fields(
+            fake.template, fake.output, {"title": "New title", "body": "New body"},
+            False, render_pages=True,
+        )
+
+    if mismatch:
+        with pytest.raises(driver.ComDriverError, match="saved_value_mismatch"):
+            generate()
+        assert calls == []
+    else:
+        result = generate()
+        assert result["pages"] == [{"number": 1, "sha256": "a" * 64}]
+        assert result["verification"]["lifecycle"] == LIFECYCLE
+        assert calls == [fake.calls[0][2]]
+    assert fake.operations.count("dispatch") == 1
+    assert fake.operations.count("quit") == 1
+
+
+def test_conversion_failure_still_closes_owned_session(fake, monkeypatch):
+    from api.hwp_worker import page_images
+
+    def fail(hwp, output):
+        raise driver.ComDriverError("page_image_failed", "page_images")
+
+    monkeypatch.setattr(page_images, "render", fail)
+    with pytest.raises(driver.ComDriverError, match="page_image_failed"):
+        driver.ComDriver().put_fields(
+            fake.template, fake.output, {"title": "New title"}, False, render_pages=True,
+        )
+    assert fake.operations[-5:] == ["clear", "quit", "uninitialize", "release", "handle_close"]
+
+
+def test_unsupported_conversion_never_invokes_session():
+    from api.hwp_worker.use_cases import convert_document
+
+    with pytest.raises(driver.ComDriverError, match="unsupported_conversion_target"):
+        convert_document(SimpleNamespace(), Path("unused.hwp"), target="pdf")
+
+
 def test_extracted_text_limit_preserves_cleanup(fake):
     fake.text = "x" * 200_001
     with pytest.raises(driver.ComDriverError, match="document_text_too_large"):

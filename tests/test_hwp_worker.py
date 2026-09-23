@@ -139,6 +139,7 @@ def test_exactly_32_character_token_accepted(paths, driver):
     [
         ("GET", "/health", None),
         ("POST", PUT, put_body()),
+        ("POST", "/document/generate", put_body()),
         ("POST", "/document/fields", {"path": "template.hwp"}),
         ("POST", "/document/analyze-file", {"path": "source.hwpx"}),
     ],
@@ -221,8 +222,9 @@ def test_oversized_request_is_rejected_without_queueing(
         ("output_path", "missing-parent/result.hwp"),
     ],
 )
-def test_unsafe_put_paths_never_reach_driver(client, paths, driver, field, value):
-    response = client.post(PUT, headers=HEADERS, json=put_body(**{field: value}))
+@pytest.mark.parametrize("endpoint", [PUT, "/document/generate"])
+def test_unsafe_put_paths_never_reach_driver(client, paths, driver, field, value, endpoint):
+    response = client.post(endpoint, headers=HEADERS, json=put_body(**{field: value}))
     assert response.status_code == 422
     assert not driver.calls
     assert driver.availability_calls == 0
@@ -246,10 +248,11 @@ def test_relative_alternate_data_stream_output_rejected(client, driver, path):
     assert not driver.calls
 
 
-def test_existing_output_is_not_overwritten(client, paths, driver):
+@pytest.mark.parametrize("endpoint", [PUT, "/document/generate"])
+def test_existing_output_is_not_overwritten(client, paths, driver, endpoint):
     output = paths.output_root / "result.hwp"
     output.write_bytes(b"keep original")
-    response = client.post(PUT, headers=HEADERS, json=put_body())
+    response = client.post(endpoint, headers=HEADERS, json=put_body())
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "output_exists"
     assert output.read_bytes() == b"keep original" and not driver.calls
@@ -363,18 +366,35 @@ def test_field_delimiter_and_direct_index_injection_rejected(client, driver, val
 def test_all_document_operations_use_one_owner_thread(client, paths, driver):
     responses = [
         client.post(PUT, headers=HEADERS, json=put_body()),
+        client.post("/document/generate", headers=HEADERS, json=put_body(output_path="new.hwp")),
         client.post("/document/fields", headers=HEADERS, json={"path": "template.hwp"}),
         client.post("/document/analyze-file", headers=HEADERS, json={"path": "source.hwpx"}),
     ]
     assert all(response.status_code == 200 for response in responses)
-    assert [call["kind"] for call in driver.calls] == ["put", "inspect", "analyze"]
+    assert [call["kind"] for call in driver.calls] == ["put", "put", "inspect", "analyze"]
     assert len({call["thread"] for call in driver.calls}) == 1
     assert driver.calls[0]["thread"] != threading.get_ident()
     assert driver.calls[0]["template"] == paths.template_root / "template.hwp"
     assert driver.calls[0]["path"] == paths.output_root / "result.hwp"
 
 
-def test_simultaneous_put_requests_are_serial_on_same_owner_thread(paths, monkeypatch):
+def test_generate_preserves_legacy_response_and_request_contract(client, paths, driver):
+    legacy = client.post(PUT, headers=HEADERS, json=put_body()).json()
+    response = client.post("/document/generate", headers=HEADERS, json=put_body())
+    assert response.status_code == 200
+    assert response.json() == legacy == {
+        "output_path": str(paths.output_root / "result.hwp"),
+        "replaced": ["company_name"], "missing": [],
+        "remaining_placeholders": [], "fields": ["company_name"],
+    }
+    assert driver.calls[-1]["values"] == {"company_name": "Example"}
+    calls = len(driver.calls)
+    invalid = client.post("/document/generate", headers=HEADERS, json=put_body(pdf=True))
+    assert invalid.status_code == 422 and len(driver.calls) == calls
+
+
+@pytest.mark.parametrize("endpoint", [PUT, "/document/generate"])
+def test_simultaneous_put_requests_are_serial_on_same_owner_thread(paths, monkeypatch, endpoint):
     driver = FakeDriver(block=True)
     app = create_app(token=TOKEN, paths=paths, driver=driver, timeout_s=3)
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=2) as pool:
@@ -396,7 +416,7 @@ def test_simultaneous_put_requests_are_serial_on_same_owner_thread(paths, monkey
             )
             assert driver.started.wait(2)
             second = pool.submit(
-                client.post, PUT, headers=HEADERS, json=put_body(output_path="two.hwp")
+                client.post, endpoint, headers=HEADERS, json=put_body(output_path="two.hwp")
             )
             assert queued.wait(2)
             assert len(driver.calls) == 1
@@ -410,7 +430,10 @@ def test_simultaneous_put_requests_are_serial_on_same_owner_thread(paths, monkey
     assert len({call["thread"] for call in driver.calls}) == 1
 
 
-def test_timeout_cancels_queued_but_running_is_uncertain_without_reexecution(paths, monkeypatch):
+@pytest.mark.parametrize("endpoint", [PUT, "/document/generate"])
+def test_timeout_cancels_queued_but_running_is_uncertain_without_reexecution(
+    paths, monkeypatch, endpoint,
+):
     driver = FakeDriver(block=True)
     app = create_app(token=TOKEN, paths=paths, driver=driver, timeout_s=0.3)
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=2) as pool:
@@ -425,7 +448,7 @@ def test_timeout_cancels_queued_but_running_is_uncertain_without_reexecution(pat
         monkeypatch.setattr(app.state.queue, "submit", observe)
         try:
             running = pool.submit(
-                client.post, PUT, headers=HEADERS, json=put_body(output_path="one.hwp")
+                client.post, endpoint, headers=HEADERS, json=put_body(output_path="one.hwp")
             )
             assert driver.started.wait(2)
             waiting = pool.submit(
@@ -490,6 +513,7 @@ def test_driver_exception_response_is_sanitized(client, driver, monkeypatch):
     "method,endpoint,body",
     [
         ("put_fields", PUT, put_body()),
+        ("put_fields", "/document/generate", put_body()),
         ("inspect", "/document/fields", {"path": "template.hwp"}),
         ("analyze", "/document/analyze-file", {"path": "source.hwpx"}),
     ],
@@ -538,6 +562,7 @@ def test_com_failure_blocks_all_endpoints_after_new_app_instance(
         assert health["queue"] == {"running": False, "queued": 0, "accepting": True}
         for target, payload in (
             (PUT, put_body()),
+            ("/document/generate", put_body()),
             ("/document/fields", {"path": "template.hwp"}),
             ("/document/analyze-file", {"path": "source.hwpx"}),
         ):
