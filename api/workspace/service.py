@@ -20,6 +20,7 @@ from api.db.tables import (
 from api.services.notice_facts import normalize_notice_facts
 from api.workspace import (
     asset_policy,
+    classification,
     identity,
     notice_brief,
     output_plan,
@@ -449,6 +450,9 @@ def enqueue(conn: Any, notice_no: str, body: Any) -> dict:
         from api.specifications.service import require_enabled
         require_enabled()
     ws = load(conn, notice_no)
+    if body.kind == "jev":
+        assert_source_current(conn, ws)
+        return classification.enqueue(conn, ws, body, create_job_record)
     previous = (
         conn.execute(
             select(jobs).where(
@@ -542,6 +546,8 @@ def recover_job(conn: Any, job_id: str, body: Any) -> dict:
     original = conn.execute(select(jobs).where(jobs.c.id == job_id)).mappings().first()
     if not original:
         fail("job_not_found", "복구할 실행 기록이 없습니다.", status=404)
+    if original["kind"] == "jev":
+        fail("jev_recovery_blocked", "JEV 실패 기록은 보존됩니다. 동일 요청은 재실행하지 않습니다.")
     ws = load(conn, original["notice_no"], body.version)
     prior = (
         conn.execute(

@@ -41,7 +41,7 @@ export default function JobHistory({ws, tab, prefix, busy, note, mutate, reload,
                 onReview={(action, proof) => void mutate(`${prefix}/reviews`, {version: ws.version, job_id: job.id, action, note: reviewNotes[job.id] ?? note,
                   expected_review_id: ws.reviews.find(r => r.job_id === job.id)?.id || null, ...proof}, "검토 기록 저장")}/></>}
           </div>
-          {!['queued', 'running'].includes(job.status) && (job.status !== 'succeeded' || ['excel', 'hwp', 'package'].includes(job.kind)) && <div className="flex flex-wrap gap-2 items-center">
+          {job.kind !== 'jev' && !['queued', 'running'].includes(job.status) && (job.status !== 'succeeded' || ['excel', 'hwp', 'package'].includes(job.kind)) && <div className="flex flex-wrap gap-2 items-center">
             {["hwp", "hwp_inspect"].includes(job.kind) && <label className="text-sm flex gap-2"><input type="checkbox" checked={!!recoveryConfirmed[job.id]} onChange={e => setRecoveryConfirmed({...recoveryConfirmed, [job.id]: e.target.checked})}/>Worker 종료·기존 파일 확인</label>}
             <button className={buttonClass} disabled={busy || !note.trim() || ws.source_changed || (["hwp", "hwp_inspect"].includes(job.kind) && !recoveryConfirmed[job.id])} onClick={() => void mutate(`/jobs/${job.id}/recover`, {version: ws.version, idempotency_key: crypto.randomUUID(), note, external_state_confirmed: !!recoveryConfirmed[job.id], visible: hwpVisible}, "현재 입력으로 복구 작업 접수")}><RefreshCw size={16}/>복구·재생성</button>
           </div>}

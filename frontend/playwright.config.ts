@@ -32,7 +32,7 @@ export default defineConfig({
     },
     {
       name: "workspace-v2",
-      testMatch: /(?:workspace-v2|sample-document-loop|attachment-only-live|notice-provenance-live)\.spec\.ts/,
+      testMatch: /(?:workspace-v2|sample-document-loop|attachment-only-live|jev-live|notice-provenance-live)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {

@@ -1,0 +1,57 @@
+schema_version: 1
+policy_version: autojebi-day1-v1
+
+company:
+  name: Example Power Electronics Distributor
+  summary: >-
+    Supplies power-electronics simulation, HIL validation, semiconductor,
+    protection, passive-component, sensing, and related engineering products.
+  positive_signals:
+    - power conversion, inverter, converter, or motor-drive validation
+    - HIL, real-time simulation, PLECS, controller, BMS, or ECU testing
+    - IGBT, SCR, diode, fuse, capacitor, busbar, or current sensing
+  exclusions:
+    - general construction with no electrical or control-system scope
+    - office supplies and unrelated consumer products
+
+product_families:
+  hil: Real-time hardware-in-the-loop systems and controller validation.
+  simulation_software: Power-electronics or control-system simulation software.
+  semiconductor: IGBT, SCR, diode, and related power semiconductors.
+  fuse: Electrical protection fuses and fuse systems.
+  capacitor: DC-link, film, and other power-electronics capacitors.
+  busbar: Laminated or power-distribution busbars.
+  sensor: Current sensing, probes, and Rogowski coils.
+  power_equipment: Other power conversion, switching, or test equipment.
+  mixed: Two or more listed product families are central to the notice.
+  other: Electrical scope exists but no listed family clearly dominates.
+  irrelevant: No meaningful relationship to the supplied product portfolio.
+
+applications:
+  ess: Energy storage systems and battery validation.
+  hvdc: High-voltage direct-current transmission and conversion.
+  ev: Electric vehicle, charger, drivetrain, BMS, or charging infrastructure.
+  railway: Railway traction, rolling stock, or rail power systems.
+  renewable: Solar, wind, fuel-cell, or renewable power conversion.
+  grid: Utility grid, substation, transmission, or distribution systems.
+  industrial: Industrial automation, drives, UPS, or general power conversion.
+  defense: Defense or aerospace applications; external transmission may be restricted.
+  research: University, laboratory, or public R&D equipment.
+  other: None of the named application domains clearly applies.
+
+relevance_levels:
+  high: Direct match to a supplied product and plausible commercial opportunity.
+  medium: Adjacent scope where supplied products may form a meaningful part.
+  low: Weak or incidental relationship requiring evidence before pursuit.
+  irrelevant: No practical product or service fit.
+
+priority_levels:
+  urgent: Strong fit with an imminent deadline or unusually high strategic value.
+  high: Strong fit that should be reviewed promptly.
+  medium: Plausible fit suitable for normal verification.
+  low: Weak fit or limited value; review only if capacity permits.
+  none: Irrelevant to the portfolio.
+
+routing:
+  auto_process_min_confidence: 0.90
+  llm_verify_min_confidence: 0.70

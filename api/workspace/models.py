@@ -19,6 +19,7 @@ JobKind = Literal[
     "package",
     "notify",
     "spec_index",
+    "jev",
 ]
 
 
@@ -48,6 +49,7 @@ class JobRequest(StrictModel):
     idempotency_key: str = Field(min_length=1, max_length=100)
     template_key: str = Field(default="bid_form", max_length=100)
     visible: bool = False
+    classification_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class CandidateSelection(StrictModel):

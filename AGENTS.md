@@ -63,6 +63,7 @@ Gemini는 `GOOGLE_API_KEY`, `GEMINI_MODEL`을 사용하고 Claude의 `PROPOSAL_M
 세 공급자 모두 `api/workspace/providers.py`의 `prepare_request`/`generate`를 거친다. 새 LLM 호출 경로에서 `anthropic.Anthropic`을 직접 생성하지 말 것 — 호출 한도·재사용 기록이 빠진다.
 OpenAI는 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_MAX_OUTPUT_TOKENS`를 사용하며 Responses API의 strict JSON Schema와 `store=false`를 적용한다. 기존 비교 초안은 유료 호출로 전환하지 않는다.
 공급자/모델 변경은 호출 한도를 초기화하지 않으며 자동 fallback/재시도하지 않는다.
+JEV 분류는 `WORKSPACE_JEV_ENABLED` opt-in의 수동 `jev` 작업만 허용한다. 설정된 회사 정책과 공고 원문만 전송하며 참고자료·증빙은 제외한다. 전체 정책·모델·원문을 고정하고 동일 요청은 실패/응답 불명도 재호출하지 않는다. 모델 변경에도 동일 내용 한도 2회는 유지하며 참가 결정·제출 승인을 변경하지 않는다. 설정과 검증은 `docs/jev-workspace-integration-2026-09-21.md`를 따른다.
 등록된 키와 실제 연결 검증은 구분한다. 기존 호환 API와 참고자료 비교 초안은 변경하지 않는다.
 요약/적합도는 `claude-haiku-4-5`, PDF 심층은 `claude-sonnet-4-5`, 제안서는 Opus 상위. LLM 호출은 중복제거·키워드 필터 게이트 통과 건에만, 공고당 1~2회로 제한.
 v2 비용 게이트는 같은 원문·회사·증빙 내용에 대해 입력 버전을 넘어 합산 2회이며, 정확히 같은 정상 요청은 재사용한다.

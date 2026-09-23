@@ -1,0 +1,9 @@
+{
+  "notice_no": "DAY1-DEMO-001",
+  "title": "HVDC converter controller HIL test system",
+  "organization": "Example Research Institute",
+  "body": "Procurement of a real-time HIL simulator for HVDC controller verification.",
+  "source_fields": {
+    "source": "example_only"
+  }
+}

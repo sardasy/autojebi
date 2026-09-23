@@ -35,8 +35,8 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
     script = ScriptDirectory.from_config(alembic_cfg)
     heads = list(script.get_heads())
     assert len(heads) == 1, f"unexpected branching: {heads}"
-    assert heads[0] == "0017_spec_search", (
-        f"expected 0016 as head, got {heads}"
+    assert heads[0] == "0018_decision_layer", (
+        f"expected 0018 as head, got {heads}"
     )
     chain = [r.revision for r in script.walk_revisions()]
     for rev in (
@@ -54,6 +54,7 @@ def test_alembic_chain_includes_0003_ontology(alembic_cfg):
         "0011_required_documents",
         "0012_proposal_agent_workspace",
         "0015_hwp_render_mode",
+        "0018_decision_layer",
     ):
         assert rev in chain, f"{rev} missing from chain: {chain}"
 

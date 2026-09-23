@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
     openai_max_output_tokens: int = Field(default=16384, ge=1024, le=32768)
+    # Optional, opt-in Decision Layer (not connected to collection/workspace automatically).
+    workspace_jev_enabled: bool = False
+    workspace_jev_policy_path: str = "config/company.yaml"
+    typesafe_api_key: str = ""
+    typesafe_default_model: str = "jev-latest"
     llm_attachment_fetch: bool = True
     g2b_attachment_dir: str = ""  # empty → tempfile.gettempdir()
 

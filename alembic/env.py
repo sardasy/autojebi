@@ -17,6 +17,7 @@ from sqlalchemy import engine_from_config, pool, text
 from alembic import context
 from api.config import settings
 from api.db.tables import metadata as target_metadata
+from api.decision import tables as decision_tables  # noqa: F401
 from api.specifications import tables as spec_tables  # noqa: F401
 from api.workspace import tables  # noqa: F401
 

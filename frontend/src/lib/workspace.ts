@@ -94,7 +94,7 @@ export interface Workspace {
   reviews: {id: string; job_id: string | null; action: string; note: string; input_version: number; created_at: string; actor?: WorkspaceActor | null; output_sha256?: string | null; layout_confirmed?: boolean}[];
 }
 export const decisions: Record<string, string> = {pending: "미결정", participate: "참가", hold: "보류", decline: "불참"};
-export const jobNames: Record<string, string> = {spec_index: "사양 검색 색인", fetch: "첨부 가져오기", extract: "본문 추출", analyze: "요구사항 분석", grade: "규격·자격·가격 검토", proposal: "검토 초안", verify: "누락 검사", excel: "Excel 생성", hwp: "HWP 생성", hwp_inspect: "템플릿 필드 검사", package: "검토 패키지", notify: "알림 미리보기"};
+export const jobNames: Record<string, string> = {jev: "JEV 분류", spec_index: "사양 검색 색인", fetch: "첨부 가져오기", extract: "본문 추출", analyze: "요구사항 분석", grade: "규격·자격·가격 검토", proposal: "검토 초안", verify: "누락 검사", excel: "Excel 생성", hwp: "HWP 생성", hwp_inspect: "템플릿 필드 검사", package: "검토 패키지", notify: "알림 미리보기"};
 export const jobStates: Record<string, string> = {queued: "대기", running: "처리 중", succeeded: "완료", failed: "실패", blocked: "차단"};
 export interface QuoteDiagnostic {
   candidate_id: string; status: "exact" | "whitespace" | "ambiguous" | "mismatch" | "invalid_structure";

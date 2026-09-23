@@ -32,9 +32,13 @@ dependencies = [
   "markdown-it-py>=3.0,<5",
   "Pillow>=10.0,<13",
   "python-multipart>=0.0.9",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
+jev = [
+  "typesafe-sdk>=0.7,<1",
+]
 spec-search = [
   "pint>=0.24,<1",
   "rdflib>=7,<8",

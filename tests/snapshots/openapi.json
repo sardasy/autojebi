@@ -838,6 +838,80 @@
     "title": "ChecklistUpdateRequest",
     "type": "object"
    },
+   "ClassificationState": {
+    "properties": {
+     "current_job_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Current Job Id"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "history": {
+      "items": {
+       "$ref": "#/components/schemas/JobRecord"
+      },
+      "title": "History",
+      "type": "array"
+     },
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "policy_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Policy Version"
+     },
+     "request_hash": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Request Hash"
+     },
+     "visible": {
+      "default": false,
+      "title": "Visible",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled",
+     "message"
+    ],
+    "title": "ClassificationState",
+    "type": "object"
+   },
    "CommercialRequest": {
     "additionalProperties": false,
     "properties": {
@@ -3422,6 +3496,18 @@
    "JobRequest": {
     "additionalProperties": false,
     "properties": {
+     "classification_hash": {
+      "anyOf": [
+       {
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Classification Hash"
+     },
      "idempotency_key": {
       "maxLength": 100,
       "minLength": 1,
@@ -3446,7 +3532,8 @@
        "hwp_inspect",
        "package",
        "notify",
-       "spec_index"
+       "spec_index",
+       "jev"
       ],
       "title": "Kind",
       "type": "string"
@@ -13766,6 +13853,64 @@
      }
     },
     "summary": "Register Notice",
+    "tags": [
+     "workspace"
+    ]
+   }
+  },
+  "/v2/notices/{notice_no}/classification": {
+   "get": {
+    "operationId": "classification_state_v2_notices__notice_no__classification_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "notice_no",
+      "required": true,
+      "schema": {
+       "title": "Notice No",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "X-API-Key",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Api-Key"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ClassificationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Classification State",
     "tags": [
      "workspace"
     ]

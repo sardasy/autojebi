@@ -8,7 +8,7 @@ from typing import Any
 from api.workspace.errors import fail
 
 # Import submodules (not same-named functions) so `executors.<kind>` stays the module.
-from api.workspace.executors import analyze, excel, extract, fetch, hwp, package
+from api.workspace.executors import analyze, excel, extract, fetch, hwp, jev, package
 from api.workspace.hwp_inspection import inspect_template
 from api.workspace.proposal import generate_proposal
 from api.workspace.readiness import readiness_issues
@@ -22,6 +22,8 @@ def execute(engine: Any, job: dict) -> dict:
         from api.specifications.indexing import build
 
         return build(engine, job)
+    if job["kind"] == "jev":
+        return jev.classify(engine, job)
     folder = storage_root() / "exports" / job["id"]
     folder.mkdir(parents=True, exist_ok=True)
     if job["kind"] == "analyze":

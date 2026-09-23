@@ -17,7 +17,7 @@ from sqlalchemy.exc import (
 )
 
 from api.db import get_engine
-from api.workspace import receipts
+from api.workspace import classification, receipts
 from api.workspace.errors import HANDLED_ERRORS, HandledError
 from api.workspace.executors import execute
 from api.workspace.lanes import LOCAL_KINDS, validate_lane
@@ -86,12 +86,15 @@ def persist_completion(conn: Any, receipt: receipts.Receipt) -> None:
             jobs.c.status == "running",
             jobs.c.claim_token == receipt.claim_token,
         )
-        if not conn.execute(select(jobs.c.id).where(*identity)).first():
+        job = conn.execute(select(jobs).where(*identity)).mappings().first()
+        if not job:
             return
-        status, error = receipt.status, receipt.error
+        status, error, result = receipt.status, receipt.error, receipt.result
         try:
             ws = load(conn, receipt.notice_no, receipt.input_version)
             assert_source_current(conn, ws)
+            if job["kind"] == "jev" and status == "succeeded":
+                result = classification.persist_result(conn, ws, job, result)
         except HANDLED_ERRORS as exc:
             status, error = http_failure(exc)
         if error is not None:
@@ -101,7 +104,7 @@ def persist_completion(conn: Any, receipt: receipts.Receipt) -> None:
             .where(*identity)
             .values(
                 status=status,
-                result=receipt.result,
+                result=result,
                 error=error,
                 quality=(
                     "warning" if receipt.result and receipt.result.get("warnings") else "normal"

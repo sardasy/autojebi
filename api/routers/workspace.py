@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, Response
 from api.auth import verify_api_key
 from api.db import require_engine
 from api.models.notices import NoticeSearchRequest, NoticeSearchResponse, NoticeUpsertRequest
+from api.routers.classification import router as classification_router
 from api.routers.company_assets import router as company_assets_router
 from api.routers.hwp_health import router as hwp_health_router
 from api.routers.notice_forms import router as notice_forms_router
@@ -79,7 +80,7 @@ router = APIRouter(prefix="/v2", tags=["workspace"], dependencies=[Depends(verif
 
 router.include_router(company_assets_router)
 router.include_router(notice_forms_router)
-
+router.include_router(classification_router)
 router.include_router(specifications_router)
 router.include_router(identity_router)
 router.include_router(requirement_candidates_router)

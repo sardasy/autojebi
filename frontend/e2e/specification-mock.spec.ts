@@ -75,6 +75,10 @@ async function mockSpecifications(page: Page, baseURL: string | undefined, optio
     if (!url.pathname.startsWith("/api/")) return route.continue();
     const path = url.pathname;
     const method = request.method();
+    if (method === "GET" && path === `${prefix}/classification`) return route.fulfill({json: {
+      visible: false, enabled: false, message: "JEV 비활성", request_hash: null,
+      policy_version: null, model: null, current_job_id: null, history: [],
+    }});
     if (method === "GET" && path === "/api/workspace-session") return route.fulfill({json: {enabled: false, actor: null}});
     if (method === "GET" && path === `${prefix}/workspace`) {
       calls.workspace++;

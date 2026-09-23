@@ -1,5 +1,6 @@
 import { Check, Download, FileText, Play, Upload } from "lucide-react";
 import { type Workspace } from "@/lib/workspace";
+import JevClassification from "./JevClassification";
 import NoticeBrief from "../NoticeBrief";
 import WritingPlanReview from "../WritingPlanReview";
 import WorkspaceDocumentViewer from "../WorkspaceDocumentViewer";
@@ -18,6 +19,7 @@ interface Props {ws: Workspace; prefix: string; noticeNo: string; busy: boolean;
 /** Tab "2. 공고 서류 검토": source files, extraction state and requirements. */
 export default function SourceReviewTab({ws, prefix, noticeNo, busy, note, derived: {sourceDocuments, hasSourceText, pendingFetch, pendingExtract}, mutate, run, reload, setWs, goTo, activateTab}: Props) {
   return <>
+        <JevClassification ws={ws} prefix={prefix} busy={busy} mutate={mutate}/>
         {hasSourceText && <NoticeBrief documents={ws.inputs.documents} prefix={prefix} serverBrief={ws.notice_brief}/>}
         {hasSourceText && <SourceDisplayReview key={`display-${ws.version}`} ws={ws} prefix={prefix} onSaved={setWs}/>}
         {hasSourceText && <WritingPlanReview key={`plan-${ws.version}`} ws={ws} prefix={prefix} onSaved={setWs} onWriting={()=>goTo(tabs[1])}/>}

@@ -35,7 +35,7 @@ def test_fresh_postgres_migration_and_real_lexical(tmp_path):
     try:
         command.upgrade(config, "head")
         with engine.begin() as conn:
-            assert conn.execute(text("select version_num from alembic_version")).scalar() == "0017_spec_search"
+            assert conn.execute(text("select version_num from alembic_version")).scalar() == "0018_decision_layer"
             conn.execute(text("CREATE TEMP TABLE spec_search_chunks (generation_id text,id text,quote text,identifiers json,payload json)"))
             conn.execute(text("INSERT INTO spec_search_chunks VALUES ('g','a','CAN 2.0B','[\"can 2.0b\"]','{}'),('g','b','CAN 2.0A','[\"can 2.0a\"]','{}')"))
             found = conn.execute(build_lexical_query("CAN", generation_id="g", identifiers=["CAN 2.0B"])).mappings().all()
