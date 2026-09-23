@@ -11,6 +11,7 @@ from api.parsing.hwp_validation import (
     HwpValidationError,
     read_hwp_output,
 )
+from api.parsing.hwpx_text import TEXT_RULE_VERSION
 from api.services.hwp_agent_client import (
     HwpAgentClient,
     HwpAgentError,
@@ -91,7 +92,9 @@ def extract(job: dict) -> dict:
                 metadata = {**metadata, **addition}
             texts.append({"id": doc["id"], "text": doc["text"], "format": "pdf", "extraction": metadata})
             continue
-        if doc.get("sha256") and doc.get("text") and doc.get("text_origin") in {"hwpx", "hwp_ole"}:
+        if (doc.get("sha256") and doc.get("text") and doc.get("text_origin") in {"hwpx", "hwp_ole"}
+            and (doc["text_origin"] == "hwp_ole" or
+                 metadata.get("text_rule_version") == TEXT_RULE_VERSION and metadata.get("complete") is True)):
             if metadata.get("table_structure", {}).get("version") != 1 or "tables" not in metadata:
                 addition = attachment_text.text_only_table_metadata(locator=f"sha256:{doc['sha256']}/{doc['text_origin']}")
                 if (doc["text_origin"] == "hwpx" and path.suffix.lower() == ".hwpx"

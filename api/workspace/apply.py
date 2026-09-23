@@ -44,6 +44,8 @@ def apply_job_result(conn: Any, notice_no: str, job_id: str, version: int) -> No
                 )
     elif job["kind"] == "extract":
         for doc in inputs["documents"]:
+            if doc.get("text_origin") == "manual_confirmed":
+                continue
             found = next((d for d in job["result"]["documents"] if d["id"] == doc["id"]), None)
             if found:
                 if doc.get("text") != found["text"]:

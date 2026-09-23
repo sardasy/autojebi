@@ -14,6 +14,7 @@ from defusedxml.ElementTree import fromstring
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.cell_range import CellRange
 
+from api.parsing.hwpx_text import OFFSET_UNIT, TEXT_RULE_VERSION, section_content
 from api.specifications.table_structure import (
     SourceLocator,
     TableLimits,
@@ -308,18 +309,26 @@ def extract_xlsx(content: bytes, *, expansion_budget: list[int] | None = None,
 
 def extract_hwpx(content: bytes, *, locator: str | None = None,
                  expansion_budget: list[int] | None = None,
-                 entry_budget: list[int] | None = None) -> dict:
-    """Keep legacy itertext order exactly; attach XML-addressed tables separately."""
+                 entry_budget: list[int] | None = None,
+                 rule_version: int = TEXT_RULE_VERSION) -> dict:
+    """Versioned text and exact ranges; specification table policy stays separate."""
     locator = locator or f"sha256:{hashlib.sha256(content).hexdigest()}/hwpx"
     texts, length = [], 0
     tables = TableCollector()
+    controls, comparison_tables = [], []
     with checked_archive(content, expansion_budget, entry_budget) as archive:
         entries = [e for e in archive.infolist()
                    if e.filename.startswith("Contents/section") and e.filename.endswith(".xml")]
         for entry in entries:
             xml = archive.read(entry)
             root = fromstring(xml, forbid_dtd=True, forbid_entities=True, forbid_external=True)
-            text = " ".join(root.itertext())
+            layout = section_content(root, f"{locator}/{entry.filename}",
+                                     length + bool(texts), rule_version)
+            text = layout["text"]
+            controls.extend(layout["excluded"])
+            comparison_tables.extend(layout["tables"])
+            if len(json.dumps([controls, comparison_tables], ensure_ascii=False).encode()) > MAX_TABLE_METADATA:
+                raise ExtractionError("table_metadata_limit")
             length += len(text) + bool(texts)
             if length > MAX_TEXT:
                 raise ExtractionError("extracted_text_limit")
@@ -339,6 +348,8 @@ def extract_hwpx(content: bytes, *, locator: str | None = None,
                     tables.reject("hwpx_table_structure_unavailable", source)
     return {"text": "\n".join(texts), "format": "hwpx", "extraction": {
         "version": 1, "complete": bool(texts) and any(t.strip() for t in texts),
+        "text_rule_version": rule_version, "offset_unit": OFFSET_UNIT,
+        "excluded_controls": controls, "comparison_tables": comparison_tables,
         **tables.metadata(),
     }}
 

@@ -333,6 +333,7 @@ def test_execution_hwpx_adds_structure_without_rewriting_cached_body(tmp_path, m
            "sha256": hashlib.sha256(content).hexdigest(), "extraction": {"old_metadata": "keep"}}
     if cached:
         doc.update(text="Earlier exact body", text_origin="hwpx")
+        doc["extraction"].update(text_rule_version=2, complete=True)
     result = extract({"snapshot": {"documents": [doc]}})["documents"][0]
     assert result["text"] == ("Earlier exact body" if cached else "Specification Voltage 400 V")
     assert result["extraction"]["old_metadata"] == "keep"
