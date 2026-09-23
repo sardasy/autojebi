@@ -1,6 +1,7 @@
 import { Check, Download, RefreshCw } from "lucide-react";
 import { jobNames, jobStates, type Workspace, type WorkspaceJob } from "@/lib/workspace";
 import WorkspaceArtifactReview from "../WorkspaceArtifactReview";
+import TemplateProvenanceNotice from "../TemplateProvenanceNotice";
 import { QuoteRecovery } from "../WorkspaceRecovery";
 import { buttonClass, tabs, readableError, actorLabel, date, type Mutate, type Tab } from "./ui";
 import { layoutReviewed as isLayoutReviewed } from "./derive";
@@ -27,6 +28,7 @@ export default function JobHistory({ws, tab, prefix, busy, note, mutate, reload,
           {job.result?.required_missing && <p className="text-sm">필수 누락: {job.result.required_missing.join(", ") || "없음"}</p>}
           {job.kind === "hwp" && job.result?.artifact && <p className="text-sm">저장값 재조회: {job.result.verified ? layoutReviewed(job) ? "일치 확인 · 문서 배치 검토 완료" : "일치 확인 · 문서 배치 검토 필요" : "미확인"}</p>}
           {job.kind === "hwp_inspect" && job.result && <p className="text-sm">실제 필드 {job.result.fields?.length || 0}개 · {job.result.inspection_passed ? "필수 필드 확인" : "필드 보완 필요"} · 미매핑 {(job.result.unmapped || []).join(", ") || "없음"}</p>}
+          {job.kind === "hwp_inspect" && <TemplateProvenanceNotice value={job.result?.template_provenance} templateKey={job.parameters?.template_key}/>}
           {job.result?.axes && <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left border-b"><th className="py-2">검토 축</th><th>결과</th><th>판단 근거</th></tr></thead><tbody>{Object.entries(job.result.axes).map(([axis,value]) => <tr key={axis} className="border-b align-top"><th className="py-2 pr-3 whitespace-nowrap text-left">{{spec: "기술 규격", qualification: "참가 자격", price: "기초금액 대비"}[axis] || axis}</th><td className="py-2 pr-3 whitespace-nowrap">{value.score == null ? "미평가" : `${Math.round(value.score * 100)}%`}</td><td className="py-2 min-w-48">{value.reason}</td></tr>)}</tbody></table><p className="text-sm mt-2">종합: {job.result.score_total == null ? "미평가" : `${Math.round(job.result.score_total * 100)}%`} · 기술 근거 확인율: {job.result.technical_coverage == null ? "미확인" : `${Math.round(job.result.technical_coverage * 100)}%`}</p></div>}
           {job.result?.candidates?.map(candidate => <p key={candidate.sku.sku_id} className="text-sm break-words">SKU 참고 · {candidate.sku.name || candidate.sku.sku_id} · 검색 유사도 {Math.round(candidate.similarity * 100)}% · 적합성 확인 대기</p>)}
           {job.result?.qualification_references && <div className="text-sm"><p>{job.result.qualification_references.reason}</p>{job.result.qualification_references.references && <dl className="space-y-1 mt-2">{Object.entries(job.result.qualification_references.references).map(([key,values]) => <div key={key}><dt className="font-medium">{{licenses: "면허", regions: "지역", permitted_industries: "업종"}[key] || key}</dt><dd>{values.join(", ") || "조회 항목 없음"}</dd></div>)}</dl>}</div>}

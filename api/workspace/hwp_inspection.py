@@ -10,6 +10,10 @@ from api.parsing.hwp_validation import HwpValidationError, read_hwp_output, vali
 from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError
 from api.workspace.errors import WorkspaceError
 from api.workspace.service import fail
+from api.workspace.template_provenance import (
+    confirm_provenance_unchanged,
+    require_generation_provenance,
+)
 
 
 def template_file(template: dict) -> tuple[Path, str]:
@@ -54,6 +58,7 @@ def mapping_hash(template: dict, mappings: list[dict]) -> str:
 def inspect_template(template: dict, mappings: list[dict], client: Any = None, *,
                      visible: bool = False, operation_id: str | None = None) -> dict:
     path, checksum = template_file(template)
+    provenance = require_generation_provenance(template, path, checksum)
     client = client or HwpAgentClient(retries=1, timeout_s=120)
     if not client.health():
         fail(
@@ -81,6 +86,7 @@ def inspect_template(template: dict, mappings: list[dict], client: Any = None, *
         or hashlib.sha256(read_hwp_output(path)).hexdigest() != checksum
     ):
         fail("template_changed", "필드 검사 중 템플릿이 변경되었습니다.")
+    confirm_provenance_unchanged(template, path, checksum, provenance)
     expected = {m["hwp_field_name"] for m in mappings}
     required = {m["hwp_field_name"] for m in mappings if m.get("required")}
     actual = set(report["fields"])
@@ -88,6 +94,7 @@ def inspect_template(template: dict, mappings: list[dict], client: Any = None, *
     return {
         "template_key": template.get("template_key"),
         "template_sha256": checksum,
+        "template_provenance": provenance,
         "mapping_sha256": mapping_hash(template, mappings),
         "fields": report["fields"],
         "field_occurrences": report["field_occurrences"],
@@ -98,5 +105,6 @@ def inspect_template(template: dict, mappings: list[dict], client: Any = None, *
         "warnings": (["실제 템플릿 필수 필드 누락: " + ", ".join(missing)] if missing else [])
         + (["DB 매핑이 없는 템플릿 필드가 있습니다."] if actual - expected else [])
         + (["선택 입력 필드가 템플릿에 없습니다."] if expected - actual - required else [])
-        + (["템플릿에 입력 필드가 없습니다."] if not actual else []),
+        + (["템플릿에 입력 필드가 없습니다."] if not actual else [])
+        + ([provenance["warning"]] if provenance["warning"] else []),
     }

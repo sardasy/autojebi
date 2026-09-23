@@ -738,7 +738,7 @@ def review_artifact(conn: Any, notice_no: str, body: Any) -> None:
         if body.output_sha256 is not None and body.output_sha256 != result.get("sha256"):
             fail("file_changed", "화면에서 검토한 파일과 현재 파일이 다릅니다.")
         if job["kind"] == "hwp":
-            issues = output_plan.hwp_review_issues(result)
+            issues = output_plan.hwp_review_issues(result, job["parameters"].get("template_key"))
             if issues:
                 fail("hwp_review_blocked", issues[0])
             if not body.layout_confirmed or body.output_sha256 != result.get("sha256"):

@@ -12,6 +12,7 @@ import pytest
 from lxml import etree
 from sqlalchemy import select, update
 
+from api.db.tables import hwp_templates
 from api.workspace import service
 from api.workspace.execution import run_package
 from api.workspace.tables import jobs, reviews, workspaces
@@ -43,6 +44,10 @@ def saved_form_package(client, sqlite_engine, tmp_path, monkeypatch):
         },
     )
     assert response.status_code == 200
+    with sqlite_engine.begin() as conn:
+        for key, kind in [("test_original_form", "bid_form"), ("test_proposal", "proposal")]:
+            conn.execute(hwp_templates.insert().values(template_key=key, kind=kind,
+                         name="TEST ONLY 합성 서식", template_path=f"templates/{key}.hwp"))
     initial = client.post(f"/v2/notices/{notice_no}/initialize").json()
     original = io.BytesIO()
     with zipfile.ZipFile(original, "w") as archive:
@@ -242,6 +247,8 @@ def test_reviewed_original_form_can_reach_ready_with_all_other_reviews_complete(
         "evidence_locator": "본문", "proposed_value": "합성 검증 증빙"}]
     inputs["proposal_sections"] = [{"id": "section", "text": "합성 검증 제안 내용",
         "review_status": "approved", "requirement_ids": ["req"], "evidence_ids": ["evidence"]}]
+    inputs["output_plan"] = {"template_keys": ["test_original_form", "test_proposal"],
+                             "note": "TEST ONLY 합성 생성물 패키지 검증용 서식"}
     with sqlite_engine.begin() as conn:
         conn.execute(update(workspaces).where(workspaces.c.notice_no == state["notice_no"])
                      .values(inputs=inputs, decision="participate"))
@@ -256,7 +263,7 @@ def test_reviewed_original_form_can_reach_ready_with_all_other_reviews_complete(
     assert not approved.json()["ready"]
     with sqlite_engine.begin() as conn:
         state = service.load(conn, state["notice_no"])
-        for kind, template in [("excel", None), ("hwp", "bid_form"), ("hwp", "proposal")]:
+        for kind, template in [("excel", None), ("hwp", "test_original_form"), ("hwp", "test_proposal")]:
             path = tmp_path / f"synthetic-{kind}-{template}.bin"
             path.write_bytes(b"synthetic reviewed output")
             job_id = service.uid()

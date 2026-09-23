@@ -8,6 +8,11 @@ from api.parsing.hwp_validation import read_hwp_output, validate_hwp_content
 from api.services.hwp_agent_client import HwpAgentClient, HwpAgentError
 from api.workspace.document_drafts import proposal_sections
 from api.workspace.hwp_inspection import template_file
+from api.workspace.template_provenance import (
+    confirm_provenance_unchanged,
+    record_validation_derivative,
+    require_generation_provenance,
+)
 
 
 def proposal_text(inputs: dict) -> str:
@@ -46,6 +51,7 @@ def run_layout_hwp(job: dict, preview: dict, folder: Path) -> dict:
     if len(mappings) != 1 or mappings[0]["context_path"] != "proposal.body" or not preview["body_mapped"]:
         fail("layout_mapping_invalid", "서식 템플릿에는 필수 proposal.body 매핑 하나만 사용하세요.")
     base, base_hash = template_file(preview["template"])
+    provenance = require_generation_provenance(preview["template"], base, base_hash)
     working = folder.resolve() / "working-template.hwp"
     output = folder.resolve() / "draft.hwp"
     client = HwpAgentClient(retries=1, timeout_s=120)
@@ -54,6 +60,7 @@ def run_layout_hwp(job: dict, preview: dict, folder: Path) -> dict:
                                          base_template_path=str(base), layout=layout.model_dump(),
                                          visible=job.get("parameters", {}).get("visible", False))
         working_hash = validate_created(created, working, layout, base_hash)
+        record_validation_derivative(provenance, working_hash)
         result = client.put_fields(template_path=str(working), output_path=str(output), values=values,
                                    operation_id=job["id"], render_pages=True,
                                    visible=job.get("parameters", {}).get("visible", False))
@@ -79,6 +86,10 @@ def run_layout_hwp(job: dict, preview: dict, folder: Path) -> dict:
     except (ValueError, OSError, KeyError, TypeError):
         fail("layout_verification_failed", "서식 생성 파일·본문·페이지 대조에 실패했습니다.", "생성 기록과 한글 파일을 확인하세요.", status=502)
     warnings = blockers(job["snapshot"])
+    confirm_provenance_unchanged(preview["template"], base, base_hash, provenance)
+    record_validation_derivative(provenance, checksum)
+    if provenance["warning"]:
+        warnings.append(provenance["warning"])
     if result.remaining_placeholders:
         warnings.append("미입력 또는 검증필요 내용이 남아 있습니다.")
     warnings.append("한글 페이지 배치는 담당자 검토가 필요합니다.")
@@ -86,6 +97,7 @@ def run_layout_hwp(job: dict, preview: dict, folder: Path) -> dict:
             "input_values": values, "logical_input": body, "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
             "body_manifest": manifest, "layout": layout.model_dump(), "layout_sha256": layout.checksum(),
             "template_sha256": base_hash, "working_template_sha256": working_hash,
+            "template_key": preview["template"].get("template_key"), "template_provenance": provenance,
             "template_version": preview["template"].get("template_version"), "template_creation": created,
             "fields": layout.fields(), "replaced": result.replaced, "missing": [], "required_missing": [],
             "remaining_placeholders": result.remaining_placeholders, "pages": pages, "page_count": len(pages),

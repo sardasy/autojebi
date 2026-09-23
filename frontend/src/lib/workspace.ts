@@ -6,6 +6,8 @@ export interface ExtractedArchiveMember {
   name: string; sha256: string; size: number; status: string; complete: boolean; error_code?: string;
   extraction?: {members?: ExtractedArchiveMember[]; pages?: ExtractedPage[]};
 }
+import type {TemplateProvenance} from "./templateProvenance";
+
 export interface SourceDocument {
   id: string; name: string; role: "notice_source" | "company_evidence" | "product_evidence" | "company_reference";
   confirmed: boolean; text: string; text_origin: string; item_id?: string | null;
@@ -39,6 +41,7 @@ export interface WorkspaceJob {
     pages?: {number: number; width: number; height: number; sha256: string}[];
     documents?: {id: string; role?: SourceDocument["role"]; text?: string; format?: string; attachment_index?: number | null}[];
     inspection_passed?: boolean; fields?: string[]; unmapped?: string[];
+    template_provenance?: TemplateProvenance; template_key?: string;
     missing?: string[]; remaining_placeholders?: string[]; verified?: boolean;
     axes?: Record<string, {score: number | null; state: string; reason: string}>;
     score_total?: number | null; technical_coverage?: number | null;

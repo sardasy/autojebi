@@ -1,5 +1,6 @@
 import { jobNames, jobStates, Workspace, WorkspaceJob } from "@/lib/workspace";
 import { Tab, tabs } from "./ui";
+import {templateProvenanceWarning} from "@/lib/templateProvenance";
 
 /** Values derived from a workspace snapshot. Pure: no React, no I/O (R6). */
 export function deriveWorkspace(ws: Workspace | null) {
@@ -22,7 +23,8 @@ export type Derived = ReturnType<typeof deriveWorkspace>;
 export function layoutReviewed(ws: Workspace | null, job: WorkspaceJob): boolean {
   const review = ws?.reviews.find(r => r.job_id === job.id);
   return !!(job.kind === "hwp" && job.input_version === ws?.version && review?.action === "approved"
-    && review.layout_confirmed && review.output_sha256 === job.result?.sha256);
+    && review.layout_confirmed && review.output_sha256 === job.result?.sha256
+    && !templateProvenanceWarning(job.result?.template_provenance, job.parameters?.template_key || job.result?.template_key));
 }
 
 /** What the primary "지금 할 작업" button does, as data so the decision stays testable. */

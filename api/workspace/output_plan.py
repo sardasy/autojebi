@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from api.db.tables import hwp_templates
 from api.workspace.errors import HANDLED_ERRORS
+from api.workspace.template_provenance import review_provenance_issues
 
 LAYOUT_WARNING = "한글 페이지 배치는 담당자 검토가 필요합니다."
 
@@ -37,8 +38,8 @@ def save(conn: Any, notice_no: str, body: Any) -> None:
     service.change(conn, ws, inputs, "output_plan", body.note)
 
 
-def hwp_review_issues(result: dict) -> list[str]:
-    issues = []
+def hwp_review_issues(result: dict, template_key: str | None = None) -> list[str]:
+    issues = review_provenance_issues(result, template_key)
     if not result.get("verified"):
         issues.append("한글 저장값 재조회 검증이 필요합니다.")
     if any(result.get(key) for key in ("missing", "required_missing", "remaining_placeholders")):
@@ -54,7 +55,7 @@ def review_matches(job: dict, review: dict | None) -> bool:
     details = review.get("details") or {}
     if details.get("sha256") != result.get("sha256"):
         return False
-    return job["kind"] != "hwp" or bool(details.get("layout_confirmed") and not hwp_review_issues(result))
+    return job["kind"] != "hwp" or bool(details.get("layout_confirmed") and not hwp_review_issues(result, job.get("parameters", {}).get("template_key")))
 
 
 def selected_artifacts(records: list, inputs: dict) -> list:

@@ -29,6 +29,7 @@ from api.routers.notice_forms import router as notice_forms_router
 from api.routers.notices import search_notices_endpoint, upsert_notice
 from api.routers.requirement_candidates import router as requirement_candidates_router
 from api.routers.specifications import router as specifications_router
+from api.routers.template_catalog import WorkspaceTemplateList, list_workspace_templates
 from api.services.uploads import build_metadata, save_stream
 from api.workspace import queries, service
 from api.workspace.apply import apply_job_result
@@ -100,10 +101,9 @@ def link_company_asset(notice_no: str, asset_id: str, body: AssetLink) -> Worksp
         return service.view(conn, notice_no)
 
 
-@router.get("/hwp-templates")
+@router.get("/hwp-templates", response_model=WorkspaceTemplateList)
 def workspace_templates():
-    from api.routers.documents import list_hwp_templates
-    return list_hwp_templates()
+    return list_workspace_templates()
 
 
 @router.get("/hwp-worker")
@@ -585,7 +585,7 @@ def preview_hwp(notice_no: str, template_key: str = "bid_form") -> dict:
         value = hwp_preview(conn, ws["inputs"], template_key)
         return {
             "input_version": ws["version"],
-            "template_key": template_key,
+            "template_key": template_key, "template_provenance": value["template_provenance"],
             "values": value["values"],
             "required_missing": value["required_missing"],
         }

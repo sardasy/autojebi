@@ -6,13 +6,15 @@ import WorkspaceDecision from "../WorkspaceDecision";
 import WorkspaceOutputPlan from "../WorkspaceOutputPlan";
 import WorkspaceWorkerStatus from "../WorkspaceWorkerStatus";
 import WorkspaceHwpStatus from "../WorkspaceHwpStatus";
+import TemplateProvenanceNotice from "../TemplateProvenanceNotice";
+import {templateLabel, type TemplateProvenance, type WorkspaceTemplate} from "@/lib/templateProvenance";
 import CommercialForm from "./CommercialForm";
 import { inputClass, buttonClass, tabs, stepIds, type Mutate, type Tab } from "./ui";
 
-export type HwpPreview = {input_version: number; values: Record<string, string>; required_missing: string[]};
+export type HwpPreview = {input_version: number; values: Record<string, string>; required_missing: string[]; template_provenance?: TemplateProvenance};
 interface Props {ws: Workspace; tab: Tab; prefix: string; busy: boolean; note: string; mutate: Mutate; run: (kind: string) => Promise<void>; goTo: (name: Tab, target?: string) => void;
   setWs: (ws: Workspace) => void; setStatus: (message: string) => void; setFocusRequirement: (id: string | null) => void;
-  template: string; setTemplate: (key: string) => void; templates: {template_key: string; name: string}[]; templateError: string;
+  template: string; setTemplate: (key: string) => void; templates: WorkspaceTemplate[]; templateError: string;
   hwpVisible: boolean; setHwpVisible: (value: boolean) => void; preview: HwpPreview | null; setPreview: (value: HwpPreview | null) => void;
   prerequisites: Prerequisites | null; setPrerequisites: (value: Prerequisites | null) => void}
 
@@ -47,7 +49,7 @@ export default function ReviewTab({ws, tab, prefix, busy, note, mutate, run, goT
         <WorkspaceHwpStatus/>
         <div className="flex flex-wrap gap-2">{["excel", "package"].map(kind => <button key={kind} disabled={busy || ws.source_changed} className={buttonClass} onClick={() => void run(kind)}><Play size={16}/>{jobNames[kind]}</button>)}</div>
         {templateError && <p role="alert" className="text-sm text-red-700">{templateError}</p>}
-        <div className="border-y py-3 space-y-3"><div className="flex flex-wrap sm:flex-nowrap gap-2"><select aria-label="HWP 템플릿" className={inputClass} disabled={!templates.length} value={template} onChange={e => {setTemplate(e.target.value); setPreview(null);}}>{templates.map(t => <option key={t.template_key} value={t.template_key}>{t.name}</option>)}</select>
+        <div className="border-y py-3 space-y-3"><TemplateProvenanceNotice value={preview?.template_provenance || templates.find(t => t.template_key === template)?.provenance} templateKey={template}/><div className="flex flex-wrap sm:flex-nowrap gap-2"><select aria-label="HWP 템플릿" className={inputClass} disabled={!templates.length} value={template} onChange={e => {setTemplate(e.target.value); setPreview(null);}}>{templates.map(t => <option key={t.template_key} value={t.template_key}>{templateLabel(t)}</option>)}</select>
           <button disabled={busy || !templates.length} className={buttonClass} onClick={async () => {try {setPreview(await workspaceApi(`${prefix}/hwp-context?template_key=${template}`));} catch(e) {setStatus((e as Error).message);}}}>입력값 확인</button></div>
           <button disabled={busy || !templates.length || ws.source_changed || ws.jobs.some(j => ["hwp", "hwp_inspect"].includes(j.kind) && ["queued", "running"].includes(j.status))} className={buttonClass} onClick={() => void run("hwp_inspect")}><Check size={16}/>템플릿 필드 검사</button>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hwpVisible} onChange={e => setHwpVisible(e.target.checked)}/>한글 창 표시</label>

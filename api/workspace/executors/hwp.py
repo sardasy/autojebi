@@ -29,6 +29,12 @@ from api.workspace.errors import fail
 from api.workspace.hwp_inspection import inspect_template
 from api.workspace.hwp_layout import proposal_text, run_layout_hwp
 from api.workspace.service import blockers
+from api.workspace.template_provenance import (
+    confirm_provenance_unchanged,
+    inspect_provenance,
+    record_validation_derivative,
+    require_generation_provenance,
+)
 
 
 def hwp_preview(conn: Any, inputs: dict, template_key: str) -> dict:
@@ -81,6 +87,7 @@ def hwp_preview(conn: Any, inputs: dict, template_key: str) -> dict:
     resolved = resolve_hwp_fields(context=context, mappings=[dict(m) for m in mappings])
     return {
         "template": dict(template),
+        "template_provenance": inspect_provenance(dict(template)),
         "mappings": [dict(m) for m in mappings],
         "values": resolved.input_values,
         "required_missing": resolved.required_missing,
@@ -124,6 +131,7 @@ def run_hwp(engine: Any, job: dict, folder: Path) -> dict:
         fail("template_path", "HWP 또는 HWPX 템플릿이 필요합니다.")
     template_content = template_path.read_bytes()
     template_sha256 = hashlib.sha256(template_content).hexdigest()
+    provenance = require_generation_provenance(preview["template"], template_path, template_sha256)
     if template_content.startswith(OLE_MAGIC):
         output_suffix = ".hwp"
     elif template_content.startswith(b"PK"):
@@ -170,6 +178,7 @@ def run_hwp(engine: Any, job: dict, folder: Path) -> dict:
         fail("worker_output_path", "Worker가 요청과 다른 경로를 반환했습니다.")
     if hashlib.sha256(template_path.read_bytes()).hexdigest() != template_sha256:
         fail("template_changed", "HWP 생성 중 템플릿이 변경되었습니다.", status=502)
+    confirm_provenance_unchanged(preview["template"], template_path, template_sha256, provenance)
     try:
         content = read_hwp_output(output)
         validation = validate_hwp_content(content, output.suffix)
@@ -186,7 +195,10 @@ def run_hwp(engine: Any, job: dict, folder: Path) -> dict:
             "파일 형식·필드 목록·저장값·Worker 검증 보고를 확인하세요.",
             status=502,
         )
+    record_validation_derivative(provenance, hashlib.sha256(content).hexdigest())
     warnings = blockers(job["snapshot"])
+    if provenance["warning"]:
+        warnings.append(provenance["warning"])
     if not saved_verification:
         warnings.append(
             "문서 구조만 확인된 초안입니다. 실제 필드 목록·저장값 재조회 및 COM 실행 검증이 필요합니다."
@@ -216,4 +228,6 @@ def run_hwp(engine: Any, job: dict, folder: Path) -> dict:
         "worker_verification": result.raw.get("verification"),
         "template_version": preview["template"].get("template_version"),
         "template_sha256": template_sha256,
+        "template_key": preview["template"].get("template_key"),
+        "template_provenance": provenance,
     }

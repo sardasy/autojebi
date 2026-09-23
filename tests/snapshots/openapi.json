@@ -7264,6 +7264,107 @@
     "title": "Specification",
     "type": "object"
    },
+   "TemplateProvenance": {
+    "additionalProperties": false,
+    "properties": {
+     "approval_allowed": {
+      "title": "Approval Allowed",
+      "type": "boolean"
+     },
+     "content_record_sha256": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Content Record Sha256"
+     },
+     "generation_allowed": {
+      "title": "Generation Allowed",
+      "type": "boolean"
+     },
+     "metadata_sha256": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Metadata Sha256"
+     },
+     "state": {
+      "enum": [
+       "validation_only",
+       "reviewed_source",
+       "unclassified",
+       "untracked",
+       "invalid",
+       "unavailable"
+      ],
+      "title": "State",
+      "type": "string"
+     },
+     "template_key": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Key"
+     },
+     "template_path": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Path"
+     },
+     "template_sha256": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Sha256"
+     },
+     "warning": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Warning"
+     }
+    },
+    "required": [
+     "state",
+     "template_key",
+     "template_path",
+     "template_sha256",
+     "generation_allowed",
+     "approval_allowed"
+    ],
+    "title": "TemplateProvenance",
+    "type": "object"
+   },
    "TextRequest": {
     "additionalProperties": false,
     "properties": {
@@ -7807,6 +7908,95 @@
      "ready"
     ],
     "title": "WorkspaceRecord",
+    "type": "object"
+   },
+   "WorkspaceTemplateList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceTemplateRecord"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceTemplateList",
+    "type": "object"
+   },
+   "WorkspaceTemplateRecord": {
+    "properties": {
+     "active": {
+      "default": true,
+      "title": "Active",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "kind": {
+      "enum": [
+       "bid_form",
+       "proposal"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "mappings": {
+      "items": {
+       "$ref": "#/components/schemas/HwpTemplateFieldMapping"
+      },
+      "title": "Mappings",
+      "type": "array"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "provenance": {
+      "$ref": "#/components/schemas/TemplateProvenance"
+     },
+     "render_mode": {
+      "default": "fields",
+      "enum": [
+       "fields",
+       "proposal_layout_v1"
+      ],
+      "title": "Render Mode",
+      "type": "string"
+     },
+     "template_key": {
+      "title": "Template Key",
+      "type": "string"
+     },
+     "template_path": {
+      "title": "Template Path",
+      "type": "string"
+     },
+     "template_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Version"
+     }
+    },
+    "required": [
+     "id",
+     "template_key",
+     "kind",
+     "name",
+     "template_path",
+     "provenance"
+    ],
+    "title": "WorkspaceTemplateRecord",
     "type": "object"
    },
    "WritingPlanItem": {
@@ -12811,7 +13001,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceTemplateList"
+        }
        }
       },
       "description": "Successful Response"

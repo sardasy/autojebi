@@ -13,6 +13,7 @@ from tests.test_workspace_hwp_validation import hwp_bytes
 
 @pytest.fixture
 def layout_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("HWP_TEMPLATE_ROOT", str(tmp_path))
     content = hwp_bytes()
     checksum = hashlib.sha256(content).hexdigest()
     base = tmp_path / "base.hwp"

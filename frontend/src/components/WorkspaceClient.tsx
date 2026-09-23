@@ -13,6 +13,7 @@ import { useWorkspace } from "./workspace/useWorkspace";
 import SourceReviewTab from "./workspace/SourceReviewTab";
 import WritingTab from "./workspace/WritingTab";
 import ReviewTab, { HwpPreview } from "./workspace/ReviewTab";
+import type {WorkspaceTemplate} from "@/lib/templateProvenance";
 import JobHistory from "./workspace/JobHistory";
 
 /** v2 workspace shell: header, next action, tab navigation. Data lives in useWorkspace; tabs render the steps. */
@@ -24,11 +25,11 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
   const [template, setTemplate] = useState("bid_form");
   const [hwpVisible, setHwpVisible] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
-  const [templates, setTemplates] = useState<{template_key: string; name: string}[]>([]);
+  const [templates, setTemplates] = useState<WorkspaceTemplate[]>([]);
   const [templateError, setTemplateError] = useState("");
   useEffect(() => {
     let stopped = false;
-    workspaceApi<{items: {template_key: string; name: string}[]}>("/hwp-templates")
+    workspaceApi<{items: WorkspaceTemplate[]}>("/hwp-templates")
       .then(result => {if (!Array.isArray(result.items)) throw new Error("invalid templates"); if (!stopped) {setTemplates(result.items); setTemplate(current => result.items.some(t => t.template_key === current) ? current : result.items[0]?.template_key || "");}})
       .catch(() => {if (!stopped) setTemplateError("HWP 템플릿을 불러오지 못했습니다. 연결 확인 후 새로고침하세요.");});
     return () => {stopped = true;};

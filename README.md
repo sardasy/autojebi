@@ -406,6 +406,7 @@ G2B 연결 진단: [서비스 문서 비교 및 연결 검사](docs/g2b-connecti
 - `ready`는 현재 선택한 파일·해시·승인·패키지를 다시 대조한다. 파일 변경, 반려, 재생성, 입력 변경으로 기존 제출 준비 판정이 무효화되고 이력은 보존된다. `reviews[]`에는 `actor`, `output_sha256`, `layout_confirmed`가 노출된다.
 - `GET /v2/worker/health`의 `runtime`은 API 및 실행기의 시작 지문/현재 지문과 `current/mismatch/unknown`, `restart_required`, 프로세스별 진단을 반환한다. 시작 시 지문은 고정하며 현재 파일은 5초 캐시·60초 전체 재해시로 비교한다. 상태 조회가 작업을 중단하거나 재시작하지 않는다.
 - 개인 계정 로그인과 조회/작성/검토/최종승인 역할은 opt-in이다. `GET /v2/identity`와 [개인 인증 설정](docs/workspace-identity-2026-09-13.md)을 따른다. 기존 shared-key 환경은 개인 인증 완료로 간주하지 않는다.
+- `GET /v2/hwp-templates`와 HWP 검사·생성 결과는 SHA에 연결된 `provenance`/`template_provenance`를 반환한다. 검증 골격과 출처 미확인 기본 서식은 생성 시험만 허용하고 출력 승인·최종 준비 완료를 차단한다. 실제 원본 등록과 기존 골격 이관은 [템플릿 출처 관리](docs/hwp-template-provenance-2026-09-20.md)를 따른다.
 - ZIP 내부 HWP/HWPX와 깊이 제한 중첩 ZIP을 지원한다. 한국어 OCR은 검토 대기로 유지한다. [첨부 검증](docs/attachment-extraction-completion-2026-09-13.md)과 [완결 E2E 결과](docs/document-loop-completion-2026-09-13.md)에 실검증 범위를 기록한다.
 
 모든 엔드포인트는 `API_KEY`가 설정돼 있으면 `X-API-Key: <키>` 헤더 필요.
@@ -769,10 +770,11 @@ fit_score   = int(score_total × 100)                           # 0~100
 
 `hwp_templates.render_mode`는 기존 `fields`와 새 `proposal_layout_v1`만 허용한다. 새 모드는 제한된 Markdown을 실제 제목·문단·표·페이지 나눔과 개별 필드로 구성하고 `PutFieldText`로 입력한다. `python -m api.hwp_fields prepare-template`은 인증된 Worker에서 저장·재열기·필드 검사를 통과한 새 서식만 등록하며 기존 템플릿을 덮어쓰지 않는다.
 
-- `GET /v2/hwp-templates`: 활성 템플릿과 `render_mode`, 매핑.
+- `GET /v2/hwp-templates`: 활성 템플릿과 `render_mode`, 매핑, `provenance`(출처 상태·해시·생성/승인 가능 여부).
 - `GET /v2/hwp-worker`: 연결·작업 중·복구 필요, 현재 작업번호/단계/경과 시간.
 - `GET /v2/jobs/{job_id}/pages/{number}`: 성공한 작업의 해시 검증된 PNG. 기존 API 인증을 적용한다.
 - `POST /v2/notices/{notice_no}/jobs`의 `kind=hwp`는 그대로 유지한다. 생성물에 논리 본문/물리 필드 대응표, 입력·레이아웃·템플릿·출력 해시, 페이지 이미지와 검토 상태를 보존한다.
+- 실제 줄바꿈 재검증: `HWP_LIVE_SMOKE=true`에서 `python -m tools.verify_hwp_linebreaks`. 인증된 Worker에 새 TEST ONLY 문서를 요청하고 LF/CRLF·저장값·3페이지 이미지를 검증한다. 기존 템플릿·실공고·승인은 변경하지 않는다. [2026-09-20 실검증 기록](docs/practitioner-e2e-2026-09-20.md).
 
 ### v2 인용 복구와 실행기 분리 (2026-09-10)
 - `POST /v2/notices/{notice_no}/jobs/{job_id}/adopt-requirements`: 현재 `version`, `idempotency_key`, `note`, 선택 후보 `items`의 `candidate_id/quote/start/locator`를 받아 원문 해시와 위치를 재검증한다. 채택은 검토 대기·미판정이며 실패한 분석 이력은 유지한다.
