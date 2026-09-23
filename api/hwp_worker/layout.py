@@ -117,16 +117,35 @@ def compile_markdown(text: str) -> tuple[Layout, dict[str, str], list[dict]]:
         elif typ == "inline":
             runs: list[Run] = []
             bold, italic = False, False
-            link: tuple[str, int] | None = None
+            link: tuple[str, list[str]] | None = None
+            leading_space = ""
+
+            def append_run(value: str, *, bold=False, italic=False, target: list[Run] = runs) -> None:
+                nonlocal leading_space
+                if not value.strip():
+                    if target:
+                        field = target[-1].field
+                        values[field] += value
+                        manifest[-1]["text_sha256"] = hashlib.sha256(values[field].encode()).hexdigest()
+                    else:
+                        leading_space += value
+                else:
+                    target.append(leaf(leading_space + value, bold=bold, italic=italic))
+                    leading_space = ""
+
             if list_prefix:
-                runs.append(leaf(list_prefix))
+                append_run(list_prefix)
                 list_prefix = ""
             for child in token.children or []:
                 if child.type in {"text", "code_inline"}:
+                    if link is not None:
+                        link[1].append(child.content)
                     if child.content:
-                        runs.append(leaf(child.content, bold=bold, italic=italic))
+                        append_run(child.content, bold=bold, italic=italic)
                 elif child.type in {"softbreak", "hardbreak"}:
-                    runs.append(leaf("\n"))
+                    if link is not None:
+                        link[1].append("\n")
+                    append_run("\n")
                 elif child.type == "strong_open":
                     bold = True
                 elif child.type == "strong_close":
@@ -139,15 +158,17 @@ def compile_markdown(text: str) -> tuple[Layout, dict[str, str], list[dict]]:
                     href = child.attrGet("href") or ""
                     if not re.match(r"^https?://", href):
                         raise ValueError("unsupported_link")
-                    link = (href, len(runs))
+                    link = (href, [])
                 elif child.type == "link_close":
                     if link is not None:
-                        href, first = link
-                        if "".join(values[r.field] for r in runs[first:]) != href:
-                            runs.append(leaf(f" ({href})"))
+                        href, caption = link
+                        if "".join(caption) != href:
+                            append_run(f" ({href})")
                         link = None
                 else:
                     raise ValueError("unsupported_inline_" + child.type)
+            if leading_space:
+                raise ValueError("unsupported_blank_inline")
             if cell is not None:
                 cell.extend(runs)
             elif runs:
