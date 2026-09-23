@@ -37,7 +37,7 @@ export default defineConfig({
     },
     {
       name: "workbench-mock",
-      testMatch: /(?:workbench-mock|hwp-layout-mock|recovery-mock|workspace-guidance-mock|notice-brief-mock|document-writing-mock|company-assets-mock|specification-mock)\.spec\.ts/,
+      testMatch: /(?:workbench-mock|hwp-layout-mock|recovery-mock|workspace-guidance-mock|notice-brief-mock|document-writing-mock|company-assets-mock|specification-mock|document-comparison-mock)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {

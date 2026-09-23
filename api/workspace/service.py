@@ -21,6 +21,7 @@ from api.services.notice_facts import normalize_notice_facts
 from api.workspace import (
     asset_policy,
     classification,
+    document_jobs,
     identity,
     notice_brief,
     output_plan,
@@ -446,6 +447,7 @@ def create_job_record(conn: Any, ws: dict, kind: str, key: str, params: dict) ->
 
 
 def enqueue(conn: Any, notice_no: str, body: Any) -> dict:
+    params = document_jobs.parameters(conn, notice_no, body)
     if body.kind == "spec_index":
         from api.specifications.service import require_enabled
         require_enabled()
@@ -462,7 +464,6 @@ def enqueue(conn: Any, notice_no: str, body: Any) -> dict:
         .mappings()
         .first()
     )
-    params = {"template_key": body.template_key, "visible": body.visible}
     if previous:
         if (
             previous["kind"] != body.kind
@@ -489,6 +490,8 @@ def enqueue(conn: Any, notice_no: str, body: Any) -> dict:
         .all()
     )
     for job in previous:
+        if not document_jobs.reusable(body.kind, job["parameters"], params):
+            continue
         if body.kind == "spec_index" and job["status"] == "succeeded":
             continue
         if body.kind == "fetch" and job["status"] == "succeeded" and source_inventory_issues(ws["inputs"]):

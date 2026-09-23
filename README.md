@@ -396,6 +396,12 @@ G2B 연결 진단: [서비스 문서 비교 및 연결 검사](docs/g2b-connecti
 
 ## 7. API / CLI 레퍼런스
 
+### HWP/HWPX 추출 비교 (검증용)
+
+`WORKSPACE_KORDOC_ENABLED=true`를 API·external 실행기에 설정하면 공고 서류 검토 화면에서 kordoc 수동 추출 비교를 사용할 수 있다. 기존 작업 API에 `kind=document_compare`, 작업대 응답에 `kordoc_comparison_enabled`가 추가됐다. 기존 본문과 표·셀 후보를 비교하며 원문·RAG 입력·승인은 변경하지 않는다. Node 런타임 설치, 실행 경계와 실파일 검증 결과는 [kordoc 적용 안내](docs/kordoc-comparison-2026-09-23.md)를 따른다.
+
+비교 v2는 작업 결과의 `comparisons[].comparison_v2`에 `comparison_version=2`, `offset_unit=unicode_codepoint`, `completion`, `summary`, `changes`, `controls`, `tables`를 반환한다. `reference`는 추출기 중립 본문·표 모델이며 이전 `candidate`/토큰 비교 이력은 그대로 조회한다. HWPX 본문 규칙 v2는 XML 필드 파라미터만 제외한다. 사용자가 본문 추출 결과를 반영해야 저장 본문이 바뀌며 변경 문서의 연결 검토는 재검토 대상이 된다. 상세 계약·제한·검증은 [문서 비교 v2 구현 기록](docs/document-comparison-v2-2026-09-23.md)을 따른다.
+
 ### 준비 사유 코드·실무 평가 (2026-09-22)
 
 `GET /v2/notices/{notice_no}/workspace`는 `readiness_issues[]`와 `readiness_checked_at`을 추가 제공한다.

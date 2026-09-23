@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -31,6 +33,11 @@ jobs:
 
       - name: pytest
         run: python -m pytest -q
+
+      - name: immutable document rule versions
+        run: python tools/check_document_rule_manifest.py
+        env:
+          DOCUMENT_RULE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
 
   frontend:
     name: frontend (test + build)

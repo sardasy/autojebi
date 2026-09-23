@@ -1,6 +1,7 @@
 import { Check, Download, FileText, Play, Upload } from "lucide-react";
 import { type Workspace } from "@/lib/workspace";
 import JevClassification from "./JevClassification";
+import DocumentComparison from "./DocumentComparison";
 import NoticeBrief from "../NoticeBrief";
 import WritingPlanReview from "../WritingPlanReview";
 import WorkspaceDocumentViewer from "../WorkspaceDocumentViewer";
@@ -32,6 +33,7 @@ export default function SourceReviewTab({ws, prefix, noticeNo, busy, note, deriv
           <button disabled={busy || ws.source_attachments?.some(attachment => attachment.state !== "ready")} className={buttonClass} onClick={() => void mutate(`${prefix}/source-review`, {version: ws.version, text: "confirmed", note}, "원문 대조 확인 저장")}><Check size={16}/>원문 전체 대조 확인</button></div>
         <button disabled={busy || ws.source_changed || !hasSourceText} className={buttonClass} onClick={() => void run("analyze")}><Play size={16}/>요구사항 분석</button>
         </div></details>
+        <DocumentComparison ws={ws} busy={busy} run={run}/>
         {!!ws.source_attachments?.length && <SourceInventory attachments={ws.source_attachments} pendingIndexes={pendingFetch?.result?.documents?.filter(d => d.role === "notice_source").map(d => d.attachment_index).filter((i): i is number => typeof i === "number")}/>}
         <SourceNeeds ws={ws} prefix={prefix} reload={reload}/>
         {(sourceDocuments.length > 0 || ws.inputs.requirements.length > 0) && <div className="grid lg:grid-cols-2 gap-6 items-start"><WorkspaceDocumentViewer documents={ws.inputs.documents.filter(d => d.role === "notice_source")} prefix={prefix}/><div className="min-w-0">

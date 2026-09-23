@@ -3525,6 +3525,7 @@
        "analyze",
        "grade",
        "extract",
+       "document_compare",
        "proposal",
        "verify",
        "excel",
@@ -8156,6 +8157,11 @@
       "title": "Jobs",
       "type": "array"
      },
+     "kordoc_comparison_enabled": {
+      "readOnly": true,
+      "title": "Kordoc Comparison Enabled",
+      "type": "boolean"
+     },
      "next_action": {
       "title": "Next Action",
       "type": "string"
@@ -8259,7 +8265,8 @@
      "jobs",
      "reviews",
      "source_changed",
-     "ready"
+     "ready",
+     "kordoc_comparison_enabled"
     ],
     "title": "WorkspaceRecord",
     "type": "object"

@@ -4,6 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, computed_field, field_validator
 
 from api.models.notices import NoticeUpsertRequest
+from api.services.kordoc_client import enabled as kordoc_enabled
 from api.workspace.readiness_issues import ReadinessIssue
 
 JobKind = Literal[
@@ -11,6 +12,7 @@ JobKind = Literal[
     "analyze",
     "grade",
     "extract",
+    "document_compare",
     "proposal",
     "verify",
     "excel",
@@ -240,6 +242,11 @@ class JobRecord(BaseModel):
 
 
 class WorkspaceRecord(BaseModel):
+    @computed_field
+    @property
+    def kordoc_comparison_enabled(self) -> bool:
+        return kordoc_enabled()
+
     notice_brief: dict[str, Any] = Field(default_factory=dict)
     spec_compliance: str = "미확인"
     unresolved_spec_count: int = 0

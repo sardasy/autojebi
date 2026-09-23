@@ -87,7 +87,6 @@ router.include_router(requirement_candidates_router)
 router.include_router(source_display_reviews_router)
 router.include_router(hwp_health_router)
 
-
 async def _workspace_error_handler(request: Request, exc: WorkspaceError):
     # Same response (status, {"detail": ...}, headers) as FastAPI's HTTPException handler.
     return await http_exception_handler(request, exc)

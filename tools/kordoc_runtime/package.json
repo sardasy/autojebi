@@ -1,0 +1,9 @@
+{
+  "name": "autojebi-kordoc-validation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22.13.0"},
+  "scripts": {"test": "node --test runner.test.mjs"},
+  "dependencies": {"kordoc": "4.14.1"}
+}
