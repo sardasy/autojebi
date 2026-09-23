@@ -4846,7 +4846,7 @@
        "type": "string"
       },
       "maxItems": 20,
-      "minItems": 1,
+      "minItems": 0,
       "title": "Template Keys",
       "type": "array"
      },

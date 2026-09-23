@@ -412,7 +412,7 @@ verify 작업 결과와 검토 패키지 manifest에도 구조화된 사유·확
 ### 문서 완결 흐름 (2026-09-13)
 
 - `POST /v2/notices`는 선택 입력 `org_name`, 시간대가 포함된 `close_date`를 보존한다. 수동 등록 화면은 한국시간을 명시하며 마감 미확인·경과 상태는 제출 준비 완료를 허용하지 않는다.
-- `PUT /v2/notices/{notice_no}/output-plan`은 `{version, template_keys, note}`를 받는다. 활성 HWP 서식을 하나 이상 선택하며 `inputs.output_plan`에 보존한다. 계획 변경 시 입력 버전이 올라가고 생성 파일을 다시 검토한다. 미설정 데이터는 기존 `bid_form/proposal` 요구를 유지한다.
+- `PUT /v2/notices/{notice_no}/output-plan`은 `{version, template_keys, note}`를 받는다. 활성 HWP 서식을 선택하며 `inputs.output_plan`에 보존한다. 현재 원문에 대해 확인한 비어 있지 않은 작성 계획이 원본 첨부·전자 제출만 포함하면, 확인 의견과 함께 `template_keys: []`를 명시해 제안서 본문·HWP 생성을 생략할 수 있다. Excel·원문·증빙·작성 양식과 요구사항의 기존 검토 조건은 유지한다. 작성 계획이 오래됐거나 직접 작성 항목이 추가되면 빈 출력 계획은 무효다. 계획 변경 시 입력 버전이 올라가고 생성 파일을 다시 검토한다. 미설정 데이터는 기존 `bid_form/proposal` 요구를 유지한다.
 - `GET /v2/notices/{notice_no}/requirement-candidates?version=...`는 현재 공고 원문에서 의무·수량·기한·제출 표현을 포함한 행을 읽기 전용 후보로 반환한다. `{version, items, scanned_characters, source_document_count, limited, warnings}`이며 후보에 원문 인용, 파일/본문 해시, 문자 위치와 행 위치를 포함한다. 최대 100개·150,000자 범위로 제한하고 문장을 잘라 제안하지 않는다. 화면에서 문맥 확인 후 기존 요구사항 API로 `pending/unassessed` 저장하며 승인하거나 LLM을 호출하지 않는다.
 - 패키지는 선택한 최신 HWP와 Excel, 원문, 작성된 원본 양식을 포함한다. 입찰/기타 작성 대상은 실제 해당 원본 양식 작성·검토까지 확인하며 Markdown 초안만으로 제출 준비를 완료하지 않는다.
 - `POST /v2/notices/{notice_no}/reviews`의 HWP `approved`에는 검토한 `output_sha256`과 `layout_confirmed=true`가 필요하다. 저장값 미검증·미입력·내용 경고는 승인으로 해소할 수 없다. 파일에 연결된 배치 승인은 새 패키지에서 배치 경고를 해소한다.

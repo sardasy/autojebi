@@ -13,9 +13,39 @@ const ws: Workspace = {notice_no: "PLAN", version: 5, decision: "pending", ready
   blockers: [], next_action: "", jobs: [], reviews: []};
 const templates = [{template_key: "bid_form", name: "입찰참가신청서"}, {template_key: "proposal", name: "제안서"},
   {template_key: "proposal_layout_v1", name: "제안서 · 실무 서식"}];
+const attachmentOnly: Workspace = {...ws, writing_plan_current: true, inputs: {...ws.inputs,
+  writing_plan: {reviewed_at: "2026-09-20", reviewed_version: 5, items: [
+    {id: "issued", title: "사업자등록증", document_id: "source", quote: "사업자등록증", action: "attach", document_kind: "other_document"},
+    {id: "electronic", title: "입찰서", document_id: "source", quote: "입찰서", action: "electronic", document_kind: "bid_document"},
+  ]},
+}};
 
 describe("output plan and participation", () => {
   beforeEach(() => {vi.clearAllMocks();});
+  it("explicitly omits HWP for a reviewed attachment-only plan even without installed templates", async () => {
+    const onSaved = vi.fn(); vi.mocked(workspaceApi).mockResolvedValue({...attachmentOnly, version: 6});
+    render(<WorkspaceOutputPlan ws={attachmentOnly} prefix="/notices/PLAN" templates={[]} busy={false} onSaved={onSaved}/>);
+    fireEvent.click(screen.getByRole("checkbox", {name: /HWP 생성 불필요/}));
+    expect(screen.getByRole("button", {name: "출력 서류 계획 저장"})).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("출력 서류 확인 의견"), {target: {value: "공고상 원본 첨부와 전자 제출만 필요"}});
+    fireEvent.click(screen.getByRole("button", {name: "출력 서류 계획 저장"}));
+    await waitFor(() => expect(workspaceApi).toHaveBeenCalledWith("/notices/PLAN/output-plan", {
+      version: 5, template_keys: [], note: "공고상 원본 첨부와 전자 제출만 필요",
+    }, "PUT"));
+    expect(screen.getByText(/전자 제출은 담당자가 직접 수행합니다/)).toBeInTheDocument();
+  });
+  it.each(["source", "stale", "empty", "write"])("rejects a saved empty plan after %s invalidation", invalid => {
+    const changed = structuredClone(attachmentOnly);
+    changed.inputs.output_plan = {template_keys: [], note: "이전 확인"};
+    if (invalid === "source") changed.source_changed = true;
+    else if (invalid === "stale") changed.writing_plan_current = false;
+    else if (invalid === "empty") changed.inputs.writing_plan!.items = [];
+    else changed.inputs.writing_plan!.items[0].action = "write";
+    render(<WorkspaceOutputPlan ws={changed} prefix="/notices/PLAN" templates={templates} busy={false} onSaved={vi.fn()}/>);
+    expect(screen.queryByText(/HWP 생성 불필요 ·/)).not.toBeInTheDocument();
+    expect(screen.getByText("출력 서류 계획 저장")).toBeDisabled();
+    expect(workspaceApi).not.toHaveBeenCalled();
+  });
   it("saves the chosen real template instead of requiring both legacy placeholders", async () => {
     const onSaved = vi.fn(); const updated = {...ws, version: 6}; vi.mocked(workspaceApi).mockResolvedValue(updated);
     render(<WorkspaceOutputPlan ws={ws} prefix="/notices/PLAN" templates={templates} busy={false} onSaved={onSaved}/>);

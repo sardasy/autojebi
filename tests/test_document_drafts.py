@@ -113,4 +113,4 @@ def test_package_contains_separate_drafts_with_hashes(client, draft_workspace, s
         entry = next(f for f in manifest["files"] if f.get("name", "").startswith("drafts/"))
         assert hashlib.sha256(archive.read(entry["name"])).hexdigest() == entry["sha256"]
         assert "Draft body" in archive.read(entry["name"]).decode()
-        assert archive.read("proposal.txt") == b""
+        assert "proposal.txt" not in archive.namelist()

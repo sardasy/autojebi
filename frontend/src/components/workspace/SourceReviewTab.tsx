@@ -41,7 +41,7 @@ export default function SourceReviewTab({ws, prefix, noticeNo, busy, note, deriv
         <details className="border-y py-3"><summary className="text-sm font-medium cursor-pointer">원문·증빙 파일 관리 · {ws.inputs.documents.filter(d => d.role !== "company_reference").length}개</summary>
         <form className="flex flex-wrap gap-2 items-end border-y py-3" onSubmit={e => {e.preventDefault(); const form = new FormData(e.currentTarget); form.set("version", String(ws.version)); void mutate(`${prefix}/documents`, form, "파일 등록 완료");}}>
           <label className="text-sm">문서 구분<select name="role" className={inputClass}><option value="notice_source">공고 원문</option><option value="company_evidence">회사 증빙</option><option value="product_evidence">제품 근거</option></select></label>
-          <label className="text-sm min-w-0">파일<input name="file" type="file" required className="block max-w-full"/></label><button disabled={busy} className={buttonClass}><Upload size={16}/>등록</button>
+          <label className="text-sm min-w-0">파일<input id="source-upload-file" name="file" type="file" required className="block max-w-full"/></label><button disabled={busy} className={buttonClass}><Upload size={16}/>등록</button>
         </form>
         <CompanyAssets noticeNo={noticeNo} version={ws.version} onLinked={reload}/>
         {ws.inputs.documents.filter(doc => doc.role !== "company_reference").map(doc => <DocumentRow key={`${doc.id}-${ws.version}`} doc={doc} ws={ws} prefix={prefix} busy={busy} note={note} mutate={mutate}/>)}

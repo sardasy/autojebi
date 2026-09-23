@@ -152,7 +152,7 @@ class ReviewRequest(VersionRequest):
 
 
 class OutputPlanRequest(VersionRequest):
-    template_keys: list[str] = Field(min_length=1, max_length=20)
+    template_keys: list[str] = Field(min_length=0, max_length=20)
     note: str = Field(min_length=1, max_length=2000)
 
 

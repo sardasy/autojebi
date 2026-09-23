@@ -21,6 +21,18 @@ const sourceAttachments: SourceAttachment[] = [
 
 describe("WorkspaceClient", () => {
   beforeEach(() => {vi.mocked(workspaceApi).mockReset(); window.history.replaceState(null, "", "/");});
+  it("keeps a valid HWP template when an empty output plan needs review again", async () => {
+    vi.mocked(workspaceApi).mockImplementation(async path => path.includes("/hwp-context?")
+      ? {input_version: fixture.version, values: {}, required_missing: []}
+      : {...fixture, writing_plan_current: false,
+        inputs: {...fixture.inputs, output_plan: {template_keys: [], note: "이전 첨부 전용 계획"}}});
+    render(<WorkspaceClient noticeNo="V2"/>);
+    fireEvent.click(await screen.findByRole("tab", {name: "4. 서류 확인"}));
+    await waitFor(() => expect(screen.getByRole("combobox", {name: "HWP 템플릿"})).toHaveValue("bid_form"));
+    fireEvent.click(screen.getByRole("button", {name: "입력값 확인"}));
+    await waitFor(() => expect(vi.mocked(workspaceApi).mock.calls.some(([path]) =>
+      path.endsWith("/hwp-context?template_key=bid_form"))).toBe(true));
+  });
   it("shows partial archive extraction and OCR review without marking sources complete", async () => {
     vi.mocked(workspaceApi).mockResolvedValue({...fixture, inputs:{...fixture.inputs, documents:[{...sourceDocument,
       extraction:{complete:false, members:[{name:"drawing.dwg",sha256:"a".repeat(64),size:10,status:"unsupported",complete:false}],
@@ -92,7 +104,7 @@ describe("WorkspaceClient", () => {
     await waitFor(() => expect(workspaceApi).toHaveBeenCalledWith("/notices/V2/jobs", expect.objectContaining({kind:"hwp_inspect", input_version:1, template_key:"bid_form"})));
   });
   it("offers the concrete missing attachment action instead of a no-op tab change", async () => {
-    vi.mocked(workspaceApi).mockResolvedValue({...fixture, source_attachments: sourceAttachments});
+    vi.mocked(workspaceApi).mockResolvedValue({...fixture, source_attachments: sourceAttachments.map(a => a.state === "missing" ? {...a,url:"https://www.g2b.go.kr/file/4"} : a)});
     render(<WorkspaceClient noticeNo="V2"/>);
     fireEvent.click(await screen.findByRole("tab", {name:"3. 비교·작성"}));
     fireEvent.click(within(screen.getByRole("region", {name:"지금 할 작업"})).getByRole("button", {name:"누락 첨부 가져오기"}));

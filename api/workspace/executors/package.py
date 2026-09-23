@@ -138,10 +138,8 @@ def run_package(engine: Any, job: dict, folder: Path) -> dict:
             "manifest.json", json.dumps(manifest, ensure_ascii=False, default=str, indent=2)
         )
         archive.writestr("missing.txt", "\n".join(dict.fromkeys(warnings)))
-        archive.writestr(
-            "proposal.txt",
-            "\n\n".join(s.get("text", "") for s in proposal_sections(job["snapshot"])),
-        )
+        if sections := proposal_sections(job["snapshot"]):
+            archive.writestr("proposal.txt", "\n\n".join(s.get("text", "") for s in sections))
     return artifact(
         output, warnings, included_jobs=[item["id"] for item in artifacts],
         readiness_issues=manifest["readiness_issues"], readiness_input_version=job["input_version"],

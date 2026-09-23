@@ -1,5 +1,48 @@
 import {expect, test} from "@playwright/test";
 
+test("typed readiness shows server actions without changing approval", async ({page}) => {
+  const mutations: string[] = [];
+  await page.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET") mutations.push(path);
+    if (path.endsWith("/workspace-session")) return route.fulfill({json:{enabled:false,actor:null}});
+    if (path.endsWith("/hwp-templates")) return route.fulfill({json:{items:[]}});
+    if (path.endsWith("/workspace")) return route.fulfill({json:{notice_no:"E2E-REASONS",version:4,decision:"pending",ready:false,source_changed:false,
+      inputs:{notice:{title:"사유 코드 합성 검증",org_name:null,close_date:null},company:{},documents:[],requirements:[],proposal_sections:[],checklist:[]},
+      source_attachments:[],blockers:["중앙 자료 유효기간 만료: 시험 증명서"],next_action:"증빙 확인",reviews:[],jobs:[],
+      readiness_checked_at:"2026-09-22T00:00:00Z",readiness_issues:[{code:"asset_expired",scope:"document",entity_id:"proof",blocking:true,
+        message_params:{name:"시험 증명서"},message:"중앙 자료 유효기간 만료: 시험 증명서",next_action:"유효한 회사 자료를 확보하고 다시 검토하세요."}]}});
+    return route.fulfill({json:{items:[],available:false,state:"unknown",required_missing:[],mapping_fields:[]}});
+  });
+  await page.goto("/workspace/E2E-REASONS#review");
+  await page.getByRole("tab", {name:"4. 서류 확인"}).click();
+  const reasons = page.getByRole("region",{name:"제출 준비 확인 사항"});
+  await expect(reasons).toContainText("중앙 자료 유효기간 만료: 시험 증명서");
+  await expect(reasons).toContainText("유효한 회사 자료를 확보하고 다시 검토하세요.");
+  await expect(reasons).toContainText("입력 버전 4");
+  expect(mutations).toEqual([]);
+});
+
+test("manual notice opens and focuses source upload without an empty fetch", async ({page}) => {
+  const mutations: string[] = [];
+  await page.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET") mutations.push(path);
+    if (path.endsWith("/workspace-session")) return route.fulfill({json:{enabled:false,actor:null}});
+    if (path.endsWith("/hwp-templates")) return route.fulfill({json:{items:[]}});
+    if (path.endsWith("/workspace")) return route.fulfill({json:{notice_no:"E2E-MANUAL",version:1,decision:"pending",ready:false,source_changed:false,
+      inputs:{notice:{title:"수동 등록 원문 안내",org_name:null,close_date:null},company:{},documents:[],requirements:[],proposal_sections:[],checklist:[]},
+      source_attachments:[],blockers:["공고 원문 필요"],next_action:"공고 원문 필요",reviews:[],jobs:[]}});
+    return route.fulfill({json:{items:[],available:true,state:"idle"}});
+  });
+  await page.goto("/workspace/E2E-MANUAL");
+  await page.getByRole("region",{name:"지금 할 작업"}).getByRole("button",{name:"공고 원문 등록"}).click();
+  await expect(page.getByLabel("파일",{exact:true})).toBeVisible();
+  await expect(page.getByLabel("파일",{exact:true})).toBeFocused();
+  await expect(page.getByRole("combobox",{name:"문서 구분"})).toHaveValue("notice_source");
+  expect(mutations).toEqual([]);
+});
+
 test("one next action advances attachment preparation without auto-running analysis", async ({page}) => {
   let applied = false;
   const mutations: string[] = [];

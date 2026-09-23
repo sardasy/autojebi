@@ -78,7 +78,7 @@ export default function WorkspaceClient({noticeNo}: {noticeNo: string}) {
   const run = (kind: string) => runJob(kind, {template_key: template, visible: hwpVisible});
   const plannedTemplateKeys = ws?.inputs.output_plan?.template_keys.join("\0");
   useEffect(() => {
-    const planned = plannedTemplateKeys?.split("\0");
+    const planned = plannedTemplateKeys?.split("\0").filter(Boolean);
     if (planned?.length) setTemplate(current => planned.includes(current) ? current : planned[0]);
   }, [plannedTemplateKeys]);
   const derived = deriveWorkspace(ws);

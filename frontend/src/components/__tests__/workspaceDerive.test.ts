@@ -24,8 +24,16 @@ describe("nextStep priority", () => {
   it("source changes come before everything else", () => {
     expect(step(ws({source_changed: true}))?.action).toEqual({type: "mutate", path: `${prefix}/sync`, body: {version: 1}, message: "원문 동기화 완료"});
   });
-  it("no source documents asks to fetch attachments", () => {
-    expect(step(ws({}, {documents: []}))?.action).toEqual({type: "run", kind: "fetch"});
+  it("known missing remote attachments can be fetched", () => {
+    const source_attachments = [{index: 1, name: "공고.pdf", url: "https://www.g2b.go.kr/notice.pdf", document_ids: [], state: "missing" as const}];
+    expect(step(ws({source_attachments}, {documents: []}))?.action).toEqual({type: "run", kind: "fetch"});
+  });
+  it("a manual notice without remote attachments goes directly to upload", () => {
+    expect(step(ws({source_attachments: []}, {documents: []}))?.action).toEqual({type: "goto", tab: "2. 공고 서류 검토", target: "source-upload-file"});
+  });
+  it("a failed current fetch offers file upload without retrying automatically", () => {
+    const source_attachments = [{index: 1, name: "공고.pdf", url: "https://www.g2b.go.kr/notice.pdf", document_ids: [], state: "missing" as const}];
+    expect(step(ws({source_attachments, jobs: [job({kind: "fetch", status: "failed"})]}, {documents: []}))?.action).toEqual({type: "goto", tab: "2. 공고 서류 검토", target: "source-upload-file"});
   });
   it("unread source text asks to extract", () => {
     expect(step(ws({}, {documents: [{...source, text: ""}]}))?.action).toEqual({type: "run", kind: "extract"});
@@ -45,6 +53,15 @@ describe("nextStep priority", () => {
     const w = ws({ready: true, source_attachments: []}, {requirements: [{id: "r"}] as Workspace["inputs"]["requirements"],
       proposal_sections: [{id: "p", text: "x", review_status: "approved", evidence_ids: []}]});
     expect(step(w)?.action).toEqual({type: "goto", tab: "4. 서류 확인", target: "generated-files"});
+  });
+  it("a current attachment-only plan can finish without returning to draft writing", () => {
+    const w = ws({ready: true, writing_plan_current: true, source_attachments: []}, {
+      requirements: [{id:"r"}] as Workspace["inputs"]["requirements"], proposal_sections: [],
+      writing_plan: {items:[{id:"a",title:"원본 첨부",action:"attach",document_kind:"other_document",document_id:"s",quote:"본문"}],reviewed_at:"now",reviewed_version:1},
+      output_plan:{template_keys:[],note:"HWP 불필요 확인"},
+    });
+    expect(step(w)?.action).toEqual({type:"goto",tab:"4. 서류 확인",target:"generated-files"});
+    expect(step({...w,ready:false,writing_plan_current:false})?.action).toEqual({type:"goto",tab:"3. 비교·작성"});
   });
 });
 

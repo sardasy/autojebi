@@ -87,11 +87,11 @@ def readiness_issues(inputs: dict) -> list[ReadinessIssue]:
     if inputs.get("commercial") is not None and not commercial_valid(inputs["commercial"], documents):
         issues.append(issue(IssueCode.COMMERCIAL_REVIEW_REQUIRED, "commercial"))
     sections = inputs.get("proposal_sections") or []
-    if not sections or any(
+    if (not sections and not output_plan.attachment_only(inputs)) or any(
         s.get("review_status") != "approved" or not section_valid(s, inputs) for s in sections
     ):
         issues.append(issue(IssueCode.PROPOSAL_REVIEW_REQUIRED, "proposal"))
-    missing = set(proposal_coverage(inputs)["missing_ids"])
+    missing = set() if output_plan.attachment_only(inputs) else set(proposal_coverage(inputs)["missing_ids"])
     for req in reqs:
         if req["id"] in missing:
             issues.append(issue(IssueCode.PROPOSAL_COVERAGE_MISSING, "requirement", req["id"], text=req["text"][:80]))

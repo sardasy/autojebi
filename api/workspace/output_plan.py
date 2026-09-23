@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 
 from api.db.tables import hwp_templates
+from api.workspace import writing_plan
 from api.workspace.errors import HANDLED_ERRORS
 from api.workspace.readiness_issues import IssueCode, ReadinessIssue, issue, render_blockers
 from api.workspace.template_provenance import review_provenance_issues
@@ -15,9 +16,19 @@ from api.workspace.template_provenance import review_provenance_issues
 LAYOUT_WARNING = "한글 페이지 배치는 담당자 검토가 필요합니다."
 
 
+def attachment_only(inputs: dict) -> bool:
+    """Only a current, nonempty human-reviewed plan can omit written outputs."""
+    return writing_plan.current(inputs) and all(
+        item.get("action") in {"attach", "electronic"}
+        for item in inputs["writing_plan"]["items"]
+    )
+
+
 def template_keys(inputs: dict) -> list[str]:
     plan = inputs.get("output_plan")
-    return list(plan["template_keys"]) if plan else ["bid_form", "proposal"]
+    if plan and (plan["template_keys"] or attachment_only(inputs)):
+        return list(plan["template_keys"])
+    return ["bid_form", "proposal"]
 
 
 def save(conn: Any, notice_no: str, body: Any) -> None:
@@ -26,6 +37,8 @@ def save(conn: Any, notice_no: str, body: Any) -> None:
     ws = service.load(conn, notice_no, body.version)
     service.assert_source_current(conn, ws)
     keys = sorted(set(body.template_keys))
+    if not keys and not attachment_only(ws["inputs"]):
+        service.fail("written_outputs_required", "직접 작성할 항목이 없는 현재 공고 작성 계획을 먼저 확인하세요.", status=422)
     available = set(conn.execute(select(hwp_templates.c.template_key).where(
         hwp_templates.c.active.is_(True))).scalars())
     if not set(keys) <= available:
